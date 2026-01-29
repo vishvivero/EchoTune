@@ -28,8 +28,6 @@
 	<string>EchoTune needs permission to insert transcribed text into other applications.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
-	<key>NSMainStoryboardFile</key>
-	<string>Main</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>EchoTune needs access to your microphone to record and transcribe your voice.</string>
 	<key>NSPrincipalClass</key>
