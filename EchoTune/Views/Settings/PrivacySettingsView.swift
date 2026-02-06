@@ -76,11 +76,29 @@ struct PrivacySettingsView: View {
 
                 if settings.keepAudioHistory {
                     Button("Clear Audio History") {
-                        // TODO: Phase 2 - Implement clear history
-                        print("Clear audio history")
+                        clearAudioHistory()
                     }
                     .buttonStyle(.bordered)
                     .padding(.leading, 20)
+                }
+            }
+
+            Section("Transcription History") {
+                let historyCount = TranscriptionHistoryManager.shared.transcriptions.count
+
+                HStack {
+                    Text("Saved Transcriptions")
+                    Spacer()
+                    Text("\(historyCount) items")
+                        .foregroundColor(.secondary)
+                }
+
+                if historyCount > 0 {
+                    Button("Clear All Transcription History") {
+                        clearTranscriptionHistory()
+                    }
+                    .buttonStyle(.bordered)
+                    .foregroundColor(.red)
                 }
             }
 
@@ -108,6 +126,57 @@ struct PrivacySettingsView: View {
         }
         .formStyle(.grouped)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: - Helper Methods
+
+    private func clearAudioHistory() {
+        let alert = NSAlert()
+        alert.messageText = "Clear Audio History?"
+        alert.informativeText = "This will permanently delete all saved audio recordings. This action cannot be undone."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Delete All")
+        alert.addButton(withTitle: "Cancel")
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            // Clear audio recordings from temp directory
+            let tempDir = FileManager.default.temporaryDirectory
+            do {
+                let files = try FileManager.default.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: nil)
+                let audioFiles = files.filter { $0.pathExtension == "caf" || $0.pathExtension == "wav" || $0.pathExtension == "m4a" }
+                for file in audioFiles {
+                    try FileManager.default.removeItem(at: file)
+                }
+                print("✅ Cleared \(audioFiles.count) audio files")
+
+                NotificationManager.shared.showNotification(
+                    title: "Audio History Cleared",
+                    body: "All audio recordings have been deleted.",
+                    sound: false
+                )
+            } catch {
+                print("❌ Failed to clear audio history: \(error)")
+            }
+        }
+    }
+
+    private func clearTranscriptionHistory() {
+        let alert = NSAlert()
+        alert.messageText = "Clear Transcription History?"
+        alert.informativeText = "This will permanently delete all saved transcriptions. This action cannot be undone."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Delete All")
+        alert.addButton(withTitle: "Cancel")
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            TranscriptionHistoryManager.shared.clearAll()
+
+            NotificationManager.shared.showNotification(
+                title: "History Cleared",
+                body: "All transcriptions have been deleted.",
+                sound: false
+            )
+        }
     }
 }
 

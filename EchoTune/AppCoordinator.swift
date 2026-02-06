@@ -252,14 +252,186 @@ class AppCoordinator: ObservableObject {
             }
         }
 
-        // If a cloud model is selected, show a message (cloud engines not wired yet)
+        // If a cloud model is selected, use cloud transcription
         if currentModel.category == .cloud {
-            showErrorAlert(message: "Cloud models are listed but not yet connected. Please use a local model for now.")
+            beginCloudRecording(model: currentModel)
             return
         }
 
-        // Start recording
+        // Start recording with local model
         beginRecording()
+    }
+
+    // MARK: - Cloud Recording (Groq/Deepgram)
+
+    private func beginCloudRecording(model: AIModel) {
+        // Start performance monitoring
+        PerformanceMonitor.shared.startRecording()
+
+        // Play start sound (if enabled)
+        SoundManager.shared.playStartSound()
+
+        // Update state
+        appState.recordingState = .recording
+
+        // Mute system output while recording to avoid capturing app audio (if enabled)
+        didMuteSystemOutput = false
+        if AppSettings.shared.muteBackgroundAudio {
+            SystemAudioManager.shared.muteSystemOutput()
+            didMuteSystemOutput = true
+        }
+
+        // Show recording indicator
+        DispatchQueue.main.async {
+            RecordingIndicatorWindow.shared.show()
+        }
+
+        // Start audio recording - we'll use the recorded audio for cloud transcription
+        audioManager.startRecording()
+        print("✓ Cloud recording started for: \(model.name)")
+
+        // Update status bar icon
+        if let appDelegate = NSApp.delegate as? AppDelegate,
+           let statusBar = appDelegate.statusBarController {
+            statusBar.updateIcon(for: .recording)
+        }
+    }
+
+    private func stopCloudRecording() {
+        print("🛑 Stop cloud recording")
+
+        // Play stop sound (if enabled)
+        SoundManager.shared.playStopSound()
+
+        // Update state
+        appState.recordingState = .processing
+
+        // Hide recording indicator
+        DispatchQueue.main.async {
+            RecordingIndicatorWindow.shared.hide()
+        }
+
+        // Stop audio recording and get audio data for cloud transcription
+        let engineType: AudioManager.AudioEngine = .whisper // Use Whisper-compatible format (Float32)
+        guard let audioData = audioManager.stopRecording(forEngine: engineType) else {
+            handleTranscriptionError("Failed to capture audio data")
+            return
+        }
+        
+        print("📊 Captured \(audioData.count) bytes for cloud transcription")
+
+        let recordingDuration = audioManager.lastRecordingDuration
+
+        // Restore system output
+        if didMuteSystemOutput {
+            SystemAudioManager.shared.restoreSystemOutput()
+            didMuteSystemOutput = false
+        }
+
+        // VAD: Check if there's significant speech
+        if VADManager.shared.config.enabled {
+            let hasSignificantSpeech = audioManager.hasSignificantSpeech()
+            if !hasSignificantSpeech {
+                print("⚠️ No significant speech detected - skipping cloud transcription")
+                notificationManager.showNotification(
+                    title: "No Speech Detected",
+                    body: "The recording didn't contain any clear speech. Please try again.",
+                    sound: false
+                )
+                appState.recordingState = .idle
+                if let appDelegate = NSApp.delegate as? AppDelegate,
+                   let statusBar = appDelegate.statusBarController {
+                    statusBar.updateIcon(for: .idle)
+                }
+                return
+            }
+        }
+
+        // Determine which cloud service to use based on model
+        guard let currentModel = modelManager.currentModel else {
+            handleTranscriptionError("No model selected")
+            return
+        }
+
+        Task {
+            do {
+                let transcribedText: String
+
+                // Route to appropriate cloud service
+                if currentModel.id.contains("groq") || currentModel.name.lowercased().contains("groq") {
+                    // Use Groq
+                    let apiKey = settings.groqAPIKey
+                    guard !apiKey.isEmpty else {
+                        await MainActor.run {
+                            handleTranscriptionError("Groq API key not configured. Please add your API key in Settings > API Keys.")
+                        }
+                        return
+                    }
+
+                    print("☁️ Transcribing with Groq...")
+                    PerformanceMonitor.shared.startTranscription(engine: "Groq", model: "whisper-large-v3-turbo")
+                    transcribedText = try await GroqTranscriptionService.shared.transcribe(
+                        audioData: audioData,
+                        language: settings.preferredLanguage.components(separatedBy: "-").first,
+                        apiKey: apiKey
+                    )
+
+                } else if currentModel.id.contains("deepgram") || currentModel.name.lowercased().contains("deepgram") {
+                    // Use Deepgram
+                    let apiKey = settings.deepgramAPIKey
+                    guard !apiKey.isEmpty else {
+                        await MainActor.run {
+                            handleTranscriptionError("Deepgram API key not configured. Please add your API key in Settings > API Keys.")
+                        }
+                        return
+                    }
+
+                    print("☁️ Transcribing with Deepgram...")
+                    PerformanceMonitor.shared.startTranscription(engine: "Deepgram", model: "nova-2")
+                    transcribedText = try await DeepgramTranscriptionService.shared.transcribeToText(
+                        audioData: audioData,
+                        model: .nova,
+                        language: settings.preferredLanguage.components(separatedBy: "-").first,
+                        apiKey: apiKey
+                    )
+
+                } else {
+                    await MainActor.run {
+                        handleTranscriptionError("Unknown cloud model: \(currentModel.name)")
+                    }
+                    return
+                }
+
+                await MainActor.run {
+                    PerformanceMonitor.shared.endTranscription(wordCount: transcribedText.split(separator: " ").count)
+
+                    print("✅ Cloud transcription successful: \(transcribedText)")
+                    self.errorLogger.logInfo("Cloud transcription successful", category: "Transcription", context: [
+                        "wordCount": "\(transcribedText.split(separator: " ").count)",
+                        "recordingDuration": "\(String(format: "%.2f", recordingDuration))s",
+                        "model": currentModel.name
+                    ])
+
+                    // Process and insert text
+                    self.processAndInsertText(transcribedText, recordingDuration: recordingDuration)
+                }
+
+            } catch {
+                await MainActor.run {
+                    print("❌ Cloud transcription failed: \(error)")
+                    self.errorLogger.logError(error, category: "Transcription", context: [
+                        "model": currentModel.name
+                    ])
+                    self.handleTranscriptionError(error.localizedDescription)
+                }
+            }
+        }
+
+        // Update status bar
+        if let appDelegate = NSApp.delegate as? AppDelegate,
+           let statusBar = appDelegate.statusBarController {
+            statusBar.updateIcon(for: .processing)
+        }
     }
 
     private func beginRecording() {
@@ -435,7 +607,12 @@ class AppCoordinator: ObservableObject {
 
     func toggleDictation() {
         if appState.recordingState == .recording {
-            stopDictation()
+            // Check if using cloud model to call appropriate stop method
+            if let currentModel = modelManager.currentModel, currentModel.category == .cloud {
+                stopCloudRecording()
+            } else {
+                stopDictation()
+            }
         } else if appState.recordingState == .idle {
             startDictation()
         } else if case .loadingModel(let modelName) = appState.recordingState {

@@ -186,15 +186,99 @@ class MultiHotkeyManager: ObservableObject {
     }
 
     private func pasteLastTranscript(enhanced: Bool) {
-        // TODO: Implement last transcript storage
         print("📋 Paste last transcript (enhanced: \(enhanced))")
 
-        // For now, show notification
-        NotificationManager.shared.showNotification(
-            title: "Paste Last Transcript",
-            body: "This feature will paste your last transcription",
-            sound: false
-        )
+        // Get last transcript from history
+        guard let lastTranscript = TranscriptionHistoryManager.shared.transcriptions.first else {
+            NotificationManager.shared.showNotification(
+                title: "No Transcript Available",
+                body: "Record something first to use this feature.",
+                sound: false
+            )
+            return
+        }
+
+        let textToInsert = lastTranscript.text
+
+        if enhanced {
+            // Apply AI enhancement if enabled
+            Task {
+                do {
+                    let settings = AppSettings.shared
+                    guard settings.aiEnhancementEnabled else {
+                        // No enhancement, just paste as-is
+                        await MainActor.run {
+                            insertText(textToInsert)
+                        }
+                        return
+                    }
+
+                    guard let model = AIEnhancementEngine.EnhancementModel(rawValue: settings.selectedEnhancementModel) else {
+                        await MainActor.run {
+                            insertText(textToInsert)
+                        }
+                        return
+                    }
+
+                    let apiKey: String
+                    switch model.provider {
+                    case .openai:
+                        apiKey = settings.openaiAPIKey
+                    case .anthropic:
+                        apiKey = settings.claudeAPIKey
+                    }
+
+                    guard !apiKey.isEmpty else {
+                        await MainActor.run {
+                            insertText(textToInsert)
+                        }
+                        return
+                    }
+
+                    let enhanced = try await AIEnhancementEngine.shared.enhance(
+                        textToInsert,
+                        using: model,
+                        apiKey: apiKey
+                    )
+
+                    await MainActor.run {
+                        insertText(enhanced)
+                    }
+                } catch {
+                    await MainActor.run {
+                        // Fall back to original text
+                        insertText(textToInsert)
+                    }
+                }
+            }
+        } else {
+            insertText(textToInsert)
+        }
+    }
+
+    private func insertText(_ text: String) {
+        TextInsertionManager.shared.insertText(text) { result in
+            switch result {
+            case .success:
+                NotificationManager.shared.showNotification(
+                    title: "Transcript Pasted",
+                    body: "Inserted \(text.split(separator: " ").count) words",
+                    sound: false
+                )
+            case .failure(let error):
+                print("❌ Failed to insert text: \(error)")
+                // Fallback: copy to clipboard
+                let pasteboard = NSPasteboard.general
+                pasteboard.clearContents()
+                pasteboard.setString(text, forType: .string)
+
+                NotificationManager.shared.showNotification(
+                    title: "Copied to Clipboard",
+                    body: "Text was copied (couldn't insert directly)",
+                    sound: false
+                )
+            }
+        }
     }
 
     private func showMainWindow() {

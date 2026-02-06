@@ -14,6 +14,7 @@ struct PowerMode: Identifiable, Codable, Equatable {
     var name: String
     var emoji: String
     var isEnabled: Bool
+    var priority: Int                        // Higher priority = checked first (0 = lowest)
 
     // Trigger conditions (at least one must be specified)
     var appBundleIdentifiers: [String]      // e.g., ["com.tinyspeck.slackmacgap"]
@@ -43,6 +44,7 @@ struct PowerMode: Identifiable, Codable, Equatable {
          name: String,
          emoji: String,
          isEnabled: Bool = true,
+         priority: Int = 0,
          appBundleIdentifiers: [String] = [],
          websitePatterns: [String] = [],
          useWhisper: Bool = true,
@@ -59,6 +61,7 @@ struct PowerMode: Identifiable, Codable, Equatable {
         self.name = name
         self.emoji = emoji
         self.isEnabled = isEnabled
+        self.priority = priority
         self.appBundleIdentifiers = appBundleIdentifiers
         self.websitePatterns = websitePatterns
         self.useWhisper = useWhisper
@@ -125,10 +128,11 @@ struct PowerMode: Identifiable, Codable, Equatable {
 
 extension PowerMode {
     static let defaultModes: [PowerMode] = [
-        // Slack - Fast, auto-send
+        // Slack - Fast, auto-send (high priority for work)
         PowerMode(
             name: "Slack Messages",
             emoji: "💬",
+            priority: 80,
             appBundleIdentifiers: ["com.tinyspeck.slackmacgap"],
             websitePatterns: ["*.slack.com"],
             cloudModelId: "groq-whisper-large-v3-turbo",
@@ -138,10 +142,11 @@ extension PowerMode {
             autoSendEnabled: true
         ),
 
-        // Code/Technical - Precise, no auto-send
+        // Code/Technical - Precise, no auto-send (high priority)
         PowerMode(
             name: "Code & Technical",
             emoji: "💻",
+            priority: 90,
             appBundleIdentifiers: [
                 "com.microsoft.VSCode",
                 "com.apple.dt.Xcode",
@@ -156,10 +161,11 @@ extension PowerMode {
             autoSendEnabled: false
         ),
 
-        // Email - Professional tone
+        // Email - Professional tone (medium-high priority)
         PowerMode(
             name: "Email & Docs",
             emoji: "📧",
+            priority: 70,
             appBundleIdentifiers: [
                 "com.apple.mail",
                 "com.microsoft.Outlook",
@@ -174,10 +180,11 @@ extension PowerMode {
             autoSendEnabled: false
         ),
 
-        // Quick Notes - Fast, minimal processing
+        // Quick Notes - Fast, minimal processing (lower priority)
         PowerMode(
             name: "Quick Notes",
             emoji: "📝",
+            priority: 40,
             appBundleIdentifiers: ["com.apple.Notes", "md.obsidian", "com.bear-writer.Bear"],
             useWhisper: true,
             whisperModelSize: "tiny",
@@ -185,10 +192,11 @@ extension PowerMode {
             autoSendEnabled: false
         ),
 
-        // Meetings - Long-form, accurate
+        // Meetings - Long-form, accurate (high priority)
         PowerMode(
             name: "Meetings & Calls",
             emoji: "🎙️",
+            priority: 85,
             appBundleIdentifiers: [
                 "us.zoom.xos",
                 "com.microsoft.teams2",
@@ -201,10 +209,11 @@ extension PowerMode {
             autoSendEnabled: false
         ),
 
-        // Social Media - Casual, emoji-friendly
+        // Social Media - Casual, emoji-friendly (medium priority)
         PowerMode(
             name: "Social Media",
             emoji: "🌟",
+            priority: 60,
             appBundleIdentifiers: ["com.electron.whatsapp", "com.telegram.desktop"],
             websitePatterns: ["*.twitter.com", "*.x.com", "*.linkedin.com", "*.facebook.com"],
             cloudModelId: "groq-whisper-large-v3-turbo",

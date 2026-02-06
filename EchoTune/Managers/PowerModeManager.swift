@@ -100,9 +100,31 @@ class PowerModeManager: ObservableObject {
             mode.matches(appIdentifier: currentAppIdentifier, websiteURL: currentWebsiteURL)
         }
 
-        // Return first match (highest priority)
-        // TODO: Add priority system to Power Modes
-        return matches.first
+        // Sort by priority (highest first), then by use count as tiebreaker
+        let sortedMatches = matches.sorted { lhs, rhs in
+            if lhs.priority != rhs.priority {
+                return lhs.priority > rhs.priority
+            }
+            return lhs.useCount > rhs.useCount
+        }
+
+        return sortedMatches.first
+    }
+
+    /// Update priority for a power mode
+    func updatePriority(for modeId: UUID, priority: Int) {
+        if let index = powerModes.firstIndex(where: { $0.id == modeId }) {
+            powerModes[index].priority = max(0, min(100, priority)) // Clamp 0-100
+            powerModes[index].dateModified = Date()
+            savePowerModes()
+            print("✏️ Updated priority for \(powerModes[index].name) to \(priority)")
+        }
+    }
+
+    /// Reorder power modes by priority
+    func reorderByPriority() {
+        powerModes.sort { $0.priority > $1.priority }
+        savePowerModes()
     }
 
     private func applyPowerMode(_ mode: PowerMode) {
@@ -161,8 +183,16 @@ class PowerModeManager: ObservableObject {
             print("      Language: \(language)")
         }
 
-        // TODO: Apply model selection (Whisper vs Cloud)
-        // This requires integration with ModelManager
+        // Apply model selection (Whisper vs Cloud)
+        if let cloudModelId = mode.cloudModelId, !cloudModelId.isEmpty {
+            // Use cloud model
+            settings.defaultTranscriptionModel = cloudModelId
+            print("      Model: Cloud (\(cloudModelId))")
+        } else if mode.useWhisper, let whisperSize = mode.whisperModelSize {
+            // Use local Whisper model
+            settings.defaultTranscriptionModel = "whisper-\(whisperSize)"
+            print("      Model: Whisper (\(whisperSize))")
+        }
     }
 
     // MARK: - Helper Methods

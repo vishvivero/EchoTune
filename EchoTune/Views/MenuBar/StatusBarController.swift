@@ -312,7 +312,14 @@ class StatusBarController {
         // Open settings to History tab
         if let appDelegate = NSApp.delegate as? AppDelegate {
             appDelegate.showSettings()
-            // TODO: Switch to history tab if we add tab navigation
+            // Post notification to switch to history tab
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("SwitchToSettingsTab"),
+                    object: nil,
+                    userInfo: ["tab": "history"]
+                )
+            }
         }
     }
 
@@ -320,7 +327,14 @@ class StatusBarController {
         // Show detailed statistics in settings
         if let appDelegate = NSApp.delegate as? AppDelegate {
             appDelegate.showSettings()
-            // TODO: Switch to statistics tab
+            // Post notification to switch to statistics tab
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("SwitchToSettingsTab"),
+                    object: nil,
+                    userInfo: ["tab": "statistics"]
+                )
+            }
         }
     }
 
@@ -331,13 +345,7 @@ class StatusBarController {
     }
 
     @objc private func checkForUpdates() {
-        // TODO: Implement auto-update check
-        let alert = NSAlert()
-        alert.messageText = "Check for Updates"
-        alert.informativeText = "You are running the latest version of EchoTune."
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
+        UpdateManager.shared.checkForUpdates()
     }
 
     @objc private func sendFeedback() {

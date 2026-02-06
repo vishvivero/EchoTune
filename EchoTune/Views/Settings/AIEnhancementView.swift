@@ -95,10 +95,18 @@ struct AIEnhancementView: View {
 
                             Spacer()
 
-                            NavigationLink(destination: EmptyView()) {
-                                Text("Add API Keys")
+                            Button(action: {
+                                // Navigate to API Keys settings
+                                NotificationCenter.default.post(
+                                    name: NSNotification.Name("SwitchToSettingsTab"),
+                                    object: nil,
+                                    userInfo: ["tab": "apikeys"]
+                                )
+                            }) {
+                                Text("Add API Keys →")
                                     .font(.caption)
                             }
+                            .buttonStyle(.link)
                         }
                     }
                 } header: {
