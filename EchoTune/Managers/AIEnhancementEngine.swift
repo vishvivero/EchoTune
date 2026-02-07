@@ -9,8 +9,47 @@
 import Foundation
 import Combine
 
+// MARK: - Trigger Word Rule
+
+/// A trigger word rule that activates a specific AI prompt when detected in transcription
+struct TriggerWordRule: Identifiable, Codable, Equatable {
+    let id: UUID
+    var triggerPhrase: String           // e.g., "fix this", "translate", "summarize"
+    var enhancementPrompt: String       // The prompt to use when triggered
+    var isEnabled: Bool
+    var removeTriggerFromOutput: Bool   // Strip the trigger word from final text
+    var activateAI: Bool               // Force-enable AI even if globally off
+
+    init(id: UUID = UUID(),
+         triggerPhrase: String,
+         enhancementPrompt: String,
+         isEnabled: Bool = true,
+         removeTriggerFromOutput: Bool = true,
+         activateAI: Bool = true) {
+        self.id = id
+        self.triggerPhrase = triggerPhrase
+        self.enhancementPrompt = enhancementPrompt
+        self.isEnabled = isEnabled
+        self.removeTriggerFromOutput = removeTriggerFromOutput
+        self.activateAI = activateAI
+    }
+}
+
+// MARK: - Trigger Word Result
+
+struct TriggerWordResult {
+    let matchedRule: TriggerWordRule?
+    let cleanedTranscript: String       // Transcript with trigger word removed (if applicable)
+    let overridePrompt: String?         // The prompt to use instead of default
+    let shouldForceAI: Bool             // Whether to force AI enhancement on
+}
+
 class AIEnhancementEngine: ObservableObject {
     static let shared = AIEnhancementEngine()
+
+    // MARK: - Trigger Words
+    @Published var triggerWordRules: [TriggerWordRule] = []
+    private let triggerWordsStorageKey = "triggerWordRules"
 
     enum EnhancementModel: String, CaseIterable, Identifiable {
         case gpt4oMini = "gpt-4o-mini"
@@ -68,7 +107,99 @@ class AIEnhancementEngine: ObservableObject {
     @Published var lastError: EnhancementError?
 
     private init() {
-        print("✅ AIEnhancementEngine initialized")
+        loadTriggerWordRules()
+        print("✅ AIEnhancementEngine initialized with \(triggerWordRules.count) trigger word rules")
+    }
+
+    // MARK: - Trigger Word Detection
+
+    /// Scans a transcript for trigger words and returns the result
+    func detectTriggerWords(in transcript: String) -> TriggerWordResult {
+        let lowercased = transcript.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+
+        for rule in triggerWordRules where rule.isEnabled {
+            let trigger = rule.triggerPhrase.lowercased()
+
+            // Check if transcript starts with or contains the trigger phrase
+            let startsWithTrigger = lowercased.hasPrefix(trigger)
+            let endsWithTrigger = lowercased.hasSuffix(trigger)
+            let containsTrigger = lowercased.contains(trigger)
+
+            if startsWithTrigger || endsWithTrigger || containsTrigger {
+                print("🎯 Trigger word detected: \"\(rule.triggerPhrase)\"")
+
+                var cleanedTranscript = transcript
+
+                if rule.removeTriggerFromOutput {
+                    // Remove the trigger phrase (case-insensitive)
+                    if let range = cleanedTranscript.range(of: rule.triggerPhrase, options: .caseInsensitive) {
+                        cleanedTranscript.removeSubrange(range)
+                    }
+                    cleanedTranscript = cleanedTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+                    // Clean up leading/trailing punctuation or separators
+                    cleanedTranscript = cleanedTranscript
+                        .trimmingCharacters(in: CharacterSet(charactersIn: ".,;:!?-– "))
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+
+                return TriggerWordResult(
+                    matchedRule: rule,
+                    cleanedTranscript: cleanedTranscript,
+                    overridePrompt: rule.enhancementPrompt,
+                    shouldForceAI: rule.activateAI
+                )
+            }
+        }
+
+        // No trigger word found
+        return TriggerWordResult(
+            matchedRule: nil,
+            cleanedTranscript: transcript,
+            overridePrompt: nil,
+            shouldForceAI: false
+        )
+    }
+
+    // MARK: - Trigger Word CRUD
+
+    func addTriggerWordRule(_ rule: TriggerWordRule) {
+        triggerWordRules.append(rule)
+        saveTriggerWordRules()
+        print("➕ Added trigger word: \(rule.triggerPhrase)")
+    }
+
+    func updateTriggerWordRule(_ rule: TriggerWordRule) {
+        if let index = triggerWordRules.firstIndex(where: { $0.id == rule.id }) {
+            triggerWordRules[index] = rule
+            saveTriggerWordRules()
+        }
+    }
+
+    func deleteTriggerWordRule(_ rule: TriggerWordRule) {
+        triggerWordRules.removeAll { $0.id == rule.id }
+        saveTriggerWordRules()
+        print("🗑️ Deleted trigger word: \(rule.triggerPhrase)")
+    }
+
+    func resetTriggerWordsToDefaults() {
+        triggerWordRules = TriggerWordRule.defaultRules
+        saveTriggerWordRules()
+    }
+
+    private func saveTriggerWordRules() {
+        if let encoded = try? JSONEncoder().encode(triggerWordRules) {
+            UserDefaults.standard.set(encoded, forKey: triggerWordsStorageKey)
+        }
+    }
+
+    private func loadTriggerWordRules() {
+        if let data = UserDefaults.standard.data(forKey: triggerWordsStorageKey),
+           let decoded = try? JSONDecoder().decode([TriggerWordRule].self, from: data) {
+            triggerWordRules = decoded
+        } else {
+            triggerWordRules = TriggerWordRule.defaultRules
+            saveTriggerWordRules()
+        }
     }
 
     // MARK: - Main Enhancement Method
@@ -326,4 +457,41 @@ class AIEnhancementEngine: ObservableObject {
 
         return prompt
     }
+}
+
+// MARK: - Default Trigger Word Rules
+
+extension TriggerWordRule {
+    static let defaultRules: [TriggerWordRule] = [
+        TriggerWordRule(
+            triggerPhrase: "fix this",
+            enhancementPrompt: "Fix the grammar, spelling, and punctuation of the following text. Make it clear and professional. Output ONLY the corrected text.",
+            removeTriggerFromOutput: true,
+            activateAI: true
+        ),
+        TriggerWordRule(
+            triggerPhrase: "summarize",
+            enhancementPrompt: "Summarize the following text into a concise summary with key points. Use bullet points if there are multiple items. Output ONLY the summary.",
+            removeTriggerFromOutput: true,
+            activateAI: true
+        ),
+        TriggerWordRule(
+            triggerPhrase: "translate to spanish",
+            enhancementPrompt: "Translate the following text to Spanish. Output ONLY the Spanish translation, nothing else.",
+            removeTriggerFromOutput: true,
+            activateAI: true
+        ),
+        TriggerWordRule(
+            triggerPhrase: "make it formal",
+            enhancementPrompt: "Rewrite the following text in a formal, professional tone suitable for business communication. Output ONLY the rewritten text.",
+            removeTriggerFromOutput: true,
+            activateAI: true
+        ),
+        TriggerWordRule(
+            triggerPhrase: "make it casual",
+            enhancementPrompt: "Rewrite the following text in a casual, friendly tone suitable for messaging friends or colleagues. Output ONLY the rewritten text.",
+            removeTriggerFromOutput: true,
+            activateAI: true
+        ),
+    ]
 }

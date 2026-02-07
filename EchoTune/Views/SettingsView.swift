@@ -108,6 +108,25 @@ struct ConsolidatedSettingsView: View {
             Divider()
                 .padding(.vertical, 8)
 
+            // Trigger Words Section
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Image(systemName: "text.magnifyingglass")
+                        .font(.title2)
+                        .foregroundColor(.green)
+                    Text("Trigger Words")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                }
+
+                Divider()
+
+                TriggerWordsView()
+            }
+
+            Divider()
+                .padding(.vertical, 8)
+
             // Advanced Settings Section
             VStack(alignment: .leading, spacing: 12) {
                 HStack {

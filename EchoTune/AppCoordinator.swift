@@ -9,6 +9,7 @@ import Foundation
 import Combine
 import AppKit
 import Speech
+import ApplicationServices
 
 class AppCoordinator: ObservableObject {
     @Published var showAbout = false
@@ -21,16 +22,17 @@ class AppCoordinator: ObservableObject {
     var settings = AppSettings.shared
 
     // Managers (Phase 2, 3, 4 & 5: All Implemented!)
-    let audioManager = AudioManager.shared
-    let permissionsManager = PermissionsManager.shared
-    let shortcutManager = ShortcutManager.shared
-    let multiHotkeyManager = MultiHotkeyManager.shared // Phase 6C
-    let launchAtLoginManager = LaunchAtLoginManager.shared
-    let transcriptionEngine = TranscriptionEngine.shared
-    let whisperEngine = WhisperEngine.shared
-    let modelManager = ModelManager.shared
-    let textInsertionManager = TextInsertionManager.shared
-    let licenseManager = LicenseManager.shared
+    // Made lazy to prevent triggering permission dialogs before onboarding completes
+    lazy var audioManager = AudioManager.shared
+    lazy var permissionsManager = PermissionsManager.shared
+    lazy var shortcutManager = ShortcutManager.shared
+    lazy var multiHotkeyManager = MultiHotkeyManager.shared // Phase 6C
+    lazy var launchAtLoginManager = LaunchAtLoginManager.shared
+    lazy var transcriptionEngine = TranscriptionEngine.shared
+    lazy var whisperEngine = WhisperEngine.shared
+    let modelManager = ModelManager.shared  // Safe — no permission triggers
+    lazy var textInsertionManager = TextInsertionManager.shared
+    let licenseManager = LicenseManager.shared  // Safe — no permission triggers
 
     // Phase 5: Polish & Monitoring
     let notificationManager = NotificationManager.shared
@@ -55,14 +57,26 @@ class AppCoordinator: ObservableObject {
     private init() {
         print("✓ AppCoordinator initialized")
         setupBindings()
-        checkPermissions()
+
+        // Only initialize managers if onboarding already completed
+        // Otherwise, defer to avoid triggering system dialogs before user sees onboarding
+        let hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
+        if hasCompletedOnboarding {
+            initializeAfterOnboarding()
+        } else {
+            NotificationCenter.default.addObserver(
+                forName: NSNotification.Name("OnboardingCompleted"),
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                print("📢 Onboarding completed - initializing managers and requesting permissions")
+                self?.initializeAfterOnboarding()
+            }
+        }
 
         // Phase 5: Setup error logging and notifications
         errorLogger.setupCrashHandler()
         notificationManager.setupNotificationCategories()
-
-        // Setup keyboard shortcut callback
-        setupKeyboardShortcut()
 
         // Listen for accessibility permission changes
         NotificationCenter.default.addObserver(
@@ -102,6 +116,35 @@ class AppCoordinator: ObservableObject {
 
         print("✅ Keyboard shortcut callback configured")
         print("   Current shortcut: \(shortcutManager.getCurrentShortcutString())")
+    }
+
+    /// Called after onboarding completes (or on launch if already done).
+    /// Requests permissions and sets up the keyboard shortcut.
+    private func initializeAfterOnboarding() {
+        // 1. Request accessibility permission (triggers macOS prompt)
+        let options: NSDictionary = [
+            kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true
+        ]
+        let trusted = AXIsProcessTrustedWithOptions(options as CFDictionary)
+        print("🔐 Accessibility permission: \(trusted ? "granted" : "requesting...")")
+
+        // 2. Check all permissions
+        checkPermissions()
+
+        // 3. Setup keyboard shortcut
+        setupKeyboardShortcut()
+
+        // 4. If accessibility was just requested, poll for it
+        if !trusted {
+            Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] timer in
+                if AXIsProcessTrusted() {
+                    print("✅ Accessibility permission granted — registering shortcut")
+                    timer.invalidate()
+                    self?.shortcutManager.unregisterGlobalShortcut()
+                    self?.shortcutManager.registerGlobalShortcut()
+                }
+            }
+        }
     }
 
     // Call this method when accessibility permission is granted
@@ -760,16 +803,25 @@ class AppCoordinator: ObservableObject {
         // Apply text processing
         let processedText = self.processTranscription(transcribedText)
 
-        // Phase 6A: AI Enhancement (if enabled)
-        if settings.aiEnhancementEnabled {
-            print("🎨 AI Enhancement enabled, enhancing transcription...")
+        // Phase 6D: Trigger Word Detection — scan before AI enhancement
+        let triggerResult = AIEnhancementEngine.shared.detectTriggerWords(in: processedText)
+        let textForEnhancement = triggerResult.cleanedTranscript
+        let shouldEnhance = settings.aiEnhancementEnabled || triggerResult.shouldForceAI
+        let overridePrompt = triggerResult.overridePrompt
+
+        if let matched = triggerResult.matchedRule {
+            print("🎯 Trigger word matched: \"\(matched.triggerPhrase)\" → using custom prompt")
+        }
+
+        // Phase 6A: AI Enhancement (if enabled or trigger word forces it)
+        if shouldEnhance {
+            print("🎨 AI Enhancement active\(triggerResult.shouldForceAI ? " (triggered by keyword)" : ""), enhancing transcription...")
 
             // Get appropriate API key based on selected model
             let modelString = settings.selectedEnhancementModel
             guard let model = AIEnhancementEngine.EnhancementModel(rawValue: modelString) else {
                 print("⚠️ Invalid enhancement model: \(modelString)")
-                // Continue without enhancement
-                insertTextWithAutoSend(processedText, recordingDuration: recordingDuration)
+                insertTextWithAutoSend(textForEnhancement, recordingDuration: recordingDuration)
                 return
             }
 
@@ -783,28 +835,29 @@ class AppCoordinator: ObservableObject {
 
             guard !apiKey.isEmpty else {
                 print("⚠️ No API key configured for AI enhancement")
-                // Show notification
                 notificationManager.showNotification(
                     title: "AI Enhancement Disabled",
                     body: "Please add your API key in Settings > Advanced > AI Enhancement",
                     sound: false
                 )
-                // Continue without enhancement
-                insertTextWithAutoSend(processedText, recordingDuration: recordingDuration)
+                insertTextWithAutoSend(textForEnhancement, recordingDuration: recordingDuration)
                 return
             }
 
             // Get dictionary context if available
             let dictionaryContext = DictionaryManager.shared.correctSpellings.map { $0.word }.joined(separator: ", ")
 
+            // Determine which prompt to use: trigger word prompt overrides custom/default
+            let promptToUse = overridePrompt ?? (settings.customEnhancementPrompt.isEmpty ? nil : settings.customEnhancementPrompt)
+
             // Enhance asynchronously
             Task {
                 do {
                     let enhanced = try await AIEnhancementEngine.shared.enhance(
-                        processedText,
+                        textForEnhancement,
                         using: model,
                         apiKey: apiKey,
-                        customPrompt: settings.customEnhancementPrompt.isEmpty ? nil : settings.customEnhancementPrompt,
+                        customPrompt: promptToUse,
                         dictionaryContext: dictionaryContext.isEmpty ? nil : dictionaryContext,
                         screenContext: self.currentScreenContext
                     )
@@ -816,13 +869,12 @@ class AppCoordinator: ObservableObject {
                 } catch {
                     await MainActor.run {
                         print("❌ AI Enhancement failed: \(error.localizedDescription)")
-                        // Fall back to original text
                         self.notificationManager.showNotification(
                             title: "Enhancement Failed",
                             body: "Using original transcription. Error: \(error.localizedDescription)",
                             sound: false
                         )
-                        self.insertTextWithAutoSend(processedText, recordingDuration: recordingDuration)
+                        self.insertTextWithAutoSend(textForEnhancement, recordingDuration: recordingDuration)
                     }
                 }
             }
@@ -830,7 +882,7 @@ class AppCoordinator: ObservableObject {
         }
 
         // No AI enhancement, insert directly
-        insertTextWithAutoSend(processedText, recordingDuration: recordingDuration)
+        insertTextWithAutoSend(textForEnhancement, recordingDuration: recordingDuration)
     }
 
     // Phase 6A: Insert text with optional auto-send
