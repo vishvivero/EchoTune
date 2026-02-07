@@ -2,8 +2,9 @@
 //  PowerModeManager.swift
 //  EchoTune
 //
-//  Phase 6B: Power Mode Manager
+//  Phase 6B+: Power Mode Manager with Auto App-Switching
 //  Detects context and automatically applies appropriate Power Mode
+//  when the user switches applications
 //
 
 import Foundation
@@ -16,17 +17,74 @@ class PowerModeManager: ObservableObject {
     @Published var powerModes: [PowerMode] = []
     @Published var currentPowerMode: PowerMode?
     @Published var isEnabled: Bool = true
+    @Published var isAutoSwitchEnabled: Bool = true  // NEW: auto-switch on app change
 
     private let storageKey = "powerModes"
     private let enabledKey = "powerModesEnabled"
+    private let autoSwitchKey = "powerModesAutoSwitch"
 
     private var currentAppIdentifier: String?
     private var currentWebsiteURL: String?
 
+    // NSWorkspace observer for automatic app-switching
+    private var appSwitchObserver: NSObjectProtocol?
+    private var cancellables = Set<AnyCancellable>()
+
+    // Debounce: avoid rapid fire when clicking between apps
+    private var appSwitchWorkItem: DispatchWorkItem?
+
     private init() {
         loadPowerModes()
         loadEnabledState()
-        print("✅ PowerModeManager initialized with \(powerModes.count) modes")
+        setupAppSwitchMonitoring()
+        print("✅ PowerModeManager initialized with \(powerModes.count) modes, auto-switch: \(isAutoSwitchEnabled)")
+    }
+
+    deinit {
+        stopAppSwitchMonitoring()
+    }
+
+    // MARK: - App Switch Monitoring (NEW)
+
+    /// Sets up NSWorkspace observation to detect when the user switches apps
+    private func setupAppSwitchMonitoring() {
+        // Observe frontmost application changes
+        appSwitchObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self = self else { return }
+            guard self.isEnabled && self.isAutoSwitchEnabled else { return }
+
+            // Extract the newly activated app
+            guard let userInfo = notification.userInfo,
+                  let app = userInfo[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                  let bundleId = app.bundleIdentifier else {
+                return
+            }
+
+            // Don't re-trigger if we're still in the same app
+            guard bundleId != self.currentAppIdentifier else { return }
+
+            print("🔀 App switched to: \(app.localizedName ?? bundleId)")
+
+            // Debounce: cancel previous work item and schedule new one
+            self.appSwitchWorkItem?.cancel()
+            let workItem = DispatchWorkItem { [weak self] in
+                self?.detectAndApplyPowerMode()
+            }
+            self.appSwitchWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: workItem)
+        }
+    }
+
+    private func stopAppSwitchMonitoring() {
+        if let observer = appSwitchObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+            appSwitchObserver = nil
+        }
+        appSwitchWorkItem?.cancel()
     }
 
     // MARK: - Power Mode Management
@@ -89,18 +147,22 @@ class PowerModeManager: ObservableObject {
         if let mode = matchingMode {
             applyPowerMode(mode)
         } else {
-            print("   No matching Power Mode found, using global settings")
-            currentPowerMode = nil
+            // No match found — revert to global settings if we had a mode active
+            if currentPowerMode != nil {
+                print("   No matching Power Mode, reverting to global settings")
+                currentPowerMode = nil
+                revertToGlobalSettings()
+            } else {
+                print("   No matching Power Mode found, using global settings")
+            }
         }
     }
 
     private func findMatchingPowerMode() -> PowerMode? {
-        // Find all matching modes
         let matches = powerModes.filter { mode in
             mode.matches(appIdentifier: currentAppIdentifier, websiteURL: currentWebsiteURL)
         }
 
-        // Sort by priority (highest first), then by use count as tiebreaker
         let sortedMatches = matches.sorted { lhs, rhs in
             if lhs.priority != rhs.priority {
                 return lhs.priority > rhs.priority
@@ -114,7 +176,7 @@ class PowerModeManager: ObservableObject {
     /// Update priority for a power mode
     func updatePriority(for modeId: UUID, priority: Int) {
         if let index = powerModes.firstIndex(where: { $0.id == modeId }) {
-            powerModes[index].priority = max(0, min(100, priority)) // Clamp 0-100
+            powerModes[index].priority = max(0, min(100, priority))
             powerModes[index].dateModified = Date()
             savePowerModes()
             print("✏️ Updated priority for \(powerModes[index].name) to \(priority)")
@@ -185,14 +247,22 @@ class PowerModeManager: ObservableObject {
 
         // Apply model selection (Whisper vs Cloud)
         if let cloudModelId = mode.cloudModelId, !cloudModelId.isEmpty {
-            // Use cloud model
             settings.defaultTranscriptionModel = cloudModelId
             print("      Model: Cloud (\(cloudModelId))")
         } else if mode.useWhisper, let whisperSize = mode.whisperModelSize {
-            // Use local Whisper model
             settings.defaultTranscriptionModel = "whisper-\(whisperSize)"
             print("      Model: Whisper (\(whisperSize))")
         }
+    }
+
+    /// Reverts settings to global defaults when no Power Mode matches
+    private func revertToGlobalSettings() {
+        // Post notification so UI can respond
+        NotificationCenter.default.post(
+            name: NSNotification.Name("PowerModeChanged"),
+            object: nil
+        )
+        print("   ⚙️ Reverted to global settings")
     }
 
     // MARK: - Helper Methods
@@ -232,7 +302,6 @@ class PowerModeManager: ObservableObject {
             powerModes = decoded
             print("📂 Loaded \(powerModes.count) Power Modes from storage")
         } else {
-            // First launch - use defaults
             powerModes = PowerMode.defaultModes
             savePowerModes()
             print("📂 Initialized with default Power Modes")
@@ -243,8 +312,15 @@ class PowerModeManager: ObservableObject {
         if UserDefaults.standard.object(forKey: enabledKey) != nil {
             isEnabled = UserDefaults.standard.bool(forKey: enabledKey)
         } else {
-            isEnabled = true // Default: enabled
+            isEnabled = true
             UserDefaults.standard.set(isEnabled, forKey: enabledKey)
+        }
+
+        if UserDefaults.standard.object(forKey: autoSwitchKey) != nil {
+            isAutoSwitchEnabled = UserDefaults.standard.bool(forKey: autoSwitchKey)
+        } else {
+            isAutoSwitchEnabled = true
+            UserDefaults.standard.set(isAutoSwitchEnabled, forKey: autoSwitchKey)
         }
     }
 
@@ -259,6 +335,12 @@ class PowerModeManager: ObservableObject {
             print("❌ Power Modes disabled")
             currentPowerMode = nil
         }
+    }
+
+    func setAutoSwitchEnabled(_ enabled: Bool) {
+        isAutoSwitchEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: autoSwitchKey)
+        print(enabled ? "✅ Auto-switch enabled" : "❌ Auto-switch disabled")
     }
 
     // MARK: - Statistics

@@ -31,15 +31,22 @@ struct PowerModesView: View {
 
             // Master Toggle
             Section {
-                Toggle("Enable Auto-Switching", isOn: Binding(
+                Toggle("Enable Power Modes", isOn: Binding(
                     get: { powerModeManager.isEnabled },
                     set: { powerModeManager.setEnabled($0) }
                 ))
                 .toggleStyle(.switch)
+
+                Toggle("Auto-Switch on App Change", isOn: Binding(
+                    get: { powerModeManager.isAutoSwitchEnabled },
+                    set: { powerModeManager.setAutoSwitchEnabled($0) }
+                ))
+                .toggleStyle(.switch)
+                .disabled(!powerModeManager.isEnabled)
             } header: {
                 Text("Power Modes")
             } footer: {
-                Text("When enabled, EchoTune automatically switches settings based on the active application or website.")
+                Text("When Auto-Switch is enabled, EchoTune automatically detects the active application and applies the matching Power Mode in real time — no need to start a recording first.")
                     .font(.caption)
             }
 
