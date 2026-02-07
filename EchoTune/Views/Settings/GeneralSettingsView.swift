@@ -126,11 +126,31 @@ struct GeneralSettingsView: View {
                         .buttonStyle(.bordered)
                     }
 
-                    Text("The default shortcut is ⌘⇧D. Hold this key to start/stop dictation.")
+                    Text("The default shortcut is the Control key. Press once to start/stop dictation.")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
                 .padding(.top, 8)
+            }
+
+            Section("Recorder UI Style") {
+                Picker("Recording Indicator", selection: $settings.recorderStyle) {
+                    ForEach(RecorderStyle.allCases) { style in
+                        VStack(alignment: .leading) {
+                            Text(style.rawValue)
+                            Text(style.description)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .tag(style)
+                    }
+                }
+                .pickerStyle(.radioGroup)
+
+                Text("Choose how the recording indicator appears while transcribing")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.leading, 20)
             }
 
             Section("Audio Feedback") {

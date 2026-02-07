@@ -324,10 +324,8 @@ class AppCoordinator: ObservableObject {
             didMuteSystemOutput = true
         }
 
-        // Show recording indicator
-        DispatchQueue.main.async {
-            RecordingIndicatorWindow.shared.show()
-        }
+        // Show recording indicator (style-aware)
+        showRecorderUI()
 
         // Start audio recording - we'll use the recorded audio for cloud transcription
         audioManager.startRecording()
@@ -349,10 +347,8 @@ class AppCoordinator: ObservableObject {
         // Update state
         appState.recordingState = .processing
 
-        // Hide recording indicator
-        DispatchQueue.main.async {
-            RecordingIndicatorWindow.shared.hide()
-        }
+        // Hide recording indicator (all styles)
+        hideRecorderUI()
 
         // Stop audio recording and get audio data for cloud transcription
         let engineType: AudioManager.AudioEngine = .whisper // Use Whisper-compatible format (Float32)
@@ -477,6 +473,31 @@ class AppCoordinator: ObservableObject {
         }
     }
 
+    // MARK: - Recorder UI Helpers
+
+    /// Shows the appropriate recorder UI based on user's selected style
+    private func showRecorderUI() {
+        DispatchQueue.main.async {
+            switch AppSettings.shared.recorderStyle {
+            case .slim:
+                RecordingIndicatorWindow.shared.show()
+            case .notch:
+                NotchRecorderWindow.shared.show()
+            case .mini:
+                MiniRecorderWindow.shared.show()
+            }
+        }
+    }
+
+    /// Hides all recorder UIs
+    private func hideRecorderUI() {
+        DispatchQueue.main.async {
+            RecordingIndicatorWindow.shared.hide()
+            NotchRecorderWindow.shared.hide()
+            MiniRecorderWindow.shared.hide()
+        }
+    }
+
     private func beginRecording() {
         // Start performance monitoring
         PerformanceMonitor.shared.startRecording()
@@ -494,10 +515,8 @@ class AppCoordinator: ObservableObject {
             didMuteSystemOutput = true  // Track that we muted
         }
 
-        // Show recording indicator
-        DispatchQueue.main.async {
-            RecordingIndicatorWindow.shared.show()
-        }
+        // Show recording indicator (style-aware)
+        showRecorderUI()
 
         // Start audio recording
         audioManager.startRecording()
@@ -552,10 +571,8 @@ class AppCoordinator: ObservableObject {
         // Update state
         appState.recordingState = .processing
 
-        // Hide recording indicator
-        DispatchQueue.main.async {
-            RecordingIndicatorWindow.shared.hide()
-        }
+        // Hide recording indicator (all styles)
+        hideRecorderUI()
 
         // Clear the audio buffer callback
         audioManager.onAudioBuffer = nil

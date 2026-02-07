@@ -144,6 +144,11 @@ class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(socialShareDiscountCode, forKey: "socialShareDiscountCode") }
     }
 
+    // Recorder UI Style
+    @Published var recorderStyle: RecorderStyle {
+        didSet { UserDefaults.standard.set(recorderStyle.rawValue, forKey: "recorderStyle") }
+    }
+
     // Phase 6C: Auto-Update Settings
     @Published var automaticUpdatesEnabled: Bool {
         didSet {
@@ -210,7 +215,7 @@ class AppSettings: ObservableObject {
             self.muteBackgroundAudio = true // default ON
         }
 
-        self.activationShortcut = UserDefaults.standard.string(forKey: "activationShortcut") ?? "^D"
+        self.activationShortcut = UserDefaults.standard.string(forKey: "activationShortcut") ?? "⌃"
         
         if let themeValue = UserDefaults.standard.string(forKey: "appTheme"),
            let theme = AppTheme(rawValue: themeValue) {
@@ -253,6 +258,14 @@ class AppSettings: ObservableObject {
         }
         self.socialShareDiscountCode = UserDefaults.standard.string(forKey: "socialShareDiscountCode")
 
+        // Recorder Style
+        if let recorderStyleValue = UserDefaults.standard.string(forKey: "recorderStyle"),
+           let style = RecorderStyle(rawValue: recorderStyleValue) {
+            self.recorderStyle = style
+        } else {
+            self.recorderStyle = .slim // default: slim bottom bar
+        }
+
         // Phase 6C: Initialize Auto-Update Settings
         if UserDefaults.standard.object(forKey: "automaticUpdatesEnabled") != nil {
             self.automaticUpdatesEnabled = UserDefaults.standard.bool(forKey: "automaticUpdatesEnabled")
@@ -288,7 +301,7 @@ class AppSettings: ObservableObject {
         self.showInMenuBar = true  // default ON
         self.playSoundOnStartStop = true
         self.muteBackgroundAudio = true
-        self.activationShortcut = "^D"
+        self.activationShortcut = "⌃"
         self.appTheme = .system
     }
     
@@ -348,4 +361,23 @@ enum AppTheme: String, CaseIterable, Identifiable {
     case dark = "Dark"
     
     var id: String { self.rawValue }
+}
+
+enum RecorderStyle: String, CaseIterable, Identifiable {
+    case slim = "Slim Bar"
+    case notch = "Notch Recorder"
+    case mini = "Mini Panel"
+
+    var id: String { self.rawValue }
+
+    var description: String {
+        switch self {
+        case .slim:
+            return "Compact bar at the bottom of the screen"
+        case .notch:
+            return "Compact pill that hugs the MacBook notch area"
+        case .mini:
+            return "Floating panel with waveform and timer (draggable)"
+        }
+    }
 }
