@@ -52,6 +52,9 @@ class AppCoordinator: ObservableObject {
     // Phase 6B: Store screen context for current transcription
     private var currentScreenContext: ScreenContext?
 
+    // Audio retention: store last recorded audio data for saving alongside transcription
+    private var lastRecordedAudioData: Data?
+
     private var cancellables = Set<AnyCancellable>()
 
     private init() {
@@ -134,7 +137,10 @@ class AppCoordinator: ObservableObject {
         // 3. Setup keyboard shortcut
         setupKeyboardShortcut()
 
-        // 4. If accessibility was just requested, poll for it
+        // 4. Start audio cleanup manager
+        AudioCleanupManager.shared.startAutomaticCleanup()
+
+        // 5. If accessibility was just requested, poll for it
         if !trusted {
             Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] timer in
                 if AXIsProcessTrusted() {
@@ -356,6 +362,9 @@ class AppCoordinator: ObservableObject {
             handleTranscriptionError("Failed to capture audio data")
             return
         }
+
+        // Store audio data for retention
+        self.lastRecordedAudioData = audioData
         
         print("📊 Captured \(audioData.count) bytes for cloud transcription")
 
@@ -579,7 +588,10 @@ class AppCoordinator: ObservableObject {
 
         // Stop audio recording with correct engine type (this calculates the duration)
         let engineType: AudioManager.AudioEngine = useWhisper ? .whisper : .appleSpeech
-        _ = audioManager.stopRecording(forEngine: engineType)
+        let capturedAudioData = audioManager.stopRecording(forEngine: engineType)
+
+        // Store audio data for retention
+        self.lastRecordedAudioData = capturedAudioData
 
         // NOW read the recording duration (after it's been calculated)
         let recordingDuration = audioManager.lastRecordingDuration
@@ -925,8 +937,16 @@ class AppCoordinator: ObservableObject {
     private func insertTextWithAutoSend(_ processedText: String, recordingDuration: TimeInterval) {
         let wordCount = processedText.split(separator: " ").count
 
-        // Add to history
-        TranscriptionHistoryManager.shared.addTranscription(processedText, duration: recordingDuration)
+        // Save audio file for retention
+        var savedAudioPath: String? = nil
+        if let audioData = self.lastRecordedAudioData, !audioData.isEmpty {
+            let fileId = UUID()
+            savedAudioPath = TranscriptionHistoryManager.shared.saveAudioFile(data: audioData, id: fileId)
+            self.lastRecordedAudioData = nil // Clear after saving
+        }
+
+        // Add to history (with audio file path if saved)
+        TranscriptionHistoryManager.shared.addTranscription(processedText, duration: recordingDuration, audioFilePath: savedAudioPath)
 
         // Insert text directly with performance monitoring
         PerformanceMonitor.shared.startTextInsertion()
@@ -1112,6 +1132,179 @@ class AppCoordinator: ObservableObject {
                 }
             }
         #endif
+    }
+
+    // MARK: - Re-Transcription
+
+    /// Re-transcribe a saved audio file with the currently selected model
+    func retranscribe(historyItem: TranscriptionHistoryItem, completion: @escaping (String?) -> Void) {
+        guard let audioPath = historyItem.audioFilePath,
+              FileManager.default.fileExists(atPath: audioPath) else {
+            print("❌ Audio file not found for re-transcription")
+            completion(nil)
+            return
+        }
+
+        guard let currentModel = modelManager.currentModel else {
+            print("❌ No model selected for re-transcription")
+            notificationManager.showNotification(
+                title: "Re-Transcription Failed",
+                body: "Please select a transcription model first.",
+                sound: false
+            )
+            completion(nil)
+            return
+        }
+
+        print("🔄 Re-transcribing with model: \(currentModel.name)")
+
+        // Read audio data from file
+        guard let audioData = try? Data(contentsOf: URL(fileURLWithPath: audioPath)) else {
+            print("❌ Failed to read audio file")
+            completion(nil)
+            return
+        }
+
+        // Route to appropriate transcription service
+        if currentModel.category == .cloud {
+            Task {
+                do {
+                    let transcribedText: String
+
+                    if currentModel.id.contains("groq") || currentModel.name.lowercased().contains("groq") {
+                        let apiKey = settings.groqAPIKey
+                        guard !apiKey.isEmpty else {
+                            await MainActor.run { completion(nil) }
+                            return
+                        }
+                        transcribedText = try await GroqTranscriptionService.shared.transcribe(
+                            audioData: audioData,
+                            language: settings.preferredLanguage.components(separatedBy: "-").first,
+                            apiKey: apiKey
+                        )
+                    } else if currentModel.id.contains("deepgram") || currentModel.name.lowercased().contains("deepgram") {
+                        let apiKey = settings.deepgramAPIKey
+                        guard !apiKey.isEmpty else {
+                            await MainActor.run { completion(nil) }
+                            return
+                        }
+                        transcribedText = try await DeepgramTranscriptionService.shared.transcribeToText(
+                            audioData: audioData,
+                            model: .nova,
+                            language: settings.preferredLanguage.components(separatedBy: "-").first,
+                            apiKey: apiKey
+                        )
+                    } else {
+                        await MainActor.run { completion(nil) }
+                        return
+                    }
+
+                    await MainActor.run {
+                        print("✅ Re-transcription successful: \(transcribedText.prefix(50))...")
+                        notificationManager.showNotification(
+                            title: "Re-Transcription Complete",
+                            body: "Transcription updated with \(currentModel.name).",
+                            sound: false
+                        )
+                        completion(transcribedText)
+                    }
+                } catch {
+                    await MainActor.run {
+                        print("❌ Re-transcription failed: \(error)")
+                        notificationManager.showNotification(
+                            title: "Re-Transcription Failed",
+                            body: error.localizedDescription,
+                            sound: false
+                        )
+                        completion(nil)
+                    }
+                }
+            }
+        } else {
+            // For local Whisper models, load and transcribe
+            if currentModel.category == .local && !currentModel.isBuiltIn {
+                // Load model if needed
+                if !whisperEngine.isAvailable || whisperEngine.loadedModelName != currentModel.name {
+                    whisperEngine.loadModel(currentModel) { [weak self] result in
+                        guard let self = self else { return }
+                        switch result {
+                        case .success:
+                            self.whisperEngine.transcribeAudio(audioData) { result in
+                                switch result {
+                                case .success(let text):
+                                    print("✅ Re-transcription (Whisper) successful")
+                                    self.notificationManager.showNotification(
+                                        title: "Re-Transcription Complete",
+                                        body: "Transcription updated with \(currentModel.name).",
+                                        sound: false
+                                    )
+                                    completion(text)
+                                case .failure(let error):
+                                    print("❌ Re-transcription failed: \(error)")
+                                    self.notificationManager.showNotification(
+                                        title: "Re-Transcription Failed",
+                                        body: error.localizedDescription,
+                                        sound: false
+                                    )
+                                    completion(nil)
+                                }
+                            }
+                        case .failure(let error):
+                            print("❌ Failed to load model for re-transcription: \(error)")
+                            self.notificationManager.showNotification(
+                                title: "Re-Transcription Failed",
+                                body: "Failed to load model: \(error.localizedDescription)",
+                                sound: false
+                            )
+                            completion(nil)
+                        }
+                    }
+                } else {
+                    whisperEngine.transcribeAudio(audioData) { [weak self] result in
+                        switch result {
+                        case .success(let text):
+                            print("✅ Re-transcription (Whisper) successful")
+                            self?.notificationManager.showNotification(
+                                title: "Re-Transcription Complete",
+                                body: "Transcription updated with \(currentModel.name).",
+                                sound: false
+                            )
+                            completion(text)
+                        case .failure(let error):
+                            print("❌ Re-transcription failed: \(error)")
+                            self?.notificationManager.showNotification(
+                                title: "Re-Transcription Failed",
+                                body: error.localizedDescription,
+                                sound: false
+                            )
+                            completion(nil)
+                        }
+                    }
+                }
+            } else {
+                // Built-in Apple Speech — use audio data transcription
+                transcriptionEngine.transcribeAudio(audioData) { [weak self] result in
+                    switch result {
+                    case .success(let text):
+                        print("✅ Re-transcription (Apple Speech) successful")
+                        self?.notificationManager.showNotification(
+                            title: "Re-Transcription Complete",
+                            body: "Transcription updated with Apple Speech.",
+                            sound: false
+                        )
+                        completion(text)
+                    case .failure(let error):
+                        print("❌ Re-transcription failed: \(error)")
+                        self?.notificationManager.showNotification(
+                            title: "Re-Transcription Failed",
+                            body: error.localizedDescription,
+                            sound: false
+                        )
+                        completion(nil)
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - Statistics

@@ -149,6 +149,15 @@ class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(recorderStyle.rawValue, forKey: "recorderStyle") }
     }
 
+    // Audio Cleanup Settings
+    @Published var isAudioCleanupEnabled: Bool {
+        didSet { UserDefaults.standard.set(isAudioCleanupEnabled, forKey: "isAudioCleanupEnabled") }
+    }
+
+    @Published var audioRetentionDays: Int {
+        didSet { UserDefaults.standard.set(audioRetentionDays, forKey: "audioRetentionDays") }
+    }
+
     // Phase 6C: Auto-Update Settings
     @Published var automaticUpdatesEnabled: Bool {
         didSet {
@@ -264,6 +273,19 @@ class AppSettings: ObservableObject {
             self.recorderStyle = style
         } else {
             self.recorderStyle = .slim // default: slim bottom bar
+        }
+
+        // Audio Cleanup Settings
+        if UserDefaults.standard.object(forKey: "isAudioCleanupEnabled") != nil {
+            self.isAudioCleanupEnabled = UserDefaults.standard.bool(forKey: "isAudioCleanupEnabled")
+        } else {
+            self.isAudioCleanupEnabled = false // default OFF — keep everything
+        }
+
+        if UserDefaults.standard.object(forKey: "audioRetentionDays") != nil {
+            self.audioRetentionDays = UserDefaults.standard.integer(forKey: "audioRetentionDays")
+        } else {
+            self.audioRetentionDays = 7 // default 7 days
         }
 
         // Phase 6C: Initialize Auto-Update Settings
