@@ -167,8 +167,11 @@ class WhisperEngine: ObservableObject {
                 // Transcribe directly from audio array (no file I/O!)
                 let results = try await whisperKit.transcribe(audioArray: audioArray)
 
-                // Extract text from results
-                let transcription = results.first?.text ?? ""
+                // Extract text from ALL result segments (WhisperKit returns multiple for long audio)
+                let allSegments = results.map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+                let transcription = allSegments.joined(separator: " ")
+                print("📝 WhisperKit returned \(results.count) segments")
 
                 await MainActor.run {
                     PerformanceMonitor.shared.endTranscription(
@@ -246,41 +249,13 @@ class WhisperEngine: ObservableObject {
                 let audioDuration = Double(totalFrameCount) / sampleRate
                 print("📊 Audio duration: \(String(format: "%.2f", audioDuration)) seconds (\(totalFrameCount) frames)")
 
-                // For long recordings (>30s), chunk the audio for better Whisper results
-                // Whisper's native window is 30 seconds
-                if audioDuration > 35 {
-                    print("📦 Long recording detected (\(String(format: "%.0f", audioDuration))s) — chunking for Whisper...")
-                    let chunkedBuffers = AudioChunker.chunkBuffers(audioBuffers, config: .whisper)
-                    var transcriptions: [String] = []
-
-                    for (index, bufferChunk) in chunkedBuffers.enumerated() {
-                        print("   Transcribing chunk \(index + 1)/\(chunkedBuffers.count)...")
-                        let audioArray = try convertBuffersToFloatArray(bufferChunk)
-                        let results = try await whisperKit.transcribe(audioArray: audioArray)
-                        let chunkText = results.first?.text ?? ""
-                        if !chunkText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            transcriptions.append(chunkText)
-                        }
-                    }
-
-                    let merged = AudioChunker.mergeTranscriptions(transcriptions)
-                    await MainActor.run {
-                        let cleaned = TranscriptionEngine.shared.processText(merged)
-                        self.currentText = cleaned
-                        self.isProcessing = false
-                        self.audioBuffers = []
-                        print("✅ Chunked streaming transcription complete (\(chunkedBuffers.count) chunks): \(cleaned)")
-                        completion(.success(cleaned))
-                    }
-                    return
-                }
-
-                // Short recording — single transcription pass
+                // Convert all buffers to a single Float array
                 print("🔄 Converting audio buffers to Float array...")
                 let audioArray = try convertBuffersToFloatArray(audioBuffers)
 
                 print("✅ Converted to Float array: \(audioArray.count) samples")
                 print("   Expected samples at 16kHz: \(Int(audioDuration * 16000))")
+                print("   Duration: \(String(format: "%.1f", audioDuration))s")
 
                 // Calculate RMS to verify audio is present
                 let rms = sqrt(audioArray.map { $0 * $0 }.reduce(0, +) / Float(audioArray.count))
@@ -294,12 +269,17 @@ class WhisperEngine: ObservableObject {
                     )
                 }
 
-                // Transcribe directly from audio array (no file I/O!)
-                print("🎙️ Transcribing directly from audio array...")
+                // Transcribe directly from audio array
+                // WhisperKit returns MULTIPLE segments for long audio (one per ~30s window)
+                // We must join ALL segments, not just take .first!
+                print("🎙️ Transcribing audio array (\(String(format: "%.1f", audioDuration))s)...")
                 let results = try await whisperKit.transcribe(audioArray: audioArray)
 
-                // Extract text from results
-                let transcription = results.first?.text ?? ""
+                // Extract text from ALL result segments
+                let allSegments = results.map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+                let transcription = allSegments.joined(separator: " ")
+                print("📝 WhisperKit returned \(results.count) segments, merged into \(transcription.split(separator: " ").count) words")
 
                 await MainActor.run {
                     // End performance monitoring with word count
