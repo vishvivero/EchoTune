@@ -2,14 +2,16 @@
 //  ScreenContextService.swift
 //  EchoTune
 //
-//  Phase 6B: Screen Context Awareness
-//  Captures screen content to improve transcription accuracy
+//  Phase 6B+: Enhanced Screen Context Awareness
+//  Captures screen content, clipboard, selected text, and browser URL
+//  to provide rich context for AI-enhanced transcription
 //
 
 import Foundation
 import AppKit
 import CoreGraphics
 import Vision
+import ScreenCaptureKit
 import Combine
 
 class ScreenContextService: ObservableObject {
@@ -19,65 +21,174 @@ class ScreenContextService: ObservableObject {
     @Published var lastCapturedContext: ScreenContext?
 
     private let maxTextLength = 2000  // Limit context size for AI
+    private let maxOCRTextLength = 1500  // OCR portion limit
 
     private init() {
         loadEnabledState()
         print("✅ ScreenContextService initialized")
     }
 
-    // MARK: - Screen Context Capture
+    // MARK: - Screen Context Capture (Enhanced)
 
+    /// Captures full context: OCR screen text, clipboard, selected text, active app, browser URL
     func captureCurrentContext() -> ScreenContext? {
         guard isEnabled else {
             print("⚠️ Screen context disabled")
             return nil
         }
 
-        guard checkScreenRecordingPermission() else {
-            print("⚠️ Screen recording permission not granted")
-            return nil
-        }
-
-        print("📸 Capturing screen context...")
+        print("📸 Capturing enhanced screen context...")
 
         let appIdentifier = getFrontmostAppIdentifier()
         let appName = getFrontmostAppName()
-        let screenshot = captureScreenshot()
-        let extractedText = screenshot.flatMap { extractTextFromImage($0) }
+
+        // 1. Capture clipboard text (fast, no permissions needed)
+        let clipboardText = captureClipboardText()
+
+        // 2. Capture selected text via Accessibility API
+        let selectedText = captureSelectedText()
+
+        // 3. Capture browser URL if in a browser
+        var browserURL: String? = nil
+        var browserTitle: String? = nil
+        if let appId = appIdentifier, isBrowser(appId) {
+            let browserContext = BrowserContextDetector.shared.detectContext()
+            browserURL = browserContext?.url
+            browserTitle = browserContext?.title
+        }
+
+        // 4. Capture screen OCR (uses ScreenCaptureKit for frontmost window)
+        var extractedText: String? = nil
+        if checkScreenRecordingPermission() {
+            extractedText = captureAndOCRFrontmostWindow()
+        }
 
         let context = ScreenContext(
             appIdentifier: appIdentifier,
             appName: appName,
             extractedText: extractedText,
+            clipboardText: clipboardText,
+            selectedText: selectedText,
+            browserURL: browserURL,
+            browserTitle: browserTitle,
             timestamp: Date()
         )
 
         lastCapturedContext = context
 
+        // Debug logging
         if let text = extractedText {
-            print("   ✅ Captured \(text.count) characters of context")
-            print("   Preview: \(text.prefix(100))...")
-        } else {
-            print("   ℹ️ No text extracted from screen")
+            print("   ✅ OCR: \(text.count) chars")
+        }
+        if let clip = clipboardText {
+            print("   ✅ Clipboard: \(clip.count) chars")
+        }
+        if let sel = selectedText {
+            print("   ✅ Selected text: \(sel.count) chars")
+        }
+        if let url = browserURL {
+            print("   ✅ Browser URL: \(url)")
         }
 
         return context
     }
 
-    private func captureScreenshot() -> CGImage? {
-        // Get the main display
-        guard let displayID = CGMainDisplayID() as CGDirectDisplayID? else {
-            print("   ❌ Failed to get main display")
+    // MARK: - Clipboard Text Capture
+
+    private func captureClipboardText() -> String? {
+        let pasteboard = NSPasteboard.general
+        guard let text = pasteboard.string(forType: .string) else {
+            return nil
+        }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        // Limit to reasonable size
+        return String(trimmed.prefix(500))
+    }
+
+    // MARK: - Selected Text via Accessibility API
+
+    private func captureSelectedText() -> String? {
+        guard AXIsProcessTrusted() else {
             return nil
         }
 
-        // Capture screenshot
-        guard let screenshot = CGDisplayCreateImage(displayID) else {
+        // Get the focused application
+        guard let frontApp = NSWorkspace.shared.frontmostApplication else {
+            return nil
+        }
+
+        let appElement = AXUIElementCreateApplication(frontApp.processIdentifier)
+
+        // Get the focused UI element
+        var focusedElement: AnyObject?
+        let focusResult = AXUIElementCopyAttributeValue(appElement, kAXFocusedUIElementAttribute as CFString, &focusedElement)
+
+        guard focusResult == .success, let element = focusedElement else {
+            return nil
+        }
+
+        // Try to get selected text
+        var selectedTextValue: AnyObject?
+        let textResult = AXUIElementCopyAttributeValue(element as! AXUIElement, kAXSelectedTextAttribute as CFString, &selectedTextValue)
+
+        guard textResult == .success, let text = selectedTextValue as? String else {
+            return nil
+        }
+
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return String(trimmed.prefix(500))
+    }
+
+    // MARK: - ScreenCaptureKit: Frontmost Window OCR
+
+    /// Captures the frontmost window using ScreenCaptureKit and runs OCR via Vision
+    private func captureAndOCRFrontmostWindow() -> String? {
+        // Use synchronous CGWindowList approach (SCShareableContent is async and complex for this use case)
+        // This captures just the frontmost window, not the full screen
+        guard let frontApp = NSWorkspace.shared.frontmostApplication else {
+            return captureFullScreenOCR() // Fallback
+        }
+
+        let pid = frontApp.processIdentifier
+
+        // Get window list for the frontmost app
+        guard let windowList = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
+            return captureFullScreenOCR()
+        }
+
+        // Find the frontmost window for this app
+        let appWindows = windowList.filter { info in
+            guard let ownerPID = info[kCGWindowOwnerPID as String] as? Int32 else { return false }
+            return ownerPID == pid
+        }
+
+        guard let firstWindow = appWindows.first,
+              let windowID = firstWindow[kCGWindowNumber as String] as? CGWindowID else {
+            return captureFullScreenOCR()
+        }
+
+        // Capture just this window
+        guard let windowImage = CGWindowListCreateImage(
+            .null,
+            .optionIncludingWindow,
+            windowID,
+            [.boundsIgnoreFraming, .bestResolution]
+        ) else {
+            return captureFullScreenOCR()
+        }
+
+        return extractTextFromImage(windowImage)
+    }
+
+    /// Fallback: capture the full main display
+    private func captureFullScreenOCR() -> String? {
+        guard let screenshot = CGDisplayCreateImage(CGMainDisplayID()) else {
             print("   ❌ Failed to capture screenshot")
             return nil
         }
-
-        return screenshot
+        return extractTextFromImage(screenshot)
     }
 
     private func extractTextFromImage(_ image: CGImage) -> String? {
@@ -93,9 +204,7 @@ class ScreenContextService: ObservableObject {
                 return nil
             }
 
-            // Extract all recognized text
             var allText: [String] = []
-
             for observation in observations {
                 guard let topCandidate = observation.topCandidates(1).first else {
                     continue
@@ -104,10 +213,7 @@ class ScreenContextService: ObservableObject {
             }
 
             let combinedText = allText.joined(separator: " ")
-
-            // Limit text length
-            let truncated = String(combinedText.prefix(maxTextLength))
-
+            let truncated = String(combinedText.prefix(maxOCRTextLength))
             return truncated.isEmpty ? nil : truncated
 
         } catch {
@@ -119,22 +225,16 @@ class ScreenContextService: ObservableObject {
     // MARK: - Permission Management
 
     func checkScreenRecordingPermission() -> Bool {
-        // Check if we have screen recording permission
-        // This is a runtime check - user must grant permission in System Preferences
-
         if #available(macOS 10.15, *) {
-            // Try to capture a small screenshot to test permission
             let testImage = CGDisplayCreateImage(CGMainDisplayID())
             return testImage != nil
         }
-
         return false
     }
 
     func requestScreenRecordingPermission() {
         print("🔐 Requesting screen recording permission...")
 
-        // Show alert to user
         DispatchQueue.main.async {
             let alert = NSAlert()
             alert.messageText = "Screen Recording Permission Required"
@@ -152,7 +252,6 @@ class ScreenContextService: ObservableObject {
             let response = alert.runModal()
 
             if response == .alertFirstButtonReturn {
-                // Open System Preferences
                 if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
                     NSWorkspace.shared.open(url)
                 }
@@ -160,21 +259,29 @@ class ScreenContextService: ObservableObject {
         }
     }
 
-    // MARK: - Context Analysis
+    // MARK: - Context Analysis (Enhanced)
 
     func analyzeContext(_ context: ScreenContext) -> ContextAnalysis {
-        guard let text = context.extractedText else {
+        // Combine all available text sources for analysis
+        var combinedText = ""
+
+        if let text = context.extractedText {
+            combinedText += text
+        }
+        if let selected = context.selectedText {
+            combinedText += " " + selected
+        }
+        if let clip = context.clipboardText {
+            combinedText += " " + clip
+        }
+
+        guard !combinedText.isEmpty else {
             return ContextAnalysis(type: .unknown, keywords: [], suggestedPrompt: nil)
         }
 
-        // Detect context type
-        let type = detectContextType(text: text)
-
-        // Extract keywords
-        let keywords = extractKeywords(from: text)
-
-        // Generate AI prompt suggestion
-        let suggestedPrompt = generatePromptSuggestion(for: type, keywords: keywords)
+        let type = detectContextType(text: combinedText, appIdentifier: context.appIdentifier, browserURL: context.browserURL)
+        let keywords = extractKeywords(from: combinedText)
+        let suggestedPrompt = generatePromptSuggestion(for: type, keywords: keywords, context: context)
 
         return ContextAnalysis(
             type: type,
@@ -183,36 +290,56 @@ class ScreenContextService: ObservableObject {
         )
     }
 
-    private func detectContextType(text: String) -> ContextType {
+    private func detectContextType(text: String, appIdentifier: String?, browserURL: String?) -> ContextType {
+        // App-based detection (most reliable)
+        if let appId = appIdentifier {
+            let codeApps = ["com.microsoft.VSCode", "com.apple.dt.Xcode", "com.jetbrains.intellij",
+                            "com.sublimetext.4", "com.github.atom", "com.panic.Nova"]
+            let emailApps = ["com.apple.mail", "com.microsoft.Outlook"]
+            let chatApps = ["com.tinyspeck.slackmacgap", "com.hnc.Discord", "com.electron.whatsapp",
+                            "com.telegram.desktop"]
+            let noteApps = ["com.apple.Notes", "md.obsidian", "com.bear-writer.Bear"]
+
+            if codeApps.contains(appId) { return .code }
+            if emailApps.contains(appId) { return .email }
+            if chatApps.contains(appId) { return .chat }
+            if noteApps.contains(appId) { return .document }
+        }
+
+        // URL-based detection
+        if let url = browserURL?.lowercased() {
+            if url.contains("github.com") || url.contains("stackoverflow.com") || url.contains("developer.apple.com") {
+                return .code
+            }
+            if url.contains("mail.google.com") || url.contains("outlook.com") {
+                return .email
+            }
+            if url.contains("slack.com") || url.contains("discord.com") || url.contains("web.whatsapp.com") {
+                return .chat
+            }
+            if url.contains("docs.google.com") || url.contains("notion.so") {
+                return .document
+            }
+        }
+
+        // Text-based detection (fallback)
         let lowercased = text.lowercased()
 
-        // Code detection
-        if lowercased.contains("func ") ||
-           lowercased.contains("class ") ||
-           lowercased.contains("def ") ||
-           lowercased.contains("import ") ||
-           lowercased.contains("const ") ||
-           lowercased.contains("var ") ||
-           lowercased.contains("{") && lowercased.contains("}") {
+        if lowercased.contains("func ") || lowercased.contains("class ") || lowercased.contains("def ") ||
+           lowercased.contains("import ") || lowercased.contains("const ") ||
+           (lowercased.contains("{") && lowercased.contains("}")) {
             return .code
         }
 
-        // Email detection
-        if lowercased.contains("@") && lowercased.contains(".com") ||
-           lowercased.contains("subject:") ||
-           lowercased.contains("dear ") ||
-           lowercased.contains("sincerely") {
+        if lowercased.contains("subject:") || lowercased.contains("dear ") || lowercased.contains("sincerely") {
             return .email
         }
 
-        // Document/Writing
         if text.split(separator: " ").count > 50 {
             return .document
         }
 
-        // Chat/Messaging
-        if lowercased.contains("send message") ||
-           lowercased.contains("type a message") {
+        if lowercased.contains("send message") || lowercased.contains("type a message") {
             return .chat
         }
 
@@ -220,56 +347,73 @@ class ScreenContextService: ObservableObject {
     }
 
     private func extractKeywords(from text: String) -> [String] {
-        // Simple keyword extraction - get capitalized words and technical terms
         let words = text.split(separator: " ")
-
         var keywords: Set<String> = []
 
         for word in words {
             let cleaned = word.trimmingCharacters(in: .punctuationCharacters)
-
-            // Capitalized words (likely proper nouns)
             if cleaned.first?.isUppercase == true && cleaned.count > 2 {
                 keywords.insert(String(cleaned))
             }
-
-            // Technical terms (contains special characters)
             if cleaned.contains("_") || cleaned.contains("-") || cleaned.contains(".") {
                 keywords.insert(String(cleaned))
             }
         }
 
-        return Array(keywords.prefix(20))  // Limit to 20 keywords
+        return Array(keywords.prefix(20))
     }
 
-    private func generatePromptSuggestion(for type: ContextType, keywords: [String]) -> String {
-        var prompt = "Context: "
+    private func generatePromptSuggestion(for type: ContextType, keywords: [String], context: ScreenContext) -> String {
+        var prompt = "SCREEN CONTEXT:\n"
 
+        // App name
+        if let appName = context.appName {
+            prompt += "Active App: \(appName)\n"
+        }
+
+        // Browser URL
+        if let url = context.browserURL {
+            prompt += "Website: \(url)\n"
+        }
+
+        // Browser page title
+        if let title = context.browserTitle {
+            prompt += "Page Title: \(title)\n"
+        }
+
+        // Context type
         switch type {
         case .code:
-            prompt += "You're writing code. "
-            if !keywords.isEmpty {
-                prompt += "Relevant terms: \(keywords.joined(separator: ", ")). "
-            }
-            prompt += "Preserve technical terminology, function names, and code structure."
-
+            prompt += "Context: User is working with code/technical content. Preserve technical terminology, function names, variable names, and code-related jargon.\n"
         case .email:
-            prompt += "You're writing an email. "
-            prompt += "Use professional, formal tone with proper grammar."
-
+            prompt += "Context: User is composing an email. Use professional, formal tone with proper grammar.\n"
         case .document:
-            prompt += "You're writing a document. "
-            prompt += "Use clear, well-structured prose."
-
+            prompt += "Context: User is writing a document. Use clear, well-structured prose.\n"
         case .chat:
-            prompt += "You're in a chat/messaging app. "
-            prompt += "Use casual, conversational tone. Keep it concise."
-
+            prompt += "Context: User is in a messaging/chat app. Use casual, conversational tone. Keep it concise.\n"
         case .unknown:
-            if !keywords.isEmpty {
-                prompt += "Detected terms: \(keywords.joined(separator: ", ")). "
-            }
-            prompt += "Adapt tone based on content."
+            prompt += "Context: General usage.\n"
+        }
+
+        // Selected text (what user is actively working with)
+        if let selected = context.selectedText {
+            prompt += "Selected text (user's focus): \(String(selected.prefix(300)))\n"
+        }
+
+        // Clipboard (recent copy/paste)
+        if let clip = context.clipboardText {
+            prompt += "Recent clipboard: \(String(clip.prefix(200)))\n"
+        }
+
+        // Keywords from screen
+        if !keywords.isEmpty {
+            prompt += "Visible terms: \(keywords.prefix(10).joined(separator: ", "))\n"
+        }
+
+        // OCR text snippet
+        if let screenText = context.extractedText {
+            let snippet = String(screenText.prefix(300))
+            prompt += "Screen text snippet: \(snippet)\n"
         }
 
         return prompt
@@ -283,6 +427,15 @@ class ScreenContextService: ObservableObject {
 
     private func getFrontmostAppName() -> String? {
         return NSWorkspace.shared.frontmostApplication?.localizedName
+    }
+
+    private func isBrowser(_ bundleIdentifier: String) -> Bool {
+        let browsers: Set<String> = [
+            "com.google.Chrome", "com.apple.Safari", "org.mozilla.firefox",
+            "com.microsoft.edgemac", "company.thebrowser.Browser", "com.brave.Browser",
+            "com.operasoftware.Opera", "com.vivaldi.Vivaldi"
+        ]
+        return browsers.contains(bundleIdentifier)
     }
 
     // MARK: - Settings
@@ -303,13 +456,49 @@ class ScreenContextService: ObservableObject {
     }
 }
 
-// MARK: - Supporting Types
+// MARK: - Enhanced Supporting Types
 
 struct ScreenContext {
     let appIdentifier: String?
     let appName: String?
-    let extractedText: String?
+    let extractedText: String?          // OCR from screen
+    let clipboardText: String?          // Last clipboard content
+    let selectedText: String?           // Currently selected text (Accessibility API)
+    let browserURL: String?             // Current browser URL
+    let browserTitle: String?           // Current browser page title
     let timestamp: Date
+
+    /// Convenience initializer for backward compatibility
+    init(appIdentifier: String?, appName: String?, extractedText: String?, timestamp: Date) {
+        self.appIdentifier = appIdentifier
+        self.appName = appName
+        self.extractedText = extractedText
+        self.clipboardText = nil
+        self.selectedText = nil
+        self.browserURL = nil
+        self.browserTitle = nil
+        self.timestamp = timestamp
+    }
+
+    /// Full initializer with all context sources
+    init(appIdentifier: String?, appName: String?, extractedText: String?,
+         clipboardText: String?, selectedText: String?,
+         browserURL: String?, browserTitle: String?,
+         timestamp: Date) {
+        self.appIdentifier = appIdentifier
+        self.appName = appName
+        self.extractedText = extractedText
+        self.clipboardText = clipboardText
+        self.selectedText = selectedText
+        self.browserURL = browserURL
+        self.browserTitle = browserTitle
+        self.timestamp = timestamp
+    }
+
+    /// Returns true if any meaningful context was captured
+    var hasContext: Bool {
+        return extractedText != nil || clipboardText != nil || selectedText != nil || browserURL != nil
+    }
 }
 
 struct ContextAnalysis {
