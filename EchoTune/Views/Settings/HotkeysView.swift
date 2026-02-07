@@ -29,6 +29,42 @@ struct HotkeysView: View {
                 .padding(.vertical, 8)
             }
 
+            // Modifier Key Triggers (NEW)
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Use a single modifier key as a push-to-talk trigger — much faster than a key combo.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                if let dictationBinding = hotkeyManager.getBinding(for: .toggleDictation) {
+                    Picker("Toggle Dictation Key", selection: Binding(
+                        get: { dictationBinding.modifierTrigger ?? .none },
+                        set: { hotkeyManager.setModifierTrigger($0, for: .toggleDictation) }
+                    )) {
+                        ForEach(MultiHotkeyManager.ModifierKeyTrigger.allCases) { trigger in
+                            Text(trigger.displayName).tag(trigger)
+                        }
+                    }
+                }
+
+                if let startBinding = hotkeyManager.getBinding(for: .startDictation) {
+                    Picker("Start Dictation Key", selection: Binding(
+                        get: { startBinding.modifierTrigger ?? .none },
+                        set: { hotkeyManager.setModifierTrigger($0, for: .startDictation) }
+                    )) {
+                        ForEach(MultiHotkeyManager.ModifierKeyTrigger.allCases) { trigger in
+                            Text(trigger.displayName).tag(trigger)
+                        }
+                    }
+                }
+            } header: {
+                Text("Modifier Key Triggers")
+            } footer: {
+                Text("Supported keys: Right ⌘, Left ⌥, fn (Globe), etc. These work as single-key push-to-talk triggers.")
+                    .font(.caption)
+            }
+
             // Hotkey List
             Section {
                 ForEach(MultiHotkeyManager.HotkeyAction.allCases) { action in
@@ -46,7 +82,7 @@ struct HotkeysView: View {
                     }
                 }
             } header: {
-                Text("Active Shortcuts")
+                Text("Key Combo Shortcuts")
             }
 
             // Actions
@@ -67,10 +103,11 @@ struct HotkeysView: View {
                     }
                     .font(.caption)
 
-                    Text("• Click on a shortcut to change it")
-                    Text("• Use ⌘ (Command), ⌃ (Control), ⌥ (Option), ⇧ (Shift)")
+                    Text("• Use a Modifier Key Trigger for the fastest push-to-talk experience")
+                    Text("• Right ⌘ (Command) is popular since it doesn't conflict with system shortcuts")
+                    Text("• fn (Globe) works great on MacBooks with the Globe key")
+                    Text("• Key Combo shortcuts use ⌘, ⌃, ⌥, ⇧ + a letter/number key")
                     Text("• Avoid conflicts with system shortcuts")
-                    Text("• Disable unused shortcuts to free up key combinations")
                 }
                 .font(.caption2)
                 .foregroundColor(.secondary)

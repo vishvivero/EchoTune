@@ -2,8 +2,9 @@
 //  MultiHotkeyManager.swift
 //  EchoTune
 //
-//  Phase 6C: Multiple Hotkeys Support
+//  Phase 6C+: Multiple Hotkeys with Modifier Key Support
 //  Allows users to register multiple keyboard shortcuts for different actions
+//  including single modifier keys (Right Cmd, Left Option, Fn) as push-to-talk triggers
 //
 
 import Foundation
@@ -28,7 +29,7 @@ class MultiHotkeyManager: ObservableObject {
         var defaultShortcut: String? {
             switch self {
             case .toggleDictation:
-                return "^D"  // Control+D
+                return "⌃"  // Control key
             case .startDictation:
                 return nil
             case .stopDictation:
@@ -45,6 +46,51 @@ class MultiHotkeyManager: ObservableObject {
         }
     }
 
+    /// Represents a modifier key that can be used standalone as a hotkey trigger
+    enum ModifierKeyTrigger: String, CaseIterable, Codable, Identifiable {
+        case rightCommand = "Right ⌘"
+        case leftCommand = "Left ⌘"
+        case rightOption = "Right ⌥"
+        case leftOption = "Left ⌥"
+        case rightControl = "Right ⌃"
+        case leftControl = "Left ⌃"
+        case fn = "fn (Globe)"
+        case none = "None"
+
+        var id: String { rawValue }
+
+        var displayName: String { rawValue }
+
+        /// The NSEvent.ModifierFlags bit that distinguishes this key
+        var flagBit: UInt {
+            switch self {
+            case .rightCommand:  return NSEvent.ModifierFlags.command.rawValue
+            case .leftCommand:   return NSEvent.ModifierFlags.command.rawValue
+            case .rightOption:   return NSEvent.ModifierFlags.option.rawValue
+            case .leftOption:    return NSEvent.ModifierFlags.option.rawValue
+            case .rightControl:  return NSEvent.ModifierFlags.control.rawValue
+            case .leftControl:   return NSEvent.ModifierFlags.control.rawValue
+            case .fn:            return NSEvent.ModifierFlags.function.rawValue
+            case .none:          return 0
+            }
+        }
+
+        /// The raw Carbon/IOKit key code to differentiate left vs right
+        /// Left/right modifiers can be detected from the CGEvent keyCode in flagsChanged
+        var expectedKeyCode: UInt16? {
+            switch self {
+            case .rightCommand:  return 54   // kVK_RightCommand
+            case .leftCommand:   return 55   // kVK_Command
+            case .rightOption:   return 61   // kVK_RightOption
+            case .leftOption:    return 58   // kVK_Option
+            case .rightControl:  return 62   // kVK_RightControl
+            case .leftControl:   return 59   // kVK_Control
+            case .fn:            return 63   // kVK_Function
+            case .none:          return nil
+            }
+        }
+    }
+
     struct HotkeyBinding: Codable, Identifiable {
         let id: UUID
         let action: HotkeyAction
@@ -52,30 +98,153 @@ class MultiHotkeyManager: ObservableObject {
         var modifiers: UInt32?
         var displayString: String?
         var isEnabled: Bool
+        var modifierTrigger: ModifierKeyTrigger?  // NEW: single modifier key trigger
 
         init(action: HotkeyAction,
              keyCode: UInt32? = nil,
              modifiers: UInt32? = nil,
              displayString: String? = nil,
-             isEnabled: Bool = true) {
+             isEnabled: Bool = true,
+             modifierTrigger: ModifierKeyTrigger? = nil) {
             self.id = UUID()
             self.action = action
             self.keyCode = keyCode
             self.modifiers = modifiers
             self.displayString = displayString ?? action.defaultShortcut
             self.isEnabled = isEnabled
+            self.modifierTrigger = modifierTrigger
+        }
+
+        /// Whether this binding uses a single modifier key as trigger
+        var isModifierOnlyBinding: Bool {
+            return modifierTrigger != nil && modifierTrigger != .none
         }
     }
 
     @Published var hotkeyBindings: [HotkeyBinding] = []
     private var eventHandlers: [EventHotKeyRef?] = []
 
+    // Modifier-key monitoring via CGEvent tap
+    private var modifierEventTap: CFMachPort?
+    private var modifierRunLoopSource: CFRunLoopSource?
+    private var modifierKeyPressed: [ModifierKeyTrigger: Bool] = [:]
+
     private let storageKey = "multiHotkeyBindings"
 
     private init() {
         loadBindings()
         registerAllHotkeys()
+        setupModifierKeyMonitoring()
         print("✅ MultiHotkeyManager initialized with \(hotkeyBindings.count) bindings")
+    }
+
+    deinit {
+        teardownModifierKeyMonitoring()
+    }
+
+    // MARK: - Modifier Key Event Monitoring (NEW)
+
+    /// Sets up a CGEvent tap to monitor flagsChanged events for modifier-only hotkeys
+    private func setupModifierKeyMonitoring() {
+        // Check if any binding uses a modifier trigger
+        let hasModifierBindings = hotkeyBindings.contains { $0.isModifierOnlyBinding && $0.isEnabled }
+        guard hasModifierBindings else {
+            print("ℹ️ No modifier-key bindings active, skipping event tap")
+            return
+        }
+
+        guard AXIsProcessTrusted() else {
+            print("⚠️ Modifier key monitoring requires accessibility permission")
+            return
+        }
+
+        let eventMask = CGEventMask(1 << CGEventType.flagsChanged.rawValue)
+
+        let callback: CGEventTapCallBack = { (proxy, type, event, refcon) in
+            guard let refcon = refcon else { return Unmanaged.passRetained(event) }
+            let manager = Unmanaged<MultiHotkeyManager>.fromOpaque(refcon).takeUnretainedValue()
+            return manager.handleModifierEvent(type: type, event: event)
+        }
+
+        guard let tap = CGEvent.tapCreate(
+            tap: .cgSessionEventTap,
+            place: .headInsertEventTap,
+            options: .listenOnly,  // Listen only — don't consume modifier events
+            eventsOfInterest: eventMask,
+            callback: callback,
+            userInfo: UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
+        ) else {
+            print("❌ Failed to create modifier event tap")
+            return
+        }
+
+        modifierEventTap = tap
+        modifierRunLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+        CFRunLoopAddSource(CFRunLoopGetMain(), modifierRunLoopSource, .commonModes)
+        CGEvent.tapEnable(tap: tap, enable: true)
+        print("✅ Modifier key event tap registered")
+    }
+
+    private func teardownModifierKeyMonitoring() {
+        if let source = modifierRunLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
+            modifierRunLoopSource = nil
+        }
+        if let tap = modifierEventTap {
+            CGEvent.tapEnable(tap: tap, enable: false)
+            modifierEventTap = nil
+        }
+    }
+
+    /// Handles flagsChanged CGEvents to detect single modifier key presses/releases
+    private func handleModifierEvent(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+        guard type == .flagsChanged else { return Unmanaged.passRetained(event) }
+
+        let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
+        let flags = NSEvent.ModifierFlags(rawValue: UInt(event.flags.rawValue))
+
+        // Check each active modifier binding
+        for binding in hotkeyBindings where binding.isModifierOnlyBinding && binding.isEnabled {
+            guard let trigger = binding.modifierTrigger,
+                  let expectedKeyCode = trigger.expectedKeyCode else {
+                continue
+            }
+
+            if keyCode == expectedKeyCode {
+                let isPressed = isModifierActive(trigger: trigger, flags: flags)
+                let wasPressed = modifierKeyPressed[trigger] ?? false
+
+                if isPressed && !wasPressed {
+                    // Key pressed down
+                    modifierKeyPressed[trigger] = true
+                    print("🎯 Modifier key pressed: \(trigger.displayName) for \(binding.action.rawValue)")
+                    DispatchQueue.main.async { [weak self] in
+                        self?.handleHotkeyAction(binding.action)
+                    }
+                } else if !isPressed && wasPressed {
+                    // Key released
+                    modifierKeyPressed[trigger] = false
+                }
+            }
+        }
+
+        return Unmanaged.passRetained(event)
+    }
+
+    /// Checks if a specific modifier is currently active in the flags
+    private func isModifierActive(trigger: ModifierKeyTrigger, flags: NSEvent.ModifierFlags) -> Bool {
+        switch trigger {
+        case .rightCommand, .leftCommand:
+            return flags.contains(.command)
+        case .rightOption, .leftOption:
+            return flags.contains(.option)
+        case .rightControl, .leftControl:
+            return flags.contains(.control)
+        case .fn:
+            return flags.contains(.function)
+        case .none:
+            return false
+        }
     }
 
     // MARK: - Hotkey Management
@@ -89,7 +258,32 @@ class MultiHotkeyManager: ObservableObject {
             unregisterAllHotkeys()
             registerAllHotkeys()
 
+            // Re-setup modifier monitoring since bindings changed
+            teardownModifierKeyMonitoring()
+            setupModifierKeyMonitoring()
+
             print("✏️ Updated hotkey for \(binding.action.rawValue)")
+        }
+    }
+
+    /// Assigns a modifier key trigger to an action
+    func setModifierTrigger(_ trigger: ModifierKeyTrigger, for action: HotkeyAction) {
+        if let index = hotkeyBindings.firstIndex(where: { $0.action == action }) {
+            hotkeyBindings[index] = HotkeyBinding(
+                action: action,
+                keyCode: nil,
+                modifiers: nil,
+                displayString: trigger == .none ? nil : trigger.displayName,
+                isEnabled: trigger != .none,
+                modifierTrigger: trigger
+            )
+            saveBindings()
+
+            // Rebuild modifier monitoring
+            teardownModifierKeyMonitoring()
+            setupModifierKeyMonitoring()
+
+            print("✅ Set modifier trigger \(trigger.displayName) for \(action.rawValue)")
         }
     }
 
@@ -101,6 +295,10 @@ class MultiHotkeyManager: ObservableObject {
             // Re-register hotkeys
             unregisterAllHotkeys()
             registerAllHotkeys()
+
+            // Rebuild modifier monitoring
+            teardownModifierKeyMonitoring()
+            setupModifierKeyMonitoring()
         }
     }
 
@@ -108,15 +306,14 @@ class MultiHotkeyManager: ObservableObject {
         return hotkeyBindings.first { $0.action == action }
     }
 
-    // MARK: - Hotkey Registration
+    // MARK: - Hotkey Registration (for non-modifier bindings)
 
     private func registerAllHotkeys() {
-        for binding in hotkeyBindings where binding.isEnabled {
+        for binding in hotkeyBindings where binding.isEnabled && !binding.isModifierOnlyBinding {
             guard let keyCode = binding.keyCode,
                   let modifiers = binding.modifiers else {
                 continue
             }
-
             registerHotkey(binding: binding)
         }
     }
@@ -188,7 +385,6 @@ class MultiHotkeyManager: ObservableObject {
     private func pasteLastTranscript(enhanced: Bool) {
         print("📋 Paste last transcript (enhanced: \(enhanced))")
 
-        // Get last transcript from history
         guard let lastTranscript = TranscriptionHistoryManager.shared.transcriptions.first else {
             NotificationManager.shared.showNotification(
                 title: "No Transcript Available",
@@ -201,37 +397,27 @@ class MultiHotkeyManager: ObservableObject {
         let textToInsert = lastTranscript.text
 
         if enhanced {
-            // Apply AI enhancement if enabled
             Task {
                 do {
                     let settings = AppSettings.shared
                     guard settings.aiEnhancementEnabled else {
-                        // No enhancement, just paste as-is
-                        await MainActor.run {
-                            insertText(textToInsert)
-                        }
+                        await MainActor.run { insertText(textToInsert) }
                         return
                     }
 
                     guard let model = AIEnhancementEngine.EnhancementModel(rawValue: settings.selectedEnhancementModel) else {
-                        await MainActor.run {
-                            insertText(textToInsert)
-                        }
+                        await MainActor.run { insertText(textToInsert) }
                         return
                     }
 
                     let apiKey: String
                     switch model.provider {
-                    case .openai:
-                        apiKey = settings.openaiAPIKey
-                    case .anthropic:
-                        apiKey = settings.claudeAPIKey
+                    case .openai:  apiKey = settings.openaiAPIKey
+                    case .anthropic: apiKey = settings.claudeAPIKey
                     }
 
                     guard !apiKey.isEmpty else {
-                        await MainActor.run {
-                            insertText(textToInsert)
-                        }
+                        await MainActor.run { insertText(textToInsert) }
                         return
                     }
 
@@ -240,15 +426,9 @@ class MultiHotkeyManager: ObservableObject {
                         using: model,
                         apiKey: apiKey
                     )
-
-                    await MainActor.run {
-                        insertText(enhanced)
-                    }
+                    await MainActor.run { insertText(enhanced) }
                 } catch {
-                    await MainActor.run {
-                        // Fall back to original text
-                        insertText(textToInsert)
-                    }
+                    await MainActor.run { insertText(textToInsert) }
                 }
             }
         } else {
@@ -267,7 +447,6 @@ class MultiHotkeyManager: ObservableObject {
                 )
             case .failure(let error):
                 print("❌ Failed to insert text: \(error)")
-                // Fallback: copy to clipboard
                 let pasteboard = NSPasteboard.general
                 pasteboard.clearContents()
                 pasteboard.setString(text, forType: .string)
@@ -284,8 +463,6 @@ class MultiHotkeyManager: ObservableObject {
     private func showMainWindow() {
         DispatchQueue.main.async {
             NSApp.activate(ignoringOtherApps: true)
-
-            // Find and show the main window
             if let window = NSApp.windows.first(where: { $0.title.contains("EchoTune") || $0.isKeyWindow }) {
                 window.makeKeyAndOrderFront(nil)
             }
@@ -317,7 +494,6 @@ class MultiHotkeyManager: ObservableObject {
             hotkeyBindings = decoded
             print("📂 Loaded \(hotkeyBindings.count) hotkey bindings")
         } else {
-            // Create default bindings
             hotkeyBindings = HotkeyAction.allCases.map { action in
                 HotkeyBinding(
                     action: action,
@@ -333,10 +509,6 @@ class MultiHotkeyManager: ObservableObject {
     // MARK: - Helper Methods
 
     func parseKeyboardShortcut(_ shortcut: String) -> (keyCode: UInt32, modifiers: UInt32)? {
-        // Parse strings like "⌘⇧D" into keyCode and modifiers
-        // This is a simplified implementation
-        // Real implementation would need proper key mapping
-
         var modifiers: UInt32 = 0
 
         if shortcut.contains("⌘") || shortcut.contains("Cmd") {
@@ -352,20 +524,13 @@ class MultiHotkeyManager: ObservableObject {
             modifiers |= UInt32(controlKey)
         }
 
-        // Extract the key (last character usually)
         guard let lastChar = shortcut.last else { return nil }
-
-        // Map character to virtual key code
         let keyCode = mapCharacterToKeyCode(lastChar)
-
         guard let code = keyCode else { return nil }
-
         return (code, modifiers)
     }
 
     private func mapCharacterToKeyCode(_ char: Character) -> UInt32? {
-        // Simplified key mapping
-        // Real implementation would have complete mapping
         switch char.lowercased() {
         case "a": return 0
         case "b": return 11
@@ -389,6 +554,8 @@ class MultiHotkeyManager: ObservableObject {
         saveBindings()
         unregisterAllHotkeys()
         registerAllHotkeys()
+        teardownModifierKeyMonitoring()
+        setupModifierKeyMonitoring()
         print("🔄 Reset to default hotkey bindings")
     }
 }
