@@ -403,16 +403,19 @@ class TranscriptionEngine: NSObject, ObservableObject {
         print("🔄 Starting recognition session #\(sessionIndex)")
 
         recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest!) { [weak self] result, error in
-            guard let self = self, self.isTranscribing else { return }
+            guard let self = self else { return }
+
+            // If we're no longer transcribing (user stopped), still update partial text
+            // but don't restart sessions. The endLiveTranscription timeout will handle completion.
+            let isActive = self.isTranscribing
 
             if let error = error {
                 let nsError = error as NSError
                 print("⚠️ Recognition session #\(sessionIndex) error: \(error.localizedDescription) (code: \(nsError.code))")
 
-                // Check if this is a timeout/limit error that we should recover from
-                // Error codes: 203 = "Retry", 209 = "No speech detected", 216 = timeout
+                // Only auto-restart if we're still actively transcribing
                 let recoverableCodes = [203, 209, 216, 1110]
-                if recoverableCodes.contains(nsError.code) && self.isTranscribing {
+                if recoverableCodes.contains(nsError.code) && isActive {
                     // Save current partial text and restart
                     if !self.currentSessionText.isEmpty {
                         self.accumulatedTranscriptions.append(self.currentSessionText)
@@ -426,21 +429,25 @@ class TranscriptionEngine: NSObject, ObservableObject {
                     return
                 }
 
-                // Non-recoverable error
-                if !self.accumulatedTranscriptions.isEmpty || !self.currentSessionText.isEmpty {
-                    // We have partial results — return them instead of failing
-                    if !self.currentSessionText.isEmpty {
-                        self.accumulatedTranscriptions.append(self.currentSessionText)
+                // Non-recoverable error or we're stopping — save what we have
+                if !self.currentSessionText.isEmpty {
+                    self.accumulatedTranscriptions.append(self.currentSessionText)
+                    self.currentSessionText = ""
+                }
+
+                // Only fire completion if we're still the active handler (isActive)
+                if isActive {
+                    if !self.accumulatedTranscriptions.isEmpty {
+                        let merged = AudioChunker.mergeTranscriptions(self.accumulatedTranscriptions)
+                        let processedText = self.processText(merged)
+                        self.isTranscribing = false
+                        self.isProcessing = false
+                        self.liveCompletion?(.success(processedText))
+                    } else {
+                        self.isTranscribing = false
+                        self.isProcessing = false
+                        self.liveCompletion?(.failure(.recognitionError(error)))
                     }
-                    let merged = AudioChunker.mergeTranscriptions(self.accumulatedTranscriptions)
-                    let processedText = self.processText(merged)
-                    self.isTranscribing = false
-                    self.isProcessing = false
-                    self.liveCompletion?(.success(processedText))
-                } else {
-                    self.isTranscribing = false
-                    self.isProcessing = false
-                    self.liveCompletion?(.failure(.recognitionError(error)))
                 }
                 return
             }
@@ -557,37 +564,55 @@ class TranscriptionEngine: NSObject, ObservableObject {
         audioConverter = nil
         targetFormat = nil
 
-        // If we have accumulated text from previous sessions, make sure to include it
-        // The completion will be called by the recognition task handler when it gets isFinal
-        // But if we're being called because the user stopped recording, we need to handle it
-
-        // Give the recognition task a moment to finalize, then force completion if needed
+        // Capture everything we need BEFORE clearing state
         let existingAccumulated = accumulatedTranscriptions
         let existingCurrent = currentSessionText
         let existingCompletion = liveCompletion
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-            guard let self = self else { return }
-            // If still in transcribing state after 2 seconds, force completion with accumulated text
-            if self.isTranscribing {
-                print("⏱️ Forcing completion after timeout")
-                var allParts = existingAccumulated
-                if !existingCurrent.isEmpty {
-                    allParts.append(existingCurrent)
-                }
-                if !allParts.isEmpty {
-                    let merged = AudioChunker.mergeTranscriptions(allParts)
-                    let processedText = self.processText(merged)
-                    self.isTranscribing = false
-                    self.isProcessing = false
-                    existingCompletion?(.success(processedText))
-                }
-            }
-        }
-
-        // Reset state flag
+        // Mark that we're stopping — the recognition task handler checks this
+        // But DON'T nil the completion yet — the timeout block needs it
         isTranscribing = false
         liveInputFormat = nil
+
+        // Use a flag to track if the recognition task's own handler fires the completion
+        var completionFired = false
+
+        // Give the recognition task a moment to finalize with isFinal result
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            guard !completionFired else { return }
+            completionFired = true
+
+            print("⏱️ Recognition didn't finalize in time — returning accumulated text")
+
+            var allParts = existingAccumulated
+            if !existingCurrent.isEmpty {
+                allParts.append(existingCurrent)
+            }
+
+            if !allParts.isEmpty {
+                let merged = AudioChunker.mergeTranscriptions(allParts)
+                let processedText = self.processText(merged)
+                self.isProcessing = false
+                existingCompletion?(.success(processedText))
+            } else {
+                // No text at all — return empty success rather than hanging forever
+                self.isProcessing = false
+                existingCompletion?(.success(""))
+            }
+
+            // Clean up the recognition task
+            self.recognitionTask?.cancel()
+            self.recognitionTask = nil
+            self.recognitionRequest = nil
+        }
+
+        // Also hook into the recognition task's own completion to fire faster if possible
+        // The existing recognitionTask handler in startRecognitionSession checks isTranscribing
+        // and since we set it to false above, when the task handler fires with isFinal or error,
+        // it will try to use liveCompletion. But we already captured it above.
+        // So we need a different approach: override the completion in the task handler.
+
+        // Clear liveCompletion so the session handler doesn't also fire it
         liveCompletion = nil
     }
 

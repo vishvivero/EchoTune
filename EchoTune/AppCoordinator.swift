@@ -663,6 +663,25 @@ class AppCoordinator: ObservableObject {
 
         // The transcription result will come through the completion handler
         print("⏳ Waiting for transcription to complete...")
+
+        // Safety timeout: if state is still .processing after 10 seconds, force reset
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) { [weak self] in
+            guard let self = self else { return }
+            if case .processing = self.appState.recordingState {
+                print("⚠️ Safety timeout: state still .processing after 10s — forcing reset to .idle")
+                self.appState.recordingState = .idle
+                self.transcriptionEngine.cancelTranscription()
+                if let appDelegate = NSApp.delegate as? AppDelegate,
+                   let statusBar = appDelegate.statusBarController {
+                    statusBar.updateIcon(for: .idle)
+                }
+                self.notificationManager.showNotification(
+                    title: "Transcription Timeout",
+                    body: "Transcription took too long. Please try a shorter recording or check your settings.",
+                    sound: false
+                )
+            }
+        }
     }
 
     func toggleDictation() {
