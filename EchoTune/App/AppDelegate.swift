@@ -141,11 +141,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             Look for the microphone icon (🎤) at the top-right of your screen.
 
             Quick Start:
-            • Press ⌘⇧D anywhere to start dictating
+            • Press Control (⌃) anywhere to start dictating
             • Click the menu bar icon for settings and options
             • Find EchoTune in: System Settings → Privacy & Security
 
-            Ready to try it? Press ⌘⇧D in any app!
+            Ready to try it? Press Control in any app!
             """
             alert.alertStyle = .informational
             alert.addButton(withTitle: "Got it!")

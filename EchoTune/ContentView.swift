@@ -52,7 +52,7 @@ struct ContentView: View {
                 ContentStatusRow(
                     icon: "keyboard",
                     title: "Hotkey",
-                    value: "⌘⇧D (Hold to Record)",
+                    value: "⌃ Control (Press to Record)",
                     color: .orange
                 )
             }
@@ -84,7 +84,7 @@ struct ContentView: View {
                         Text("3.")
                             .fontWeight(.bold)
                             .foregroundColor(.blue)
-                        Text("Press and hold ⌘⇧D to record")
+                        Text("Press Control (⌃) to start/stop recording")
                     }
                     HStack {
                         Text("4.")

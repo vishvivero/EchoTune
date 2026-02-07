@@ -118,7 +118,7 @@ struct PurchaseView: View {
                 FeatureRow(icon: "infinity", color: .blue, text: "Unlimited transcriptions")
                 FeatureRow(icon: "sparkles", color: .purple, text: "All AI models (Whisper, Groq, Deepgram)")
                 FeatureRow(icon: "lock.shield", color: .green, text: "100% private local processing")
-                FeatureRow(icon: "keyboard", color: .orange, text: "Global keyboard shortcuts (⌘⇧D)")
+                FeatureRow(icon: "keyboard", color: .orange, text: "Global keyboard shortcut (⌃ Control key)")
                 FeatureRow(icon: "arrow.down.circle", color: .blue, text: "Automatic text insertion")
                 FeatureRow(icon: "chart.bar", color: .cyan, text: "Detailed statistics and analytics")
                 FeatureRow(icon: "clock.arrow.circlepath", color: .indigo, text: "Complete session history")

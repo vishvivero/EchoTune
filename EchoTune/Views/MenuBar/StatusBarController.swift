@@ -48,7 +48,7 @@ class StatusBarController {
             }
 
             // Set tooltip for discoverability
-            button.toolTip = "EchoTune - Click for menu, or press ⌘⇧D to record"
+            button.toolTip = "EchoTune - Click for menu, or press Control to record"
         } else {
             print("❌ Failed to create status bar button")
         }
@@ -61,7 +61,7 @@ class StatusBarController {
         // Start/Stop Recording (with current state)
         let recordingState = AppCoordinator.shared.appState.recordingState
         let isRecording = recordingState == .recording
-        let recordingTitle = isRecording ? "⏹ Stop Recording (⌘⇧D)" : "⏺ Start Recording (⌘⇧D)"
+        let recordingTitle = isRecording ? "⏹ Stop Recording (⌃)" : "⏺ Start Recording (⌃)"
         let recordingItem = NSMenuItem(
             title: recordingTitle,
             action: #selector(quickTranscribe),

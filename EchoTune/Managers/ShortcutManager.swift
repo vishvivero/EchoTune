@@ -15,9 +15,9 @@ class ShortcutManager: NSObject {
     // Callback for when shortcut is triggered
     var onShortcutTriggered: (() -> Void)?
     
-    // Default shortcut: Cmd+Shift+D
-    private var shortcutKeyCode: UInt32 = 2 // 'D' key
-    private var shortcutModifiers: UInt32 = UInt32(NSEvent.ModifierFlags.command.rawValue | NSEvent.ModifierFlags.shift.rawValue)
+    // Default shortcut: Control key (single press)
+    private var shortcutKeyCode: UInt32 = 59 // Control key alone
+    private var shortcutModifiers: UInt32 = UInt32(NSEvent.ModifierFlags.control.rawValue)
 
     // Event tap for global shortcut monitoring
     private var eventTap: CFMachPort?
@@ -29,7 +29,6 @@ class ShortcutManager: NSObject {
     override init() {
         super.init()
         loadCustomShortcut()
-        registerGlobalShortcut()
 
         // Listen for accessibility permission changes
         NotificationCenter.default.addObserver(
@@ -39,7 +38,28 @@ class ShortcutManager: NSObject {
             object: nil
         )
 
+        // Only register global shortcut if onboarding is already completed
+        // Otherwise, wait until after onboarding to avoid triggering system dialogs
+        let hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
+        if hasCompletedOnboarding {
+            registerGlobalShortcut()
+        } else {
+            // Register after onboarding completes
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(onOnboardingCompleted),
+                name: NSNotification.Name("OnboardingCompleted"),
+                object: nil
+            )
+        }
+
         print("✓ ShortcutManager initialized and listening for permission changes")
+    }
+
+    @objc private func onOnboardingCompleted() {
+        print("🔔 Onboarding completed - registering global shortcut")
+        registerGlobalShortcut()
+        NotificationCenter.default.removeObserver(self, name: NSNotification.Name("OnboardingCompleted"), object: nil)
     }
 
     @objc private func onAccessibilityPermissionGranted() {
@@ -78,32 +98,15 @@ class ShortcutManager: NSObject {
         print("🔧 Attempting to register global shortcut...")
 
         // Check for accessibility permissions
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        // Check silently — don't trigger macOS prompt dialog here
+        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: false] as CFDictionary
         let accessibilityEnabled = AXIsProcessTrustedWithOptions(options)
 
         print("🔐 Accessibility permission status: \(accessibilityEnabled)")
 
         if !accessibilityEnabled {
             print("❌ Global shortcuts DISABLED - Accessibility permissions NOT granted")
-            print("   Please go to System Settings → Privacy & Security → Accessibility")
-            print("   and enable EchoTune")
-
-            // Show alert to user
-            DispatchQueue.main.async {
-                let alert = NSAlert()
-                alert.messageText = "Accessibility Permission Required"
-                alert.informativeText = "EchoTune needs Accessibility permission to use global keyboard shortcuts.\n\nPlease enable it in:\nSystem Settings → Privacy & Security → Accessibility"
-                alert.alertStyle = .warning
-                alert.addButton(withTitle: "Open System Settings")
-                alert.addButton(withTitle: "Later")
-
-                let response = alert.runModal()
-                if response == .alertFirstButtonReturn {
-                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-                        NSWorkspace.shared.open(url)
-                    }
-                }
-            }
+            print("   Will register once permission is granted")
             return
         }
 
@@ -178,30 +181,44 @@ class ShortcutManager: NSObject {
     
     private func handleEvent(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         // Special handling for single modifier keys (Control=59, Option=58)
-        let isSingleModifierShortcut = (shortcutKeyCode == 59 || shortcutKeyCode == 58)
+        let isSingleModifierShortcut = (shortcutKeyCode == 63 || shortcutKeyCode == 59 || shortcutKeyCode == 58)
 
         if isSingleModifierShortcut {
             // Handle flags changed events for single modifiers
             if type == .flagsChanged {
-                let currentModifiers = UInt32(event.flags.rawValue) & (UInt32(NSEvent.ModifierFlags.control.rawValue) |
-                                                                        UInt32(NSEvent.ModifierFlags.option.rawValue))
+                let flags = event.flags
 
-                // Check if the correct single modifier is pressed
-                if currentModifiers == shortcutModifiers && !isShortcutPressed {
-                    isShortcutPressed = true
-                    print("🎯 Single modifier shortcut triggered: \(getCurrentShortcutString())")
-
-                    // Trigger callback on main thread
-                    DispatchQueue.main.async { [weak self] in
-                        print("📞 Calling shortcut callback...")
-                        self?.onShortcutTriggered?()
+                // Globe/Fn key (keyCode 63) detection
+                if shortcutKeyCode == 63 {
+                    let nsFlags = NSEvent.ModifierFlags(rawValue: UInt(flags.rawValue))
+                    let fnPressed = nsFlags.contains(.function)
+                    if fnPressed && !isShortcutPressed {
+                        isShortcutPressed = true
+                        print("🎯 Globe/Fn key triggered")
+                        DispatchQueue.main.async { [weak self] in
+                            self?.onShortcutTriggered?()
+                        }
+                        return Unmanaged.passRetained(event)
+                    } else if !fnPressed && isShortcutPressed {
+                        isShortcutPressed = false
+                        return Unmanaged.passRetained(event)
                     }
+                } else {
+                    // Control (59) / Option (58) handling
+                    let currentModifiers = UInt32(flags.rawValue) & (UInt32(NSEvent.ModifierFlags.control.rawValue) |
+                                                                     UInt32(NSEvent.ModifierFlags.option.rawValue))
 
-                    return Unmanaged.passRetained(event) // Don't consume modifier events
-                } else if currentModifiers == 0 && isShortcutPressed {
-                    isShortcutPressed = false
-                    print("🎯 Single modifier shortcut released")
-                    return Unmanaged.passRetained(event)
+                    if currentModifiers == shortcutModifiers && !isShortcutPressed {
+                        isShortcutPressed = true
+                        print("🎯 Single modifier shortcut triggered: \(getCurrentShortcutString())")
+                        DispatchQueue.main.async { [weak self] in
+                            self?.onShortcutTriggered?()
+                        }
+                        return Unmanaged.passRetained(event)
+                    } else if currentModifiers == 0 && isShortcutPressed {
+                        isShortcutPressed = false
+                        return Unmanaged.passRetained(event)
+                    }
                 }
             }
         } else {
@@ -297,8 +314,10 @@ class ShortcutManager: NSObject {
     
     // Get current shortcut as string
     func getCurrentShortcutString() -> String {
-        // Special handling for single modifier keys
-        if shortcutKeyCode == 59 {
+        // Special handling for single modifier/function keys
+        if shortcutKeyCode == 63 {
+            return "fn Globe"
+        } else if shortcutKeyCode == 59 {
             return "⌃ Control"
         } else if shortcutKeyCode == 58 {
             return "⌥ Option"
@@ -359,10 +378,10 @@ class ShortcutManager: NSObject {
         return getCurrentShortcutString()
     }
 
-    // Reset shortcut to default (Cmd+Shift+D)
+    // Reset shortcut to default (Control key single press)
     func resetToDefault() {
-        shortcutKeyCode = 2 // 'D' key
-        shortcutModifiers = UInt32(NSEvent.ModifierFlags.command.rawValue | NSEvent.ModifierFlags.shift.rawValue)
+        shortcutKeyCode = 59 // Control key alone
+        shortcutModifiers = UInt32(NSEvent.ModifierFlags.control.rawValue)
 
         // Clear saved custom shortcut
         UserDefaults.standard.removeObject(forKey: "customShortcutKeyCode")
