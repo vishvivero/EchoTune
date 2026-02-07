@@ -158,7 +158,9 @@ struct NotchRecorderContentView: View {
 
     private var statusText: String {
         switch appState.recordingState {
-        case .recording: return "Recording"
+        case .recording:
+            let timeStr = AudioManager.formatDuration(audioManager.recordingDuration)
+            return "\(timeStr)"
         case .processing: return "Processing…"
         default: return "Ready"
         }

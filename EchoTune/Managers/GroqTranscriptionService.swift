@@ -47,6 +47,9 @@ class GroqTranscriptionService: ObservableObject {
         print("✅ GroqTranscriptionService initialized")
     }
 
+    // Maximum file size for a single Groq request (25MB limit, use 24MB for safety)
+    private static let maxChunkSizeBytes = 24 * 1024 * 1024
+
     // MARK: - Main Transcription Method
 
     func transcribe(audioData: Data, language: String? = nil, apiKey: String) async throws -> String {
@@ -69,10 +72,21 @@ class GroqTranscriptionService: ObservableObject {
         }
 
         print("🚀 Starting Groq transcription...")
-        print("   Audio size: \(audioData.count) bytes")
+        print("   Audio size: \(audioData.count) bytes (\(String(format: "%.1f", Double(audioData.count) / 1024.0 / 1024.0)) MB)")
         print("   Model: \(model)")
 
-        // Create multipart form data
+        // Check if audio needs chunking (over 24MB or very long)
+        if audioData.count > GroqTranscriptionService.maxChunkSizeBytes {
+            print("📦 Audio exceeds size limit, chunking for Groq...")
+            return try await transcribeWithChunking(audioData: audioData, language: language, apiKey: apiKey)
+        }
+
+        // Single chunk transcription
+        return try await transcribeSingleChunk(audioData: audioData, language: language, apiKey: apiKey)
+    }
+
+    /// Transcribe a single audio chunk
+    private func transcribeSingleChunk(audioData: Data, language: String?, apiKey: String) async throws -> String {
         let boundary = UUID().uuidString
         let request = createRequest(apiKey: apiKey, boundary: boundary)
         let body = createMultipartBody(audioData: audioData, language: language, boundary: boundary)
@@ -87,14 +101,12 @@ class GroqTranscriptionService: ObservableObject {
             print("   Response status: \(httpResponse.statusCode)")
 
             if httpResponse.statusCode != 200 {
-                // Try to parse error message
                 if let errorResponse = try? JSONDecoder().decode(GroqErrorResponse.self, from: data) {
                     throw GroqError.apiError(errorResponse.error.message)
                 }
                 throw GroqError.apiError("HTTP \(httpResponse.statusCode)")
             }
 
-            // Parse successful response
             let groqResponse = try JSONDecoder().decode(GroqResponse.self, from: data)
 
             print("✅ Groq transcription successful")
@@ -116,6 +128,33 @@ class GroqTranscriptionService: ObservableObject {
         }
     }
 
+    /// Transcribe long audio by splitting into chunks and merging results
+    private func transcribeWithChunking(audioData: Data, language: String?, apiKey: String) async throws -> String {
+        // Estimate audio properties (assume 16-bit PCM, 16kHz mono — common for speech)
+        // Adjust if actual format is known
+        let chunkResult = AudioChunker.chunkAudioData(
+            audioData,
+            sampleRate: 16000,
+            channelCount: 1,
+            bytesPerSample: 2,
+            config: .groq
+        )
+
+        print("📦 Split into \(chunkResult.chunks.count) chunks for Groq transcription")
+
+        var transcriptions: [String] = []
+
+        for (index, chunk) in chunkResult.chunks.enumerated() {
+            print("   Transcribing chunk \(index + 1)/\(chunkResult.chunks.count) (\(chunk.count) bytes)...")
+            let text = try await transcribeSingleChunk(audioData: chunk, language: language, apiKey: apiKey)
+            transcriptions.append(text)
+        }
+
+        let merged = AudioChunker.mergeTranscriptions(transcriptions)
+        print("✅ Merged \(transcriptions.count) chunks into final transcription (\(merged.count) chars)")
+        return merged
+    }
+
     // MARK: - Helper Methods
 
     private func createRequest(apiKey: String, boundary: String) -> URLRequest {
@@ -123,7 +162,7 @@ class GroqTranscriptionService: ObservableObject {
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 60 // 60 seconds timeout
+        request.timeoutInterval = 300 // 300 seconds timeout (increased for large audio files)
         return request
     }
 

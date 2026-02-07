@@ -242,10 +242,40 @@ class WhisperEngine: ObservableObject {
             do {
                 // Calculate total frames from all buffers
                 let totalFrameCount = audioBuffers.reduce(0) { $0 + Int($1.frameLength) }
-                let audioDuration = Double(totalFrameCount) / 48000.0
+                let sampleRate = audioBuffers[0].format.sampleRate
+                let audioDuration = Double(totalFrameCount) / sampleRate
                 print("📊 Audio duration: \(String(format: "%.2f", audioDuration)) seconds (\(totalFrameCount) frames)")
 
-                // Convert buffers to Float array for WhisperKit (eliminates file I/O issues)
+                // For long recordings (>30s), chunk the audio for better Whisper results
+                // Whisper's native window is 30 seconds
+                if audioDuration > 35 {
+                    print("📦 Long recording detected (\(String(format: "%.0f", audioDuration))s) — chunking for Whisper...")
+                    let chunkedBuffers = AudioChunker.chunkBuffers(audioBuffers, config: .whisper)
+                    var transcriptions: [String] = []
+
+                    for (index, bufferChunk) in chunkedBuffers.enumerated() {
+                        print("   Transcribing chunk \(index + 1)/\(chunkedBuffers.count)...")
+                        let audioArray = try convertBuffersToFloatArray(bufferChunk)
+                        let results = try await whisperKit.transcribe(audioArray: audioArray)
+                        let chunkText = results.first?.text ?? ""
+                        if !chunkText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            transcriptions.append(chunkText)
+                        }
+                    }
+
+                    let merged = AudioChunker.mergeTranscriptions(transcriptions)
+                    await MainActor.run {
+                        let cleaned = TranscriptionEngine.shared.processText(merged)
+                        self.currentText = cleaned
+                        self.isProcessing = false
+                        self.audioBuffers = []
+                        print("✅ Chunked streaming transcription complete (\(chunkedBuffers.count) chunks): \(cleaned)")
+                        completion(.success(cleaned))
+                    }
+                    return
+                }
+
+                // Short recording — single transcription pass
                 print("🔄 Converting audio buffers to Float array...")
                 let audioArray = try convertBuffersToFloatArray(audioBuffers)
 

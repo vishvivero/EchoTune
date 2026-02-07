@@ -90,7 +90,7 @@ class DeepgramTranscriptionService: ObservableObject {
         }
 
         print("🚀 Starting Deepgram transcription...")
-        print("   Audio size: \(audioData.count) bytes")
+        print("   Audio size: \(audioData.count) bytes (\(String(format: "%.1f", Double(audioData.count) / 1024.0 / 1024.0)) MB)")
         print("   Model: \(model.displayName)")
 
         // Build query parameters
@@ -124,7 +124,7 @@ class DeepgramTranscriptionService: ObservableObject {
         request.setValue("Token \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("audio/wav", forHTTPHeaderField: "Content-Type")
         request.httpBody = audioData
-        request.timeoutInterval = 60
+        request.timeoutInterval = 300 // 300 seconds timeout (increased for large audio files)
 
         do {
             let (data, response) = try await URLSession.shared.data(for: request)

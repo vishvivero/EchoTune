@@ -105,11 +105,11 @@ struct MiniRecorderContentView: View {
 
                 Spacer()
 
-                // Timer
+                // Timer (uses centralized AudioManager duration)
                 if isRecording {
-                    Text(formatTime(elapsedTime))
+                    Text(formatTime(audioManager.recordingDuration))
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundColor(.red)
+                        .foregroundColor(audioManager.recordingDuration > AudioManager.maxRecordingDuration * 0.9 && AudioManager.maxRecordingDuration > 0 ? .orange : .red)
                 }
 
                 // Stop / Record button

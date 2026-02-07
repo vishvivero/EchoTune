@@ -299,8 +299,17 @@ class TranscriptionEngine: NSObject, ObservableObject {
     private var totalFrames: AVAudioFrameCount = 0
     private let audioProcessingQueue = DispatchQueue(label: "com.echotune.audioProcessing", qos: .userInitiated)
 
+    // Auto-restart support for long recordings (Apple Speech ~60s timeout)
+    private var accumulatedTranscriptions: [String] = []
+    private var currentSessionText = ""
+    private var liveInputFormat: AVAudioFormat?
+    private var liveCompletion: ((Result<String, TranscriptionError>) -> Void)?
+    private var sessionRestartCount = 0
+    private var lastSessionFrameCount: AVAudioFrameCount = 0
+    private static let sessionRestartThresholdSeconds: Double = 50 // Restart before 60s timeout
+
     func startLiveTranscription(audioFormat: AVAudioFormat, completion: @escaping (Result<String, TranscriptionError>) -> Void) {
-        print("🎤 Starting live transcription...")
+        print("🎤 Starting live transcription (with auto-restart for long recordings)...")
 
         // Prevent multiple simultaneous tasks
         guard !isTranscribing else {
@@ -319,6 +328,10 @@ class TranscriptionEngine: NSObject, ObservableObject {
         // Reset counters
         bufferCount = 0
         totalFrames = 0
+        accumulatedTranscriptions = []
+        currentSessionText = ""
+        sessionRestartCount = 0
+        lastSessionFrameCount = 0
 
         guard isAvailable else {
             completion(.failure(.unavailable))
@@ -333,6 +346,10 @@ class TranscriptionEngine: NSObject, ObservableObject {
         isTranscribing = true
         isProcessing = true
         currentText = ""
+
+        // Store for auto-restart
+        liveInputFormat = audioFormat
+        liveCompletion = completion
 
         // Create Int16 PCM format for Speech Recognition
         guard let int16Format = AVAudioFormat(
@@ -357,55 +374,100 @@ class TranscriptionEngine: NSObject, ObservableObject {
 
         audioConverter = converter
 
+        // Start the first recognition session
+        startRecognitionSession()
+
+        print("✓ Live recognition task started (auto-restart enabled)")
+    }
+
+    /// Starts or restarts a recognition session.
+    /// Called initially and when a session times out for long recordings.
+    private func startRecognitionSession() {
+        // Cancel previous session if any
+        recognitionTask?.cancel()
+        recognitionRequest = nil
+        lastSessionFrameCount = 0
+
         // Create recognition request for live audio
         recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
-        recognitionRequest?.shouldReportPartialResults = true  // Enable partial results to prevent immediate failures
-
-        print("✓ Recognition request created for live audio")
-        print("   Input format: \(audioFormat)")
-        print("   Output format: \(int16Format)")
+        recognitionRequest?.shouldReportPartialResults = true
 
         guard let speechRecognizer = self.speechRecognizer else {
             print("❌ Speech recognizer not available")
             isProcessing = false
-            completion(.failure(.unavailable))
+            liveCompletion?(.failure(.unavailable))
             return
         }
 
+        let sessionIndex = sessionRestartCount
+        print("🔄 Starting recognition session #\(sessionIndex)")
+
         recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest!) { [weak self] result, error in
-            guard let self = self else { return }
+            guard let self = self, self.isTranscribing else { return }
 
             if let error = error {
-                print("❌ Live recognition error: \(error.localizedDescription)")
-                print("   Error domain: \((error as NSError).domain)")
-                print("   Error code: \((error as NSError).code)")
+                let nsError = error as NSError
+                print("⚠️ Recognition session #\(sessionIndex) error: \(error.localizedDescription) (code: \(nsError.code))")
 
-                // Reset state on error
-                self.isTranscribing = false
-                self.isProcessing = false
-                completion(.failure(.recognitionError(error)))
+                // Check if this is a timeout/limit error that we should recover from
+                // Error codes: 203 = "Retry", 209 = "No speech detected", 216 = timeout
+                let recoverableCodes = [203, 209, 216, 1110]
+                if recoverableCodes.contains(nsError.code) && self.isTranscribing {
+                    // Save current partial text and restart
+                    if !self.currentSessionText.isEmpty {
+                        self.accumulatedTranscriptions.append(self.currentSessionText)
+                        print("📝 Saved session #\(sessionIndex) text: \(self.currentSessionText)")
+                    }
+                    self.currentSessionText = ""
+                    self.sessionRestartCount += 1
+
+                    print("🔄 Auto-restarting recognition (session \(self.sessionRestartCount))...")
+                    self.startRecognitionSession()
+                    return
+                }
+
+                // Non-recoverable error
+                if !self.accumulatedTranscriptions.isEmpty || !self.currentSessionText.isEmpty {
+                    // We have partial results — return them instead of failing
+                    if !self.currentSessionText.isEmpty {
+                        self.accumulatedTranscriptions.append(self.currentSessionText)
+                    }
+                    let merged = AudioChunker.mergeTranscriptions(self.accumulatedTranscriptions)
+                    let processedText = self.processText(merged)
+                    self.isTranscribing = false
+                    self.isProcessing = false
+                    self.liveCompletion?(.success(processedText))
+                } else {
+                    self.isTranscribing = false
+                    self.isProcessing = false
+                    self.liveCompletion?(.failure(.recognitionError(error)))
+                }
                 return
             }
 
             if let result = result {
                 let transcription = result.bestTranscription.formattedString
-                print("📝 Live transcription: \(transcription)")
-                self.currentText = transcription
+                self.currentSessionText = transcription
+
+                // Show accumulated + current text
+                let allParts = self.accumulatedTranscriptions + [transcription]
+                let displayText = AudioChunker.mergeTranscriptions(allParts)
+                self.currentText = displayText
 
                 if result.isFinal {
-                    print("✅ Final live transcription: \(transcription)")
+                    print("✅ Session #\(sessionIndex) final: \(transcription)")
+                    self.accumulatedTranscriptions.append(transcription)
+                    self.currentSessionText = ""
 
-                    // Reset state on completion
-                    self.isTranscribing = false
-                    self.isProcessing = false
-
-                    let processedText = self.processText(transcription)
-                    completion(.success(processedText))
+                    // If we're still recording, auto-restart for continued transcription
+                    if self.isTranscribing {
+                        self.sessionRestartCount += 1
+                        print("🔄 Session ended, auto-restarting (session \(self.sessionRestartCount))...")
+                        self.startRecognitionSession()
+                    }
                 }
             }
         }
-
-        print("✓ Live recognition task started")
     }
 
     func appendAudioBuffer(_ buffer: AVAudioPCMBuffer) {
@@ -422,10 +484,13 @@ class TranscriptionEngine: NSObject, ObservableObject {
             // Track buffer stats
             self.bufferCount += 1
             self.totalFrames += buffer.frameLength
+            self.lastSessionFrameCount += buffer.frameLength
 
             // Log every 100th buffer to avoid spam
             if self.bufferCount % 100 == 1 || self.bufferCount <= 5 {
-                print("🎵 Appending buffer #\(self.bufferCount): \(buffer.frameLength) frames (total: \(self.totalFrames) frames = \(Double(self.totalFrames) / 48000.0) seconds)")
+                let totalSec = Double(self.totalFrames) / buffer.format.sampleRate
+                let sessionSec = Double(self.lastSessionFrameCount) / buffer.format.sampleRate
+                print("🎵 Buffer #\(self.bufferCount): total=\(String(format: "%.1f", totalSec))s, session=\(String(format: "%.1f", sessionSec))s")
             }
 
             // Create output buffer for converted audio
@@ -457,7 +522,6 @@ class TranscriptionEngine: NSObject, ObservableObject {
             if self.bufferCount <= 3 {
                 print("   Conversion status: \(status)")
                 print("   Converted buffer format: \(convertedBuffer.format)")
-                print("   Converted buffer frameLength before set: \(convertedBuffer.frameLength)")
             }
 
             if status == .error {
@@ -466,30 +530,14 @@ class TranscriptionEngine: NSObject, ObservableObject {
             }
 
             if status != .haveData {
-                print("⚠️ Conversion status not .haveData: \(status)")
                 return
             }
 
             // CRITICAL: Set the frame length on the converted buffer
-            // AVAudioConverter doesn't automatically set this
             convertedBuffer.frameLength = buffer.frameLength
-
-            if self.bufferCount <= 3 {
-                print("   Converted buffer frameLength after set: \(convertedBuffer.frameLength)")
-
-                // Verify buffer has actual data by checking the channel data pointers
-                if let channelData = convertedBuffer.int16ChannelData {
-                    let samples = UnsafeBufferPointer(start: channelData[0], count: Int(convertedBuffer.frameLength))
-                    let firstFewSamples = Array(samples.prefix(5))
-                    print("   First 5 Int16 samples: \(firstFewSamples)")
-                } else {
-                    print("   ⚠️ No channel data in converted buffer!")
-                }
-            }
 
             // Verify the buffer has valid data
             if convertedBuffer.frameLength == 0 {
-                print("⚠️ Converted buffer has 0 frames, skipping")
                 return
             }
 
@@ -502,12 +550,45 @@ class TranscriptionEngine: NSObject, ObservableObject {
         print("🛑 Ending live transcription")
         print("📊 Total buffers processed: \(bufferCount)")
         print("📊 Total frames: \(totalFrames) (\(Double(totalFrames) / 48000.0) seconds)")
+        print("📊 Sessions used: \(sessionRestartCount + 1)")
+
+        // End audio on current request
         recognitionRequest?.endAudio()
         audioConverter = nil
         targetFormat = nil
 
+        // If we have accumulated text from previous sessions, make sure to include it
+        // The completion will be called by the recognition task handler when it gets isFinal
+        // But if we're being called because the user stopped recording, we need to handle it
+
+        // Give the recognition task a moment to finalize, then force completion if needed
+        let existingAccumulated = accumulatedTranscriptions
+        let existingCurrent = currentSessionText
+        let existingCompletion = liveCompletion
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            guard let self = self else { return }
+            // If still in transcribing state after 2 seconds, force completion with accumulated text
+            if self.isTranscribing {
+                print("⏱️ Forcing completion after timeout")
+                var allParts = existingAccumulated
+                if !existingCurrent.isEmpty {
+                    allParts.append(existingCurrent)
+                }
+                if !allParts.isEmpty {
+                    let merged = AudioChunker.mergeTranscriptions(allParts)
+                    let processedText = self.processText(merged)
+                    self.isTranscribing = false
+                    self.isProcessing = false
+                    existingCompletion?(.success(processedText))
+                }
+            }
+        }
+
         // Reset state flag
         isTranscribing = false
+        liveInputFormat = nil
+        liveCompletion = nil
     }
 
     // MARK: - Model Routing Helpers

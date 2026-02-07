@@ -190,19 +190,18 @@ struct RecordingIndicatorView: View {
         switch appState.recordingState {
         case .processing: return "Transcribing…"
         default:
+            // Always show duration timer during recording
+            let duration = audioManager.recordingDuration
+            let timeStr = AudioManager.formatDuration(duration)
+
             if VADManager.shared.config.enabled {
                 if audioManager.isSpeechDetected {
-                    return "Speech Detected"
+                    return "\(timeStr) • Speech"
                 } else {
-                    let probability = Int(audioManager.speechProbability * 100)
-                    if probability > 30 {
-                        return "Detecting… \(probability)%"
-                    } else {
-                        return "Listening…"
-                    }
+                    return "\(timeStr) • Listening"
                 }
             } else {
-                return "Listening…"
+                return "\(timeStr) • Listening"
             }
         }
     }
