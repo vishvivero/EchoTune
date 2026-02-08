@@ -13,11 +13,10 @@ struct AboutView: View {
     var body: some View {
         VStack(spacing: 20) {
             // App icon
-            Image(systemName: "waveform.circle.fill")
+            Image(nsImage: NSApp.applicationIconImage)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
-                .frame(width: 100, height: 100)
-                .foregroundColor(.blue)
+                .frame(width: 64, height: 64)
             
             // App name and version
             Text("EchoTune")
@@ -44,7 +43,7 @@ struct AboutView: View {
                 Text("Created by Vishnu Raj")
                     .font(.subheadline)
                 
-                Text("© 2025 EchoTune Software. All rights reserved.")
+                Text("© \(Calendar.current.component(.year, from: Date())) EchoTune Software. All rights reserved.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }

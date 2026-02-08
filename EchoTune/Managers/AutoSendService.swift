@@ -14,7 +14,7 @@ class AutoSendService {
     static let shared = AutoSendService()
 
     private init() {
-        print("✅ AutoSendService initialized")
+        debugLog("✅ AutoSendService initialized")
     }
 
     // MARK: - Auto-Send Methods
@@ -43,7 +43,7 @@ class AutoSendService {
             pressKey(keyCode: returnKeyCode)
         }
 
-        print("⏎ Auto-sent: \(withShift ? "Shift+Return" : "Return")")
+        debugLog("⏎ Auto-sent: \(withShift ? "Shift+Return" : "Return")")
     }
 
     /// Press a key without modifiers

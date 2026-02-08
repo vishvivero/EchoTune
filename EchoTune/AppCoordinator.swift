@@ -12,7 +12,7 @@ import Speech
 import ApplicationServices
 import os.log
 
-private let debugLog = OSLog(subsystem: "com.echotune.EchoTune", category: "debug")
+private let appLog = OSLog(subsystem: "com.echotune.EchoTune", category: "debug")
 
 class AppCoordinator: ObservableObject {
     @Published var showAbout = false
@@ -61,7 +61,7 @@ class AppCoordinator: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
 
     private init() {
-        print("✓ AppCoordinator initialized")
+        debugLog("✓ AppCoordinator initialized")
         setupBindings()
 
         // Only initialize managers if onboarding already completed
@@ -75,7 +75,7 @@ class AppCoordinator: ObservableObject {
                 object: nil,
                 queue: .main
             ) { [weak self] _ in
-                print("📢 Onboarding completed - initializing managers and requesting permissions")
+                debugLog("📢 Onboarding completed - initializing managers and requesting permissions")
                 self?.initializeAfterOnboarding()
             }
         }
@@ -90,7 +90,7 @@ class AppCoordinator: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            print("📢 Received AccessibilityPermissionGranted notification - refreshing keyboard shortcut...")
+            debugLog("📢 Received AccessibilityPermissionGranted notification - refreshing keyboard shortcut...")
             self?.refreshKeyboardShortcut()
         }
 
@@ -100,7 +100,7 @@ class AppCoordinator: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            print("📢 Received PurchaseCompleted notification - updating license state...")
+            debugLog("📢 Received PurchaseCompleted notification - updating license state...")
             self?.updateLicenseState()
         }
     }
@@ -108,11 +108,11 @@ class AppCoordinator: ObservableObject {
     private func setupKeyboardShortcut() {
         shortcutManager.onShortcutTriggered = { [weak self] in
             guard let self = self else { return }
-            print("⌨️ Keyboard shortcut triggered!")
+            debugLog("⌨️ Keyboard shortcut triggered!")
 
             // Double-check permissions before starting
             if !self.permissionsManager.hasAccessibilityPermission {
-                print("⚠️ Accessibility permission not granted - requesting now")
+                debugLog("⚠️ Accessibility permission not granted - requesting now")
                 self.permissionsManager.requestAccessibilityPermission()
                 return
             }
@@ -120,8 +120,8 @@ class AppCoordinator: ObservableObject {
             self.toggleDictation()
         }
 
-        print("✅ Keyboard shortcut callback configured")
-        print("   Current shortcut: \(shortcutManager.getCurrentShortcutString())")
+        debugLog("✅ Keyboard shortcut callback configured")
+        debugLog("   Current shortcut: \(shortcutManager.getCurrentShortcutString())")
     }
 
     /// Called after onboarding completes (or on launch if already done).
@@ -133,7 +133,7 @@ class AppCoordinator: ObservableObject {
             kAXTrustedCheckOptionPrompt.takeUnretainedValue(): false
         ]
         let trusted = AXIsProcessTrustedWithOptions(options as CFDictionary)
-        print("🔐 Accessibility permission: \(trusted ? "granted" : "not yet granted")")
+        debugLog("🔐 Accessibility permission: \(trusted ? "granted" : "not yet granted")")
 
         // 2. Check all permissions (non-prompting)
         checkPermissions()
@@ -151,7 +151,7 @@ class AppCoordinator: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            print("✅ Accessibility permission granted — registering shortcut")
+            debugLog("✅ Accessibility permission granted — registering shortcut")
             self?.shortcutManager.unregisterGlobalShortcut()
             self?.shortcutManager.registerGlobalShortcut()
             self?.updatePermissionState()
@@ -177,46 +177,46 @@ class AppCoordinator: ObservableObject {
     /// dictation is instant. Runs on a background thread to avoid blocking UI.
     private func preloadDefaultModel() {
         guard let currentModel = modelManager.currentModel else {
-            print("⚠️ No default model set — skipping preload")
+            debugLog("⚠️ No default model set — skipping preload")
             return
         }
 
         // Only preload local Whisper models (not Apple Speech or cloud)
         guard currentModel.category == .local && !currentModel.isBuiltIn else {
-            print("ℹ️ Default model is \(currentModel.name) — no preload needed")
+            debugLog("ℹ️ Default model is \(currentModel.name) — no preload needed")
             return
         }
 
         guard currentModel.isInstalled else {
-            print("⚠️ Default model \(currentModel.name) not installed — skipping preload")
+            debugLog("⚠️ Default model \(currentModel.name) not installed — skipping preload")
             return
         }
 
-        print("🚀 Pre-loading default model at launch: \(currentModel.name)")
+        debugLog("🚀 Pre-loading default model at launch: \(currentModel.name)")
         whisperEngine.loadModel(currentModel) { result in
             switch result {
             case .success:
-                print("✅ Model pre-loaded and ready: \(currentModel.name)")
+                debugLog("✅ Model pre-loaded and ready: \(currentModel.name)")
             case .failure(let error):
-                print("⚠️ Model preload failed (will retry on first dictation): \(error)")
+                debugLog("⚠️ Model preload failed (will retry on first dictation): \(error)")
             }
         }
     }
 
     // Call this method when accessibility permission is granted
     func refreshKeyboardShortcut() {
-        print("🔄 Refreshing keyboard shortcut registration...")
+        debugLog("🔄 Refreshing keyboard shortcut registration...")
         shortcutManager.unregisterGlobalShortcut()
         shortcutManager.registerGlobalShortcut()
     }
     
     func setupApplication() {
-        print("Setting up application...")
+        debugLog("Setting up application...")
         // Add any additional setup code here
     }
 
     func startNewTranscription() {
-        print("Starting new transcription...")
+        debugLog("Starting new transcription...")
         startDictation()
     }
 
@@ -253,13 +253,13 @@ class AppCoordinator: ObservableObject {
     // MARK: - Dictation Actions (Phase 2: Real implementation!)
 
     func startDictation() {
-        print("🎤 Start dictation")
-        os_log("🎤 startDictation called", log: debugLog, type: .error)
+        debugLog("🎤 Start dictation")
+        os_log("🎤 startDictation called", log: appLog, type: .info)
 
         // Check if we can start
         guard canStartDictation() else {
-            print("❌ Cannot start dictation - requirements not met")
-            os_log("❌ canStartDictation returned false", log: debugLog, type: .error)
+            debugLog("❌ Cannot start dictation - requirements not met")
+            os_log("❌ canStartDictation returned false", log: appLog, type: .error)
             return
         }
 
@@ -276,28 +276,28 @@ class AppCoordinator: ObservableObject {
 
             // ✅ PHASE 3: Detect browser context for context-aware transcription
             if let context = BrowserContextDetector.shared.detectContext() {
-                print("🌐 Browser context: \(context.description)")
+                debugLog("🌐 Browser context: \(context.description)")
                 if let hint = BrowserContextDetector.shared.getTranscriptionHint() {
-                    print("   Hint: \(hint)")
+                    debugLog("   Hint: \(hint)")
                 }
             }
         }
 
         // Get current model
         guard let currentModel = modelManager.currentModel else {
-            print("❌ No model selected")
-            os_log("❌ No model selected", log: debugLog, type: .error)
+            debugLog("❌ No model selected")
+            os_log("❌ No model selected", log: appLog, type: .error)
             showErrorAlert(message: "Please select a transcription model in AI Models settings")
             return
         }
 
-        print("📍 Using model: \(currentModel.name) (Whisper: \(useWhisper))")
-        os_log("📍 Model: %{public}@ category=%{public}@ isBuiltIn=%d useWhisper=%d", log: debugLog, type: .error, currentModel.name, currentModel.category.rawValue, currentModel.isBuiltIn ? 1 : 0, useWhisper ? 1 : 0)
+        debugLog("📍 Using model: \(currentModel.name) (Whisper: \(useWhisper))")
+        os_log("📍 Model: %{public}@ category=%{public}@ isBuiltIn=%d useWhisper=%d", log: appLog, type: .info, currentModel.name, currentModel.category.rawValue, currentModel.isBuiltIn ? 1 : 0, useWhisper ? 1 : 0)
 
         // Load Whisper model if needed
         if useWhisper {
             if !whisperEngine.isAvailable || whisperEngine.loadedModelName != currentModel.name {
-                print("📦 Loading Whisper model: \(currentModel.name)")
+                debugLog("📦 Loading Whisper model: \(currentModel.name)")
 
                 // Show loading state
                 appState.recordingState = .loadingModel(currentModel.name)
@@ -323,7 +323,7 @@ class AppCoordinator: ObservableObject {
 
                     switch result {
                     case .success:
-                        print("✅ Whisper model loaded, starting dictation")
+                        debugLog("✅ Whisper model loaded, starting dictation")
 
                         // Show success notification
                         self.notificationManager.showNotification(
@@ -337,7 +337,7 @@ class AppCoordinator: ObservableObject {
                         self.beginRecording()
 
                     case .failure(let error):
-                        print("❌ Failed to load Whisper model: \(error)")
+                        debugLog("❌ Failed to load Whisper model: \(error)")
 
                         // Reset state
                         self.appState.recordingState = .idle
@@ -368,7 +368,7 @@ class AppCoordinator: ObservableObject {
     // MARK: - Cloud Recording (Groq/Deepgram)
 
     private func beginCloudRecording(model: AIModel) {
-        os_log("☁️ beginCloudRecording: %{public}@ (id=%{public}@)", log: debugLog, type: .error, model.name, model.id)
+        os_log("☁️ beginCloudRecording: %{public}@ (id=%{public}@)", log: appLog, type: .info, model.name, model.id)
         // Start performance monitoring
         PerformanceMonitor.shared.startRecording()
 
@@ -390,7 +390,7 @@ class AppCoordinator: ObservableObject {
 
         // Start audio recording - we'll use the recorded audio for cloud transcription
         audioManager.startRecording()
-        print("✓ Cloud recording started for: \(model.name)")
+        debugLog("✓ Cloud recording started for: \(model.name)")
 
         // Update status bar icon
         if let appDelegate = NSApp.delegate as? AppDelegate,
@@ -400,7 +400,7 @@ class AppCoordinator: ObservableObject {
     }
 
     private func stopCloudRecording() {
-        os_log("🛑 stopCloudRecording called", log: debugLog, type: .error)
+        os_log("🛑 stopCloudRecording called", log: appLog, type: .info)
 
         // Play stop sound (if enabled)
         SoundManager.shared.playStopSound()
@@ -414,7 +414,7 @@ class AppCoordinator: ObservableObject {
         // Stop audio recording and get audio data as proper WAV for cloud services
         let engineType: AudioManager.AudioEngine = .cloud
         guard let audioData = audioManager.stopRecording(forEngine: engineType) else {
-            os_log("❌ stopRecording returned nil", log: debugLog, type: .error)
+            os_log("❌ stopRecording returned nil", log: appLog, type: .error)
             handleTranscriptionError("Failed to capture audio data")
             return
         }
@@ -422,7 +422,7 @@ class AppCoordinator: ObservableObject {
         // Store audio data for retention
         self.lastRecordedAudioData = audioData
         
-        os_log("📊 Captured %d bytes for cloud transcription", log: debugLog, type: .error, audioData.count)
+        os_log("📊 Captured %d bytes for cloud transcription", log: appLog, type: .info, audioData.count)
 
         let recordingDuration = audioManager.lastRecordingDuration
 
@@ -436,7 +436,7 @@ class AppCoordinator: ObservableObject {
         if VADManager.shared.config.enabled {
             let hasSignificantSpeech = audioManager.hasSignificantSpeech()
             if !hasSignificantSpeech {
-                print("⚠️ No significant speech detected - skipping cloud transcription")
+                debugLog("⚠️ No significant speech detected - skipping cloud transcription")
                 notificationManager.showNotification(
                     title: "No Speech Detected",
                     body: "The recording didn't contain any clear speech. Please try again.",
@@ -472,14 +472,14 @@ class AppCoordinator: ObservableObject {
                         return
                     }
 
-                    os_log("☁️ Transcribing with Groq... audioSize=%d apiKeyLen=%d", log: debugLog, type: .error, audioData.count, apiKey.count)
+                    os_log("☁️ Transcribing with Groq... audioSize=%d apiKeyLen=%d", log: appLog, type: .info, audioData.count, apiKey.count)
                     PerformanceMonitor.shared.startTranscription(engine: "Groq", model: "whisper-large-v3-turbo")
                     transcribedText = try await GroqTranscriptionService.shared.transcribe(
                         audioData: audioData,
                         language: AppSettings.shared.autoDetectLanguage ? nil : settings.preferredLanguage.components(separatedBy: "-").first,
                         apiKey: apiKey
                     )
-                    os_log("✅ Groq returned: '%{public}@'", log: debugLog, type: .error, transcribedText)
+                    os_log("✅ Groq returned: '%{public}@'", log: appLog, type: .info, transcribedText)
 
                 } else if currentModel.id.contains("deepgram") || currentModel.name.lowercased().contains("deepgram") {
                     // Use Deepgram
@@ -491,7 +491,7 @@ class AppCoordinator: ObservableObject {
                         return
                     }
 
-                    print("☁️ Transcribing with Deepgram...")
+                    debugLog("☁️ Transcribing with Deepgram...")
                     PerformanceMonitor.shared.startTranscription(engine: "Deepgram", model: "nova-2")
                     transcribedText = try await DeepgramTranscriptionService.shared.transcribeToText(
                         audioData: audioData,
@@ -510,7 +510,7 @@ class AppCoordinator: ObservableObject {
                 await MainActor.run {
                     PerformanceMonitor.shared.endTranscription(wordCount: transcribedText.split(separator: " ").count)
 
-                    print("✅ Cloud transcription successful: \(transcribedText)")
+                    debugLog("✅ Cloud transcription successful: \(transcribedText)")
                     self.errorLogger.logInfo("Cloud transcription successful", category: "Transcription", context: [
                         "wordCount": "\(transcribedText.split(separator: " ").count)",
                         "recordingDuration": "\(String(format: "%.2f", recordingDuration))s",
@@ -523,7 +523,7 @@ class AppCoordinator: ObservableObject {
 
             } catch {
                 await MainActor.run {
-                    os_log("❌ Cloud transcription FAILED: %{public}@", log: debugLog, type: .error, "\(error)")
+                    os_log("❌ Cloud transcription FAILED: %{public}@", log: appLog, type: .error, "\(error)")
                     self.errorLogger.logError(error, category: "Transcription", context: [
                         "model": currentModel.name
                     ])
@@ -565,7 +565,7 @@ class AppCoordinator: ObservableObject {
     }
 
     private func beginRecording() {
-        os_log("🔴 beginRecording called, useWhisper=%d", log: debugLog, type: .error, useWhisper ? 1 : 0)
+        os_log("🔴 beginRecording called, useWhisper=%d", log: appLog, type: .info, useWhisper ? 1 : 0)
 
         // Start performance monitoring
         PerformanceMonitor.shared.startRecording()
@@ -588,12 +588,12 @@ class AppCoordinator: ObservableObject {
 
         // Start audio recording
         audioManager.startRecording()
-        print("✓ Recording started successfully")
+        debugLog("✓ Recording started successfully")
 
         // Start transcription based on selected model
         if useWhisper {
             // Whisper streaming transcription
-            print("🎯 Starting Whisper streaming transcription")
+            debugLog("🎯 Starting Whisper streaming transcription")
 
             whisperEngine.startStreamingTranscription { [weak self] result in
                 guard let self = self else { return }
@@ -607,7 +607,7 @@ class AppCoordinator: ObservableObject {
         } else {
             // Apple Speech live transcription
             if let audioFormat = audioManager.audioEngine?.inputNode.inputFormat(forBus: 0) {
-                print("🎯 Starting Apple Speech live transcription")
+                debugLog("🎯 Starting Apple Speech live transcription")
 
                 transcriptionEngine.startLiveTranscription(audioFormat: audioFormat) { [weak self] result in
                     guard let self = self else { return }
@@ -619,7 +619,7 @@ class AppCoordinator: ObservableObject {
                     self?.transcriptionEngine.appendAudioBuffer(buffer)
                 }
             } else {
-                print("⚠️ Could not get audio format, live transcription not started")
+                debugLog("⚠️ Could not get audio format, live transcription not started")
             }
         }
 
@@ -631,8 +631,8 @@ class AppCoordinator: ObservableObject {
     }
 
     func stopDictation() {
-        print("🛑 Stop dictation")
-        os_log("🛑 stopDictation called, useWhisper=%d", log: debugLog, type: .error, useWhisper ? 1 : 0)
+        debugLog("🛑 Stop dictation")
+        os_log("🛑 stopDictation called, useWhisper=%d", log: appLog, type: .info, useWhisper ? 1 : 0)
 
         // Play stop sound (if enabled)
         SoundManager.shared.playStopSound()
@@ -670,11 +670,11 @@ class AppCoordinator: ObservableObject {
 
         // VAD: Check if there's significant speech before transcribing
         if VADManager.shared.config.enabled {
-            print("🎙️ Performing VAD analysis...")
+            debugLog("🎙️ Performing VAD analysis...")
             let hasSignificantSpeech = audioManager.hasSignificantSpeech()
 
             if !hasSignificantSpeech {
-                print("⚠️ No significant speech detected - skipping transcription")
+                debugLog("⚠️ No significant speech detected - skipping transcription")
 
                 // Show "No speech detected" notification
                 self.notificationManager.showNotification(
@@ -700,8 +700,8 @@ class AppCoordinator: ObservableObject {
 
             // Log VAD analysis
             if let vadAnalysis = audioManager.getVADAnalysis() {
-                print("📊 VAD Analysis:")
-                print(vadAnalysis.summary)
+                debugLog("📊 VAD Analysis:")
+                debugLog(vadAnalysis.summary)
 
                 self.errorLogger.logInfo("VAD Analysis completed", category: "VAD", context: [
                     "speechPercentage": "\(vadAnalysis.speechPercentage)%",
@@ -713,13 +713,13 @@ class AppCoordinator: ObservableObject {
 
         // End transcription based on which engine is being used
         if useWhisper {
-            print("🛑 Ending Whisper transcription")
+            debugLog("🛑 Ending Whisper transcription")
             whisperEngine.endStreamingTranscription { [weak self] result in
                 guard let self = self else { return }
                 self.handleWhisperResult(result)
             }
         } else {
-            print("🛑 Ending Apple Speech transcription")
+            debugLog("🛑 Ending Apple Speech transcription")
             PerformanceMonitor.shared.startTranscription(
                 engine: "Apple Speech",
                 model: "Built-in"
@@ -734,14 +734,14 @@ class AppCoordinator: ObservableObject {
         }
 
         // The transcription result will come through the completion handler
-        print("⏳ Waiting for transcription to complete...")
+        debugLog("⏳ Waiting for transcription to complete...")
 
         // Safety timeout: scale with recording duration (min 15s, max 60s)
         let safetyTimeout = max(15.0, min(60.0, recordingDuration * 2.0))
         DispatchQueue.main.asyncAfter(deadline: .now() + safetyTimeout) { [weak self] in
             guard let self = self else { return }
             if case .processing = self.appState.recordingState {
-                print("⚠️ Safety timeout: state still .processing after \(safetyTimeout)s — forcing reset to .idle")
+                debugLog("⚠️ Safety timeout: state still .processing after \(safetyTimeout)s — forcing reset to .idle")
                 self.appState.recordingState = .idle
                 self.transcriptionEngine.cancelTranscription()
                 if let appDelegate = NSApp.delegate as? AppDelegate,
@@ -769,7 +769,7 @@ class AppCoordinator: ObservableObject {
             startDictation()
         } else if case .loadingModel(let modelName) = appState.recordingState {
             // User tried to start recording while model is loading
-            print("⚠️ Model is still loading, please wait...")
+            debugLog("⚠️ Model is still loading, please wait...")
             notificationManager.showNotification(
                 title: "Please Wait",
                 body: "\(modelName) is still loading...",
@@ -792,10 +792,10 @@ class AppCoordinator: ObservableObject {
 
         // Check microphone permission
         if !permissionsManager.hasMicrophonePermission {
-            print("❌ Microphone permission required")
+            debugLog("❌ Microphone permission required")
             permissionsManager.requestMicrophonePermission { granted in
                 if granted {
-                    print("✓ Microphone permission granted, ready to record")
+                    debugLog("✓ Microphone permission granted, ready to record")
                 }
             }
             return false
@@ -804,7 +804,7 @@ class AppCoordinator: ObservableObject {
         // Note: Accessibility permission is only needed for text insertion (Phase 4)
         // For Phase 2, we just copy to clipboard, so we can proceed without it
         if !permissionsManager.hasAccessibilityPermission {
-            print("⚠️ Accessibility permission not granted - will copy to clipboard instead")
+            debugLog("⚠️ Accessibility permission not granted - will copy to clipboard instead")
         }
 
         // Only check Apple Speech Recognition authorization when using Apple Speech engine
@@ -812,12 +812,12 @@ class AppCoordinator: ObservableObject {
         if !useWhisper, let currentModel = modelManager.currentModel,
            !currentModel.id.contains("groq") && !currentModel.id.contains("deepgram") && currentModel.category != .cloud {
             if transcriptionEngine.authorizationStatus != .authorized {
-                print("⚠️ Speech recognition not authorized - requesting permission")
+                debugLog("⚠️ Speech recognition not authorized - requesting permission")
                 transcriptionEngine.requestAuthorization { granted in
                     if granted {
-                        print("✓ Speech recognition authorized")
+                        debugLog("✓ Speech recognition authorized")
                     } else {
-                        print("❌ Speech recognition denied")
+                        debugLog("❌ Speech recognition denied")
                     }
                 }
                 // Can still proceed - will show error during transcription if denied
@@ -832,9 +832,9 @@ class AppCoordinator: ObservableObject {
     private func handleWhisperResult(_ result: Result<String, WhisperEngine.WhisperError>) {
         switch result {
         case .success(let text):
-            os_log("📝 handleWhisperResult SUCCESS text='%{public}@' len=%d", log: debugLog, type: .error, text, text.count)
+            os_log("📝 handleWhisperResult SUCCESS text='%{public}@' len=%d", log: appLog, type: .info, text, text.count)
         case .failure(let error):
-            os_log("📝 handleWhisperResult FAILURE error=%{public}@", log: debugLog, type: .error, "\(error)")
+            os_log("📝 handleWhisperResult FAILURE error=%{public}@", log: appLog, type: .error, "\(error)")
         }
         let recordingDuration = audioManager.getRecordingDuration()
 
@@ -843,7 +843,7 @@ class AppCoordinator: ObservableObject {
 
         switch result {
         case .success(let transcribedText):
-            os_log("✅ Whisper success: '%{public}@' words=%d dur=%.1f", log: debugLog, type: .error, transcribedText, transcribedText.split(separator: " ").count, recordingDuration)
+            os_log("✅ Whisper success: '%{public}@' words=%d dur=%.1f", log: appLog, type: .info, transcribedText, transcribedText.split(separator: " ").count, recordingDuration)
 
             self.errorLogger.logInfo("Whisper transcription successful", category: "Transcription", context: [
                 "wordCount": "\(transcribedText.split(separator: " ").count)",
@@ -855,7 +855,7 @@ class AppCoordinator: ObservableObject {
             processAndInsertText(transcribedText, recordingDuration: recordingDuration)
 
         case .failure(let error):
-            os_log("❌ Whisper FAILURE: %{public}@", log: debugLog, type: .error, "\(error)")
+            os_log("❌ Whisper FAILURE: %{public}@", log: appLog, type: .error, "\(error)")
 
             self.errorLogger.logError(error, category: "Transcription", context: [
                 "recordingDuration": "\(String(format: "%.2f", recordingDuration))s",
@@ -874,7 +874,7 @@ class AppCoordinator: ObservableObject {
 
         switch result {
         case .success(let transcribedText):
-            print("✅ Apple Speech transcription successful: \(transcribedText)")
+            debugLog("✅ Apple Speech transcription successful: \(transcribedText)")
 
             self.errorLogger.logInfo("Apple Speech transcription successful", category: "Transcription", context: [
                 "wordCount": "\(transcribedText.split(separator: " ").count)",
@@ -885,7 +885,7 @@ class AppCoordinator: ObservableObject {
             processAndInsertText(transcribedText, recordingDuration: recordingDuration)
 
         case .failure(let error):
-            print("❌ Apple Speech transcription failed: \(error)")
+            debugLog("❌ Apple Speech transcription failed: \(error)")
 
             self.errorLogger.logError(error, category: "Transcription", context: [
                 "recordingDuration": "\(String(format: "%.2f", recordingDuration))s"
@@ -898,7 +898,7 @@ class AppCoordinator: ObservableObject {
     private func processAndInsertText(_ transcribedText: String, recordingDuration: TimeInterval) {
         // Validate transcription - detect silence/hallucinations
         if isLikelyHallucination(transcribedText, recordingDuration: recordingDuration) {
-            print("⚠️ Detected likely hallucination or silence, not inserting text: '\(transcribedText)'")
+            debugLog("⚠️ Detected likely hallucination or silence, not inserting text: '\(transcribedText)'")
 
             // Show a subtle notification
             self.notificationManager.showNotification(
@@ -929,17 +929,17 @@ class AppCoordinator: ObservableObject {
         let overridePrompt = triggerResult.overridePrompt
 
         if let matched = triggerResult.matchedRule {
-            print("🎯 Trigger word matched: \"\(matched.triggerPhrase)\" → using custom prompt")
+            debugLog("🎯 Trigger word matched: \"\(matched.triggerPhrase)\" → using custom prompt")
         }
 
         // Phase 6A: AI Enhancement (if enabled or trigger word forces it)
         if shouldEnhance {
-            print("🎨 AI Enhancement active\(triggerResult.shouldForceAI ? " (triggered by keyword)" : ""), enhancing transcription...")
+            debugLog("🎨 AI Enhancement active\(triggerResult.shouldForceAI ? " (triggered by keyword)" : ""), enhancing transcription...")
 
             // Get appropriate API key based on selected model
             let modelString = settings.selectedEnhancementModel
             guard let model = AIEnhancementEngine.EnhancementModel(rawValue: modelString) else {
-                print("⚠️ Invalid enhancement model: \(modelString)")
+                debugLog("⚠️ Invalid enhancement model: \(modelString)")
                 insertTextWithAutoSend(textForEnhancement, recordingDuration: recordingDuration)
                 return
             }
@@ -955,7 +955,7 @@ class AppCoordinator: ObservableObject {
             }
 
             guard !apiKey.isEmpty else {
-                print("⚠️ No API key configured for AI enhancement")
+                debugLog("⚠️ No API key configured for AI enhancement")
                 notificationManager.showNotification(
                     title: "AI Enhancement Disabled",
                     body: "Please add your API key in Settings > Advanced > AI Enhancement",
@@ -984,12 +984,12 @@ class AppCoordinator: ObservableObject {
                     )
 
                     await MainActor.run {
-                        print("✅ AI Enhancement successful")
+                        debugLog("✅ AI Enhancement successful")
                         self.insertTextWithAutoSend(enhanced, recordingDuration: recordingDuration)
                     }
                 } catch {
                     await MainActor.run {
-                        print("❌ AI Enhancement failed: \(error.localizedDescription)")
+                        debugLog("❌ AI Enhancement failed: \(error.localizedDescription)")
                         self.notificationManager.showNotification(
                             title: "Enhancement Failed",
                             body: "Using original transcription. Error: \(error.localizedDescription)",
@@ -1033,7 +1033,7 @@ class AppCoordinator: ObservableObject {
 
                 // Phase 6A: Auto-Send After Paste (if enabled)
                 if AutoSendService.shared.shouldTriggerAutoSend() {
-                    print("📤 Auto-send enabled for this app, sending...")
+                    debugLog("📤 Auto-send enabled for this app, sending...")
                     AutoSendService.shared.sendAfterDelay(0.2) // 200ms delay
                 }
 
@@ -1216,13 +1216,13 @@ class AppCoordinator: ObservableObject {
     func retranscribe(historyItem: TranscriptionHistoryItem, completion: @escaping (String?) -> Void) {
         guard let audioPath = historyItem.audioFilePath,
               FileManager.default.fileExists(atPath: audioPath) else {
-            print("❌ Audio file not found for re-transcription")
+            debugLog("❌ Audio file not found for re-transcription")
             completion(nil)
             return
         }
 
         guard let currentModel = modelManager.currentModel else {
-            print("❌ No model selected for re-transcription")
+            debugLog("❌ No model selected for re-transcription")
             notificationManager.showNotification(
                 title: "Re-Transcription Failed",
                 body: "Please select a transcription model first.",
@@ -1232,11 +1232,11 @@ class AppCoordinator: ObservableObject {
             return
         }
 
-        print("🔄 Re-transcribing with model: \(currentModel.name)")
+        debugLog("🔄 Re-transcribing with model: \(currentModel.name)")
 
         // Read audio data from file
         guard let audioData = try? Data(contentsOf: URL(fileURLWithPath: audioPath)) else {
-            print("❌ Failed to read audio file")
+            debugLog("❌ Failed to read audio file")
             completion(nil)
             return
         }
@@ -1276,7 +1276,7 @@ class AppCoordinator: ObservableObject {
                     }
 
                     await MainActor.run {
-                        print("✅ Re-transcription successful: \(transcribedText.prefix(50))...")
+                        debugLog("✅ Re-transcription successful: \(transcribedText.prefix(50))...")
                         notificationManager.showNotification(
                             title: "Re-Transcription Complete",
                             body: "Transcription updated with \(currentModel.name).",
@@ -1286,7 +1286,7 @@ class AppCoordinator: ObservableObject {
                     }
                 } catch {
                     await MainActor.run {
-                        print("❌ Re-transcription failed: \(error)")
+                        debugLog("❌ Re-transcription failed: \(error)")
                         notificationManager.showNotification(
                             title: "Re-Transcription Failed",
                             body: error.localizedDescription,
@@ -1308,7 +1308,7 @@ class AppCoordinator: ObservableObject {
                             self.whisperEngine.transcribeAudio(audioData) { result in
                                 switch result {
                                 case .success(let text):
-                                    print("✅ Re-transcription (Whisper) successful")
+                                    debugLog("✅ Re-transcription (Whisper) successful")
                                     self.notificationManager.showNotification(
                                         title: "Re-Transcription Complete",
                                         body: "Transcription updated with \(currentModel.name).",
@@ -1316,7 +1316,7 @@ class AppCoordinator: ObservableObject {
                                     )
                                     completion(text)
                                 case .failure(let error):
-                                    print("❌ Re-transcription failed: \(error)")
+                                    debugLog("❌ Re-transcription failed: \(error)")
                                     self.notificationManager.showNotification(
                                         title: "Re-Transcription Failed",
                                         body: error.localizedDescription,
@@ -1326,7 +1326,7 @@ class AppCoordinator: ObservableObject {
                                 }
                             }
                         case .failure(let error):
-                            print("❌ Failed to load model for re-transcription: \(error)")
+                            debugLog("❌ Failed to load model for re-transcription: \(error)")
                             self.notificationManager.showNotification(
                                 title: "Re-Transcription Failed",
                                 body: "Failed to load model: \(error.localizedDescription)",
@@ -1339,7 +1339,7 @@ class AppCoordinator: ObservableObject {
                     whisperEngine.transcribeAudio(audioData) { [weak self] result in
                         switch result {
                         case .success(let text):
-                            print("✅ Re-transcription (Whisper) successful")
+                            debugLog("✅ Re-transcription (Whisper) successful")
                             self?.notificationManager.showNotification(
                                 title: "Re-Transcription Complete",
                                 body: "Transcription updated with \(currentModel.name).",
@@ -1347,7 +1347,7 @@ class AppCoordinator: ObservableObject {
                             )
                             completion(text)
                         case .failure(let error):
-                            print("❌ Re-transcription failed: \(error)")
+                            debugLog("❌ Re-transcription failed: \(error)")
                             self?.notificationManager.showNotification(
                                 title: "Re-Transcription Failed",
                                 body: error.localizedDescription,
@@ -1362,7 +1362,7 @@ class AppCoordinator: ObservableObject {
                 transcriptionEngine.transcribeAudio(audioData) { [weak self] result in
                     switch result {
                     case .success(let text):
-                        print("✅ Re-transcription (Apple Speech) successful")
+                        debugLog("✅ Re-transcription (Apple Speech) successful")
                         self?.notificationManager.showNotification(
                             title: "Re-Transcription Complete",
                             body: "Transcription updated with Apple Speech.",
@@ -1370,7 +1370,7 @@ class AppCoordinator: ObservableObject {
                         )
                         completion(text)
                     case .failure(let error):
-                        print("❌ Re-transcription failed: \(error)")
+                        debugLog("❌ Re-transcription failed: \(error)")
                         self?.notificationManager.showNotification(
                             title: "Re-Transcription Failed",
                             body: error.localizedDescription,
@@ -1388,7 +1388,7 @@ class AppCoordinator: ObservableObject {
     func recordTranscription(text: String) {
         let wordCount = text.split(separator: " ").count
         appState.incrementTranscriptionCount(wordCount: wordCount)
-        print("📊 Recorded transcription: \(wordCount) words")
+        debugLog("📊 Recorded transcription: \(wordCount) words")
     }
 
     // MARK: - UI Helpers

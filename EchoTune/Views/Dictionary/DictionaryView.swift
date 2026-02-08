@@ -532,7 +532,7 @@ struct DictionaryContentView: View {
             do {
                 try dictionaryManager.saveDictionaryToFile(at: url)
             } catch {
-                print("❌ Export failed: \(error)")
+                debugLog("❌ Export failed: \(error)")
             }
         }
     }

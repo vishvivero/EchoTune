@@ -13,7 +13,7 @@ class TextInsertionManager {
     static let shared = TextInsertionManager()
 
     private init() {
-        print("✓ TextInsertionManager initialized")
+        debugLog("✓ TextInsertionManager initialized")
     }
 
     // MARK: - Permission Check
@@ -30,57 +30,57 @@ class TextInsertionManager {
     // MARK: - Text Insertion
 
     func insertText(_ text: String, completion: @escaping (Result<Void, Error>) -> Void) {
-        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        print("📝 TEXT INSERTION START")
-        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        print("   Original text: \(text.prefix(100))")
+        debugLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        debugLog("📝 TEXT INSERTION START")
+        debugLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        debugLog("   Original text: \(text.prefix(100))")
 
         // Process text through dictionary replacements FIRST
         let processedText = processTextReplacements(text)
-        print("   Processed text: \(processedText.prefix(100))")
+        debugLog("   Processed text: \(processedText.prefix(100))")
 
         // Check permission
         guard hasAccessibilityPermission() else {
-            print("❌ No accessibility permission - falling back to clipboard")
+            debugLog("❌ No accessibility permission - falling back to clipboard")
             insertViaClipboard(processedText)
             completion(.failure(TextInsertionError.noPermission))
             return
         }
-        print("✅ Accessibility permission: OK")
+        debugLog("✅ Accessibility permission: OK")
 
         // Check if we're in a browser or web app
         if let appName = getFrontmostApplication() {
-            print("🔍 Frontmost app: '\(appName)'")
+            debugLog("🔍 Frontmost app: '\(appName)'")
 
             // Use character-by-character typing for browsers
             if isBrowserApp(appName) {
-                print("🌐 Browser detected! Using character-by-character typing")
-                print("   Text length: \(processedText.count) characters")
-                print("   Starting typing now...")
+                debugLog("🌐 Browser detected! Using character-by-character typing")
+                debugLog("   Text length: \(processedText.count) characters")
+                debugLog("   Starting typing now...")
 
                 typeTextAsync(processedText) {
-                    print("✅ Browser typing completed successfully")
-                    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                    debugLog("✅ Browser typing completed successfully")
+                    debugLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
                     completion(.success(()))
                 }
                 return
             } else {
-                print("ℹ️ Not a browser app - using paste method")
+                debugLog("ℹ️ Not a browser app - using paste method")
             }
         } else {
-            print("⚠️ Could not detect frontmost application!")
+            debugLog("⚠️ Could not detect frontmost application!")
         }
 
         // Try direct insertion first for native apps
-        print("   Attempting direct paste insertion...")
+        debugLog("   Attempting direct paste insertion...")
         if insertViaPaste(processedText) {
-            print("✅ Text inserted successfully via paste")
-            print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            debugLog("✅ Text inserted successfully via paste")
+            debugLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
             completion(.success(()))
         } else {
-            print("⚠️ Direct insertion failed - using clipboard fallback")
+            debugLog("⚠️ Direct insertion failed - using clipboard fallback")
             insertViaClipboard(processedText)
-            print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            debugLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
             completion(.success(()))
         }
     }
@@ -139,7 +139,7 @@ class TextInsertionManager {
             if let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) {
                 let range = NSRange(result.startIndex..., in: result)
                 result = regex.stringByReplacingMatches(in: result, range: range, withTemplate: phrase)
-                print("✓ Applied system text replacement: '\(shortcut)' → '\(phrase)'")
+                debugLog("✓ Applied system text replacement: '\(shortcut)' → '\(phrase)'")
             }
         }
 
@@ -154,7 +154,7 @@ class TextInsertionManager {
         guard FileManager.default.fileExists(atPath: textReplacementsPath.path),
               let data = try? Data(contentsOf: textReplacementsPath),
               let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [[String: Any]] else {
-            print("ℹ️ No system text replacements found")
+            debugLog("ℹ️ No system text replacements found")
             return text
         }
 
@@ -171,7 +171,7 @@ class TextInsertionManager {
             if let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) {
                 let range = NSRange(result.startIndex..., in: result)
                 result = regex.stringByReplacingMatches(in: result, range: range, withTemplate: phrase)
-                print("✓ Applied system text replacement: '\(shortcut)' → '\(phrase)'")
+                debugLog("✓ Applied system text replacement: '\(shortcut)' → '\(phrase)'")
             }
         }
 
@@ -235,7 +235,7 @@ class TextInsertionManager {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
-        print("📋 Text copied to clipboard")
+        debugLog("📋 Text copied to clipboard")
 
         // Show notification
         showNotification(
@@ -283,7 +283,7 @@ class TextInsertionManager {
         )
 
         guard result == .success, let element = focusedElement else {
-            print("❌ Failed to get focused element")
+            debugLog("❌ Failed to get focused element")
             return false
         }
 
@@ -296,7 +296,7 @@ class TextInsertionManager {
         )
 
         if setValue == .success {
-            print("✓ Text inserted via AX API")
+            debugLog("✓ Text inserted via AX API")
             return true
         }
 
@@ -308,11 +308,11 @@ class TextInsertionManager {
         )
 
         if insertResult == .success {
-            print("✓ Text set via AX value attribute")
+            debugLog("✓ Text set via AX value attribute")
             return true
         }
 
-        print("⚠️ AX API insertion failed")
+        debugLog("⚠️ AX API insertion failed")
         return false
     }
 
@@ -340,25 +340,25 @@ class TextInsertionManager {
             Thread.sleep(forTimeInterval: 0.001)
         }
 
-        print("✓ Text typed character by character")
+        debugLog("✓ Text typed character by character")
     }
 
     func typeTextAsync(_ text: String, completion: @escaping () -> Void) {
-        print("   ⌨️  typeTextAsync called with \(text.count) characters")
+        debugLog("   ⌨️  typeTextAsync called with \(text.count) characters")
 
         // Run typing in background to avoid blocking
         DispatchQueue.global(qos: .userInitiated).async {
             let eventSource = CGEventSource(stateID: .combinedSessionState)
 
             if eventSource == nil {
-                print("   ❌ Failed to create CGEventSource!")
+                debugLog("   ❌ Failed to create CGEventSource!")
                 DispatchQueue.main.async {
                     completion()
                 }
                 return
             }
 
-            print("   ✓ CGEventSource created successfully")
+            debugLog("   ✓ CGEventSource created successfully")
             var charCount = 0
 
             for char in text.unicodeScalars {
@@ -370,26 +370,26 @@ class TextInsertionManager {
                     keyDown.keyboardSetUnicodeString(stringLength: 1, unicodeString: [UniChar(char.value)])
                     keyDown.post(tap: .cgAnnotatedSessionEventTap)
                 } else {
-                    print("   ❌ Failed to create keyDown event for char #\(charCount)")
+                    debugLog("   ❌ Failed to create keyDown event for char #\(charCount)")
                 }
 
                 // Key up
                 if let keyUp = CGEvent(keyboardEventSource: eventSource, virtualKey: keyCode, keyDown: false) {
                     keyUp.post(tap: .cgAnnotatedSessionEventTap)
                 } else {
-                    print("   ❌ Failed to create keyUp event for char #\(charCount)")
+                    debugLog("   ❌ Failed to create keyUp event for char #\(charCount)")
                 }
 
                 // Show progress every 10 characters
                 if charCount % 10 == 0 {
-                    print("   ... typed \(charCount)/\(text.count) characters")
+                    debugLog("   ... typed \(charCount)/\(text.count) characters")
                 }
 
                 // Small delay between characters (faster for browsers)
                 Thread.sleep(forTimeInterval: 0.002)
             }
 
-            print("   ✓ Finished typing all \(charCount) characters")
+            debugLog("   ✓ Finished typing all \(charCount) characters")
 
             DispatchQueue.main.async {
                 completion()
@@ -435,7 +435,7 @@ class TextInsertionManager {
 
         UNUserNotificationCenter.current().add(request) { error in
             if let error = error {
-                print("❌ Notification error: \(error)")
+                debugLog("❌ Notification error: \(error)")
             }
         }
     }

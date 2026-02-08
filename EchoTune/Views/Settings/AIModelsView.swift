@@ -149,7 +149,7 @@ struct AIModelsView: View {
 
                 // Category Tabs
                 HStack(spacing: 0) {
-                    ForEach(ModelCategory.allCases, id: \.self) { category in
+                    ForEach(ModelCategory.allCases.filter { $0 != .comingSoon }, id: \.self) { category in
                         CategoryTab(
                             title: category.rawValue,
                             isSelected: selectedCategory == category,
@@ -455,11 +455,11 @@ struct ModelRow: View {
 
                 switch result {
                 case .success:
-                    print("✅ Model downloaded: \(model.name)")
+                    debugLog("✅ Model downloaded: \(model.name)")
                     // Force refresh by updating the published property
                     self.modelManager.objectWillChange.send()
                 case .failure(let error):
-                    print("❌ Download failed: \(error)")
+                    debugLog("❌ Download failed: \(error)")
                 }
             }
         }

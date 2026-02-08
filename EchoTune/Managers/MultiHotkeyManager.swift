@@ -135,7 +135,7 @@ class MultiHotkeyManager: ObservableObject {
         loadBindings()
         registerAllHotkeys()
         setupModifierKeyMonitoring()
-        print("✅ MultiHotkeyManager initialized with \(hotkeyBindings.count) bindings")
+        debugLog("✅ MultiHotkeyManager initialized with \(hotkeyBindings.count) bindings")
     }
 
     deinit {
@@ -149,12 +149,12 @@ class MultiHotkeyManager: ObservableObject {
         // Check if any binding uses a modifier trigger
         let hasModifierBindings = hotkeyBindings.contains { $0.isModifierOnlyBinding && $0.isEnabled }
         guard hasModifierBindings else {
-            print("ℹ️ No modifier-key bindings active, skipping event tap")
+            debugLog("ℹ️ No modifier-key bindings active, skipping event tap")
             return
         }
 
         guard AXIsProcessTrusted() else {
-            print("⚠️ Modifier key monitoring requires accessibility permission")
+            debugLog("⚠️ Modifier key monitoring requires accessibility permission")
             return
         }
 
@@ -174,7 +174,7 @@ class MultiHotkeyManager: ObservableObject {
             callback: callback,
             userInfo: UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
         ) else {
-            print("❌ Failed to create modifier event tap")
+            debugLog("❌ Failed to create modifier event tap")
             return
         }
 
@@ -182,7 +182,7 @@ class MultiHotkeyManager: ObservableObject {
         modifierRunLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
         CFRunLoopAddSource(CFRunLoopGetMain(), modifierRunLoopSource, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
-        print("✅ Modifier key event tap registered")
+        debugLog("✅ Modifier key event tap registered")
     }
 
     private func teardownModifierKeyMonitoring() {
@@ -217,7 +217,7 @@ class MultiHotkeyManager: ObservableObject {
                 if isPressed && !wasPressed {
                     // Key pressed down
                     modifierKeyPressed[trigger] = true
-                    print("🎯 Modifier key pressed: \(trigger.displayName) for \(binding.action.rawValue)")
+                    debugLog("🎯 Modifier key pressed: \(trigger.displayName) for \(binding.action.rawValue)")
                     DispatchQueue.main.async { [weak self] in
                         self?.handleHotkeyAction(binding.action)
                     }
@@ -262,7 +262,7 @@ class MultiHotkeyManager: ObservableObject {
             teardownModifierKeyMonitoring()
             setupModifierKeyMonitoring()
 
-            print("✏️ Updated hotkey for \(binding.action.rawValue)")
+            debugLog("✏️ Updated hotkey for \(binding.action.rawValue)")
         }
     }
 
@@ -283,7 +283,7 @@ class MultiHotkeyManager: ObservableObject {
             teardownModifierKeyMonitoring()
             setupModifierKeyMonitoring()
 
-            print("✅ Set modifier trigger \(trigger.displayName) for \(action.rawValue)")
+            debugLog("✅ Set modifier trigger \(trigger.displayName) for \(action.rawValue)")
         }
     }
 
@@ -338,9 +338,9 @@ class MultiHotkeyManager: ObservableObject {
 
         if status == noErr {
             eventHandlers.append(hotKeyRef)
-            print("⌨️ Registered hotkey: \(binding.displayString ?? "Unknown") for \(binding.action.rawValue)")
+            debugLog("⌨️ Registered hotkey: \(binding.displayString ?? "Unknown") for \(binding.action.rawValue)")
         } else {
-            print("❌ Failed to register hotkey for \(binding.action.rawValue)")
+            debugLog("❌ Failed to register hotkey for \(binding.action.rawValue)")
         }
     }
 
@@ -356,7 +356,7 @@ class MultiHotkeyManager: ObservableObject {
     // MARK: - Action Handlers
 
     func handleHotkeyAction(_ action: HotkeyAction) {
-        print("🔥 Hotkey triggered: \(action.rawValue)")
+        debugLog("🔥 Hotkey triggered: \(action.rawValue)")
 
         switch action {
         case .toggleDictation:
@@ -383,7 +383,7 @@ class MultiHotkeyManager: ObservableObject {
     }
 
     private func pasteLastTranscript(enhanced: Bool) {
-        print("📋 Paste last transcript (enhanced: \(enhanced))")
+        debugLog("📋 Paste last transcript (enhanced: \(enhanced))")
 
         guard let lastTranscript = TranscriptionHistoryManager.shared.transcriptions.first else {
             NotificationManager.shared.showNotification(
@@ -447,7 +447,7 @@ class MultiHotkeyManager: ObservableObject {
                     sound: false
                 )
             case .failure(let error):
-                print("❌ Failed to insert text: \(error)")
+                debugLog("❌ Failed to insert text: \(error)")
                 let pasteboard = NSPasteboard.general
                 pasteboard.clearContents()
                 pasteboard.setString(text, forType: .string)
@@ -493,7 +493,7 @@ class MultiHotkeyManager: ObservableObject {
         if let data = UserDefaults.standard.data(forKey: storageKey),
            let decoded = try? JSONDecoder().decode([HotkeyBinding].self, from: data) {
             hotkeyBindings = decoded
-            print("📂 Loaded \(hotkeyBindings.count) hotkey bindings")
+            debugLog("📂 Loaded \(hotkeyBindings.count) hotkey bindings")
         } else {
             hotkeyBindings = HotkeyAction.allCases.map { action in
                 HotkeyBinding(
@@ -503,7 +503,7 @@ class MultiHotkeyManager: ObservableObject {
                 )
             }
             saveBindings()
-            print("📂 Initialized default hotkey bindings")
+            debugLog("📂 Initialized default hotkey bindings")
         }
     }
 
@@ -557,6 +557,6 @@ class MultiHotkeyManager: ObservableObject {
         registerAllHotkeys()
         teardownModifierKeyMonitoring()
         setupModifierKeyMonitoring()
-        print("🔄 Reset to default hotkey bindings")
+        debugLog("🔄 Reset to default hotkey bindings")
     }
 }

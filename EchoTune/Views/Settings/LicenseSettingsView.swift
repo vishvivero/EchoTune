@@ -186,12 +186,12 @@ struct LicenseSettingsView: View {
             case .success(let info):
                 showSuccess = true
                 licenseKey = ""
-                print("✓ License activated: \(info.tier.rawValue)")
+                debugLog("✓ License activated: \(info.tier.rawValue)")
                 AppCoordinator.shared.updateLicenseState()
 
             case .failure(let error):
                 errorMessage = error.localizedDescription
-                print("❌ License activation failed: \(error)")
+                debugLog("❌ License activation failed: \(error)")
             }
         }
     }
@@ -208,11 +208,11 @@ struct LicenseSettingsView: View {
             licenseManager.deactivateLicense { result in
                 switch result {
                 case .success:
-                    print("✓ License deactivated")
+                    debugLog("✓ License deactivated")
                     AppCoordinator.shared.updateLicenseState()
 
                 case .failure(let error):
-                    print("❌ Deactivation failed: \(error)")
+                    debugLog("❌ Deactivation failed: \(error)")
                 }
             }
         }

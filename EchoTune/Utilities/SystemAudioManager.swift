@@ -49,7 +49,7 @@ class SystemAudioManager {
         var errorInfo: NSDictionary?
         let result = appleScript?.executeAndReturnError(&errorInfo)
         if let errorInfo = errorInfo {
-            print("⚠️ AppleScript error: \(errorInfo)")
+            debugLog("⚠️ AppleScript error: \(errorInfo)")
         }
         return result
     }

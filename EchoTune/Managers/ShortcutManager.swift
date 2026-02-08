@@ -53,18 +53,18 @@ class ShortcutManager: NSObject {
             )
         }
 
-        print("✓ ShortcutManager initialized and listening for permission changes")
+        debugLog("✓ ShortcutManager initialized and listening for permission changes")
     }
 
     @objc private func onOnboardingCompleted() {
-        print("🔔 Onboarding completed - registering global shortcut")
+        debugLog("🔔 Onboarding completed - registering global shortcut")
         registerGlobalShortcut()
         NotificationCenter.default.removeObserver(self, name: NSNotification.Name("OnboardingCompleted"), object: nil)
     }
 
     @objc private func onAccessibilityPermissionGranted() {
-        print("🔔 Received AccessibilityPermissionGranted notification")
-        print("   Re-registering global shortcuts...")
+        debugLog("🔔 Received AccessibilityPermissionGranted notification")
+        debugLog("   Re-registering global shortcuts...")
 
         // Re-register shortcuts now that we have permission
         DispatchQueue.main.async {
@@ -79,14 +79,14 @@ class ShortcutManager: NSObject {
            let savedModifiers = UserDefaults.standard.object(forKey: "customShortcutModifiers") as? UInt32 {
             shortcutKeyCode = savedKeyCode
             shortcutModifiers = savedModifiers
-            print("✓ Loaded custom shortcut: \(getCurrentShortcutString())")
+            debugLog("✓ Loaded custom shortcut: \(getCurrentShortcutString())")
         }
     }
 
     private func saveCustomShortcut() {
         UserDefaults.standard.set(shortcutKeyCode, forKey: "customShortcutKeyCode")
         UserDefaults.standard.set(shortcutModifiers, forKey: "customShortcutModifiers")
-        print("✓ Saved custom shortcut: \(getCurrentShortcutString())")
+        debugLog("✓ Saved custom shortcut: \(getCurrentShortcutString())")
     }
     
     deinit {
@@ -95,24 +95,24 @@ class ShortcutManager: NSObject {
     }
     
     func registerGlobalShortcut() {
-        print("🔧 Attempting to register global shortcut...")
+        debugLog("🔧 Attempting to register global shortcut...")
 
         // Check for accessibility permissions
         // Check silently — don't trigger macOS prompt dialog here
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: false] as CFDictionary
         let accessibilityEnabled = AXIsProcessTrustedWithOptions(options)
 
-        print("🔐 Accessibility permission status: \(accessibilityEnabled)")
+        debugLog("🔐 Accessibility permission status: \(accessibilityEnabled)")
 
         if !accessibilityEnabled {
-            print("❌ Global shortcuts DISABLED - Accessibility permissions NOT granted")
-            print("   Will register once permission is granted")
+            debugLog("❌ Global shortcuts DISABLED - Accessibility permissions NOT granted")
+            debugLog("   Will register once permission is granted")
             return
         }
 
-        print("✅ Accessibility permission granted")
-        print("🎹 Current shortcut: \(getCurrentShortcutString())")
-        print("   KeyCode: \(shortcutKeyCode), Modifiers: \(shortcutModifiers)")
+        debugLog("✅ Accessibility permission granted")
+        debugLog("🎹 Current shortcut: \(getCurrentShortcutString())")
+        debugLog("   KeyCode: \(shortcutKeyCode), Modifiers: \(shortcutModifiers)")
 
         // Create event tap for global keyboard monitoring
         // Include flagsChanged for single modifier key shortcuts
@@ -120,7 +120,7 @@ class ShortcutManager: NSObject {
                                     1 << CGEventType.keyUp.rawValue |
                                     1 << CGEventType.flagsChanged.rawValue)
 
-        print("📡 Creating event tap with mask: \(eventMask)")
+        debugLog("📡 Creating event tap with mask: \(eventMask)")
 
         let callback: CGEventTapCallBack = { (proxy, type, event, refcon) in
             guard let refcon = refcon else { return Unmanaged.passRetained(event) }
@@ -136,29 +136,29 @@ class ShortcutManager: NSObject {
             callback: callback,
             userInfo: UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
         ) else {
-            print("❌ FAILED to create event tap!")
-            print("   This usually means Accessibility permissions are not properly granted")
-            print("   or there's a system restriction")
+            debugLog("❌ FAILED to create event tap!")
+            debugLog("   This usually means Accessibility permissions are not properly granted")
+            debugLog("   or there's a system restriction")
             return
         }
 
-        print("✅ Event tap created successfully")
+        debugLog("✅ Event tap created successfully")
         self.eventTap = tap
 
         // Create run loop source
         self.runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
-        print("✅ Run loop source created")
+        debugLog("✅ Run loop source created")
 
         // Add to current run loop
         CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
-        print("✅ Added to run loop")
+        debugLog("✅ Added to run loop")
 
         // Enable the tap
         CGEvent.tapEnable(tap: tap, enable: true)
-        print("✅ Event tap enabled")
+        debugLog("✅ Event tap enabled")
 
-        print("🎉 Global keyboard shortcut SUCCESSFULLY registered: \(getCurrentShortcutString())")
-        print("   Monitoring for: KeyCode=\(shortcutKeyCode), Modifiers=\(shortcutModifiers)")
+        debugLog("🎉 Global keyboard shortcut SUCCESSFULLY registered: \(getCurrentShortcutString())")
+        debugLog("   Monitoring for: KeyCode=\(shortcutKeyCode), Modifiers=\(shortcutModifiers)")
     }
     
     func unregisterGlobalShortcut() {
@@ -194,7 +194,7 @@ class ShortcutManager: NSObject {
                     let fnPressed = nsFlags.contains(.function)
                     if fnPressed && !isShortcutPressed {
                         isShortcutPressed = true
-                        print("🎯 Globe/Fn key triggered")
+                        debugLog("🎯 Globe/Fn key triggered")
                         DispatchQueue.main.async { [weak self] in
                             self?.onShortcutTriggered?()
                         }
@@ -210,7 +210,7 @@ class ShortcutManager: NSObject {
 
                     if currentModifiers == shortcutModifiers && !isShortcutPressed {
                         isShortcutPressed = true
-                        print("🎯 Single modifier shortcut triggered: \(getCurrentShortcutString())")
+                        debugLog("🎯 Single modifier shortcut triggered: \(getCurrentShortcutString())")
                         DispatchQueue.main.async { [weak self] in
                             self?.onShortcutTriggered?()
                         }
@@ -233,11 +233,11 @@ class ShortcutManager: NSObject {
             if keyCode == shortcutKeyCode && modifiers == shortcutModifiers {
                 if type == .keyDown && !isShortcutPressed {
                     isShortcutPressed = true
-                    print("🎯 Shortcut triggered: \(getCurrentShortcutString())")
+                    debugLog("🎯 Shortcut triggered: \(getCurrentShortcutString())")
 
                     // Trigger callback on main thread
                     DispatchQueue.main.async { [weak self] in
-                        print("📞 Calling shortcut callback...")
+                        debugLog("📞 Calling shortcut callback...")
                         self?.onShortcutTriggered?()
                     }
 
@@ -245,7 +245,7 @@ class ShortcutManager: NSObject {
                     return nil
                 } else if type == .keyUp && isShortcutPressed {
                     isShortcutPressed = false
-                    print("🎯 Shortcut released")
+                    debugLog("🎯 Shortcut released")
 
                     // Consume the event
                     return nil
@@ -386,6 +386,6 @@ class ShortcutManager: NSObject {
         // Clear saved custom shortcut
         UserDefaults.standard.removeObject(forKey: "customShortcutKeyCode")
         UserDefaults.standard.removeObject(forKey: "customShortcutModifiers")
-        print("✓ Reset to default shortcut: \(getCurrentShortcutString())")
+        debugLog("✓ Reset to default shortcut: \(getCurrentShortcutString())")
     }
 }

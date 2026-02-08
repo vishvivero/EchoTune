@@ -14,17 +14,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var onboardingWindow: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        print("🚀 EchoTune launching...")
+        debugLog("🚀 EchoTune launching...")
 
         // CRITICAL FIX: Use .accessory policy to prevent focus stealing
         // This allows EchoTune to run without ever stealing focus from other apps
         // User can still access settings via menu bar
         NSApp.setActivationPolicy(.accessory)
-        print("✓ Using .accessory policy - will not steal focus")
+        debugLog("✓ Using .accessory policy - will not steal focus")
 
         // Initialize status bar (always show for accessory apps)
         statusBarController = StatusBarController()
-        print("✓ Menu bar icon created")
+        debugLog("✓ Menu bar icon created")
 
         // Observe menu bar visibility changes
         NotificationCenter.default.addObserver(
@@ -36,17 +36,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Check if first launch or onboarding not completed
         let hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
-        print("📋 Onboarding completed: \(hasCompletedOnboarding)")
+        debugLog("📋 Onboarding completed: \(hasCompletedOnboarding)")
 
         if !hasCompletedOnboarding {
-            print("🎓 Showing onboarding...")
+            debugLog("🎓 Showing onboarding...")
             showOnboarding()
         }
 
         // Model preloading is handled by AppCoordinator.initializeAfterOnboarding()
         // (waits for ModelManagerReady notification to avoid race conditions)
 
-        print("✓ EchoTune ready")
+        debugLog("✓ EchoTune ready")
     }
 
     @objc func handleMenuBarVisibilityChanged(_ notification: Notification) {
@@ -56,17 +56,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // Show menu bar icon
             if statusBarController == nil {
                 statusBarController = StatusBarController()
-                print("✓ Menu bar icon shown")
+                debugLog("✓ Menu bar icon shown")
             }
         } else {
             // Hide menu bar icon
             statusBarController = nil
-            print("✓ Menu bar icon hidden")
+            debugLog("✓ Menu bar icon hidden")
         }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        print("👋 EchoTune shutting down")
+        debugLog("👋 EchoTune shutting down")
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -77,7 +77,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func showOnboarding() {
         if onboardingWindow == nil {
             let onboardingView = OnboardingView {
-                print("✓ Onboarding completed")
+                debugLog("✓ Onboarding completed")
                 // Onboarding completed
                 self.onboardingWindow?.close()
                 self.onboardingWindow = nil
@@ -97,13 +97,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             onboardingWindow?.maxSize = NSSize(width: 700, height: 600)
             onboardingWindow?.center()
             onboardingWindow?.isReleasedWhenClosed = false
-            print("🪟 Onboarding window created")
+            debugLog("🪟 Onboarding window created")
         }
 
         // Show window without stealing focus
         onboardingWindow?.makeKeyAndOrderFront(nil)
         // REMOVED: NSApp.activate(ignoringOtherApps: true) - this steals focus!
-        print("🪟 Onboarding window shown (without stealing focus)")
+        debugLog("🪟 Onboarding window shown (without stealing focus)")
     }
 
     func showSettings() {
@@ -127,7 +127,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Show settings window without stealing focus
         settingsWindow?.makeKeyAndOrderFront(nil)
         // REMOVED: NSApp.activate(ignoringOtherApps: true) - this steals focus!
-        print("⚙️ Settings window shown (without stealing focus)")
+        debugLog("⚙️ Settings window shown (without stealing focus)")
     }
 
     func showWelcomeNotification() {
@@ -166,23 +166,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard let currentModel = ModelManager.shared.currentModel,
               !currentModel.isBuiltIn,
               currentModel.isInstalled else {
-            print("ℹ️ Skipping model preload (using Apple Speech or no model installed)")
+            debugLog("ℹ️ Skipping model preload (using Apple Speech or no model installed)")
             return
         }
 
-        print("🚀 Preloading Whisper model in background: \(currentModel.name)")
-        print("   This eliminates 2-3s loading delay on first transcription")
+        debugLog("🚀 Preloading Whisper model in background: \(currentModel.name)")
+        debugLog("   This eliminates 2-3s loading delay on first transcription")
 
         // Preload model asynchronously in background
         Task(priority: .utility) {
             WhisperEngine.shared.loadModel(currentModel) { result in
                 switch result {
                 case .success:
-                    print("✅ Model preloaded successfully: \(currentModel.name)")
-                    print("🎯 First transcription will be instant!")
+                    debugLog("✅ Model preloaded successfully: \(currentModel.name)")
+                    debugLog("🎯 First transcription will be instant!")
                 case .failure(let error):
-                    print("⚠️ Model preload failed: \(error)")
-                    print("   Model will load on first transcription instead")
+                    debugLog("⚠️ Model preload failed: \(error)")
+                    debugLog("   Model will load on first transcription instead")
                 }
             }
         }

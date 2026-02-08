@@ -44,7 +44,7 @@ class GroqTranscriptionService: ObservableObject {
     @Published var lastError: GroqError?
 
     private init() {
-        print("✅ GroqTranscriptionService initialized")
+        debugLog("✅ GroqTranscriptionService initialized")
     }
 
     // Maximum file size for a single Groq request (25MB limit, use 24MB for safety)
@@ -71,13 +71,13 @@ class GroqTranscriptionService: ObservableObject {
             }
         }
 
-        print("🚀 Starting Groq transcription...")
-        print("   Audio size: \(audioData.count) bytes (\(String(format: "%.1f", Double(audioData.count) / 1024.0 / 1024.0)) MB)")
-        print("   Model: \(model)")
+        debugLog("🚀 Starting Groq transcription...")
+        debugLog("   Audio size: \(audioData.count) bytes (\(String(format: "%.1f", Double(audioData.count) / 1024.0 / 1024.0)) MB)")
+        debugLog("   Model: \(model)")
 
         // Check if audio needs chunking (over 24MB or very long)
         if audioData.count > GroqTranscriptionService.maxChunkSizeBytes {
-            print("📦 Audio exceeds size limit, chunking for Groq...")
+            debugLog("📦 Audio exceeds size limit, chunking for Groq...")
             return try await transcribeWithChunking(audioData: audioData, language: language, apiKey: apiKey)
         }
 
@@ -98,7 +98,7 @@ class GroqTranscriptionService: ObservableObject {
                 throw GroqError.networkError(NSError(domain: "com.echotune", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid response"]))
             }
 
-            print("   Response status: \(httpResponse.statusCode)")
+            debugLog("   Response status: \(httpResponse.statusCode)")
 
             if httpResponse.statusCode != 200 {
                 if let errorResponse = try? JSONDecoder().decode(GroqErrorResponse.self, from: data) {
@@ -109,8 +109,8 @@ class GroqTranscriptionService: ObservableObject {
 
             let groqResponse = try JSONDecoder().decode(GroqResponse.self, from: data)
 
-            print("✅ Groq transcription successful")
-            print("   Text length: \(groqResponse.text.count) characters")
+            debugLog("✅ Groq transcription successful")
+            debugLog("   Text length: \(groqResponse.text.count) characters")
 
             return groqResponse.text
 
@@ -133,8 +133,8 @@ class GroqTranscriptionService: ObservableObject {
         // CAF container data cannot be naively split at byte boundaries.
         // For now, warn and attempt single-chunk transcription.
         // The 25MB Groq limit accommodates ~10+ minutes of Float32 48kHz audio in CAF format.
-        print("⚠️ Audio data exceeds preferred size (\(audioData.count) bytes) — attempting single upload anyway")
-        print("   Note: CAF container chunking not yet implemented")
+        debugLog("⚠️ Audio data exceeds preferred size (\(audioData.count) bytes) — attempting single upload anyway")
+        debugLog("   Note: CAF container chunking not yet implemented")
         return try await transcribeSingleChunk(audioData: audioData, language: language, apiKey: apiKey)
     }
 

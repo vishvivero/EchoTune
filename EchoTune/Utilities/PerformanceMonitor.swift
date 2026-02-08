@@ -63,7 +63,7 @@ class PerformanceMonitor {
 
     func setEnabled(_ enabled: Bool) {
         UserDefaults.standard.set(enabled, forKey: "PerformanceMonitorEnabled")
-        print("📊 Performance Monitor: \(enabled ? "Enabled" : "Disabled")")
+        debugLog("📊 Performance Monitor: \(enabled ? "Enabled" : "Disabled")")
     }
 
     private init() {
@@ -84,7 +84,7 @@ class PerformanceMonitor {
         currentMetrics = TranscriptionMetrics()
         currentMetrics.recordingStartTime = Date()
 
-        print("📊 [Performance] Recording started")
+        debugLog("📊 [Performance] Recording started")
     }
 
     func endRecording(duration: TimeInterval, bufferCount: Int = 0) {
@@ -96,7 +96,7 @@ class PerformanceMonitor {
 
         if let startTime = currentMetrics.recordingStartTime {
             let actualDuration = Date().timeIntervalSince(startTime)
-            print("📊 [Performance] Recording ended: \(String(format: "%.2f", actualDuration))s (\(bufferCount) buffers)")
+            debugLog("📊 [Performance] Recording ended: \(String(format: "%.2f", actualDuration))s (\(bufferCount) buffers)")
         }
     }
 
@@ -108,7 +108,7 @@ class PerformanceMonitor {
         currentMetrics.audioConversionStartTime = Date()
         currentMetrics.audioDataSize = dataSize
 
-        print("📊 [Performance] Audio conversion started (\(dataSize) bytes)")
+        debugLog("📊 [Performance] Audio conversion started (\(dataSize) bytes)")
     }
 
     func endAudioConversion() {
@@ -118,7 +118,7 @@ class PerformanceMonitor {
 
         if let startTime = currentMetrics.audioConversionStartTime {
             currentMetrics.audioConversionTime = Date().timeIntervalSince(startTime)
-            print("📊 [Performance] Audio conversion completed: \(String(format: "%.3f", currentMetrics.audioConversionTime))s")
+            debugLog("📊 [Performance] Audio conversion completed: \(String(format: "%.3f", currentMetrics.audioConversionTime))s")
         }
     }
 
@@ -131,7 +131,7 @@ class PerformanceMonitor {
         currentMetrics.engineUsed = engine
         currentMetrics.modelUsed = model
 
-        print("📊 [Performance] Transcription started (\(engine) - \(model))")
+        debugLog("📊 [Performance] Transcription started (\(engine) - \(model))")
     }
 
     func endTranscription(wordCount: Int = 0) {
@@ -142,7 +142,7 @@ class PerformanceMonitor {
 
         if let startTime = currentMetrics.transcriptionStartTime {
             currentMetrics.transcriptionProcessingTime = Date().timeIntervalSince(startTime)
-            print("📊 [Performance] Transcription completed: \(String(format: "%.3f", currentMetrics.transcriptionProcessingTime))s (\(wordCount) words)")
+            debugLog("📊 [Performance] Transcription completed: \(String(format: "%.3f", currentMetrics.transcriptionProcessingTime))s (\(wordCount) words)")
         }
     }
 
@@ -152,7 +152,7 @@ class PerformanceMonitor {
         guard isEnabled else { return }
 
         currentMetrics.textInsertionStartTime = Date()
-        print("📊 [Performance] Text insertion started")
+        debugLog("📊 [Performance] Text insertion started")
     }
 
     func endTextInsertion() {
@@ -162,7 +162,7 @@ class PerformanceMonitor {
 
         if let startTime = currentMetrics.textInsertionStartTime {
             currentMetrics.textInsertionTime = Date().timeIntervalSince(startTime)
-            print("📊 [Performance] Text insertion completed: \(String(format: "%.3f", currentMetrics.textInsertionTime))s")
+            debugLog("📊 [Performance] Text insertion completed: \(String(format: "%.3f", currentMetrics.textInsertionTime))s")
         }
     }
 
@@ -193,24 +193,24 @@ class PerformanceMonitor {
     private func logDetailedMetrics() {
         let m = currentMetrics
 
-        print("📊 ═══════════════════════════════════════════════════════")
-        print("📊 PERFORMANCE METRICS - \(m.engineUsed) (\(m.modelUsed))")
-        print("📊 ═══════════════════════════════════════════════════════")
-        print("📊 Recording Duration:    \(String(format: "%6.2f", m.recordingDuration))s")
-        print("📊 Audio Conversion:      \(String(format: "%6.3f", m.audioConversionTime))s")
-        print("📊 Transcription:         \(String(format: "%6.3f", m.transcriptionProcessingTime))s")
-        print("📊 Text Insertion:        \(String(format: "%6.3f", m.textInsertionTime))s")
-        print("📊 ───────────────────────────────────────────────────────")
-        print("📊 Total Latency:         \(String(format: "%6.3f", m.totalLatency))s")
-        print("📊 ═══════════════════════════════════════════════════════")
-        print("📊 Real-Time Factor:      \(String(format: "%6.2f", m.realTimeFactor))x")
-        print("📊 Words Generated:       \(m.wordCount) words")
-        print("📊 Audio Data Size:       \(formatBytes(m.audioDataSize))")
-        print("📊 Buffers Processed:     \(m.bufferCount)")
+        debugLog("📊 ═══════════════════════════════════════════════════════")
+        debugLog("📊 PERFORMANCE METRICS - \(m.engineUsed) (\(m.modelUsed))")
+        debugLog("📊 ═══════════════════════════════════════════════════════")
+        debugLog("📊 Recording Duration:    \(String(format: "%6.2f", m.recordingDuration))s")
+        debugLog("📊 Audio Conversion:      \(String(format: "%6.3f", m.audioConversionTime))s")
+        debugLog("📊 Transcription:         \(String(format: "%6.3f", m.transcriptionProcessingTime))s")
+        debugLog("📊 Text Insertion:        \(String(format: "%6.3f", m.textInsertionTime))s")
+        debugLog("📊 ───────────────────────────────────────────────────────")
+        debugLog("📊 Total Latency:         \(String(format: "%6.3f", m.totalLatency))s")
+        debugLog("📊 ═══════════════════════════════════════════════════════")
+        debugLog("📊 Real-Time Factor:      \(String(format: "%6.2f", m.realTimeFactor))x")
+        debugLog("📊 Words Generated:       \(m.wordCount) words")
+        debugLog("📊 Audio Data Size:       \(formatBytes(m.audioDataSize))")
+        debugLog("📊 Buffers Processed:     \(m.bufferCount)")
         if m.bufferCount > 0 {
-            print("📊 Avg Buffer Time:       \(String(format: "%6.3f", m.averageBufferProcessingTime * 1000))ms")
+            debugLog("📊 Avg Buffer Time:       \(String(format: "%6.3f", m.averageBufferProcessingTime * 1000))ms")
         }
-        print("📊 ═══════════════════════════════════════════════════════")
+        debugLog("📊 ═══════════════════════════════════════════════════════")
 
         // Performance assessment
         let rtf = m.realTimeFactor
@@ -225,8 +225,8 @@ class PerformanceMonitor {
             assessment = "❌ SLOW (> 1.0x) - Needs optimization"
         }
 
-        print("📊 Performance:           \(assessment)")
-        print("📊 ═══════════════════════════════════════════════════════")
+        debugLog("📊 Performance:           \(assessment)")
+        debugLog("📊 ═══════════════════════════════════════════════════════")
     }
 
     func getSessionSummary() -> String {
@@ -269,7 +269,7 @@ class PerformanceMonitor {
     func resetMetrics() {
         sessionMetrics.removeAll()
         currentMetrics = TranscriptionMetrics()
-        print("📊 [Performance] Metrics reset")
+        debugLog("📊 [Performance] Metrics reset")
     }
 
     // MARK: - Helpers
@@ -298,7 +298,7 @@ extension PerformanceMonitor {
         let result = try block()
         let duration = Date().timeIntervalSince(startTime)
 
-        print("📊 [Performance] \(name): \(String(format: "%.3f", duration))s")
+        debugLog("📊 [Performance] \(name): \(String(format: "%.3f", duration))s")
 
         return result
     }
@@ -312,7 +312,7 @@ extension PerformanceMonitor {
         let result = try await block()
         let duration = Date().timeIntervalSince(startTime)
 
-        print("📊 [Performance] \(name): \(String(format: "%.3f", duration))s")
+        debugLog("📊 [Performance] \(name): \(String(format: "%.3f", duration))s")
 
         return result
     }

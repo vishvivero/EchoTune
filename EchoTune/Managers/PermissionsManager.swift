@@ -36,7 +36,7 @@ class PermissionsManager: ObservableObject {
     private init() {
         checkAllPermissions()
         startPermissionMonitoring()
-        print("✓ PermissionsManager initialized")
+        debugLog("✓ PermissionsManager initialized")
     }
 
     // Periodically check accessibility permission when not granted
@@ -55,7 +55,7 @@ class PermissionsManager: ObservableObject {
     // MARK: - Check All Permissions
 
     func checkAllPermissions() {
-        print("🔄 Checking all permissions...")
+        debugLog("🔄 Checking all permissions...")
         checkMicrophonePermission()
         checkScreenRecordingPermission()
 
@@ -74,10 +74,10 @@ class PermissionsManager: ObservableObject {
             // Only re-check if we still think permission is not granted
             // This avoids overwriting correct "granted" status with delayed checks
             if !self.hasAccessibilityPermission {
-                print("🔄 Re-checking accessibility (initial check showed not granted)...")
+                debugLog("🔄 Re-checking accessibility (initial check showed not granted)...")
                 self.checkAccessibilityPermission()
             } else {
-                print("   ✓ Permission already verified as granted - skipping re-check")
+                debugLog("   ✓ Permission already verified as granted - skipping re-check")
             }
             self.pendingAccessibilityCheck = nil
         }
@@ -95,17 +95,17 @@ class PermissionsManager: ObservableObject {
         case .granted:
             hasMicrophonePermission = true
             microphoneStatus = .granted
-            print("✓ Microphone: Granted")
+            debugLog("✓ Microphone: Granted")
 
         case .denied:
             hasMicrophonePermission = false
             microphoneStatus = .denied
-            print("❌ Microphone: Denied")
+            debugLog("❌ Microphone: Denied")
 
         case .undetermined:
             hasMicrophonePermission = false
             microphoneStatus = .notDetermined
-            print("⏳ Microphone: Not determined")
+            debugLog("⏳ Microphone: Not determined")
 
         @unknown default:
             hasMicrophonePermission = false
@@ -119,7 +119,7 @@ class PermissionsManager: ObservableObject {
                 self?.hasMicrophonePermission = granted
                 self?.microphoneStatus = granted ? .granted : .denied
 
-                print(granted ? "✓ Microphone permission granted" : "❌ Microphone permission denied")
+                debugLog(granted ? "✓ Microphone permission granted" : "❌ Microphone permission denied")
                 completion(granted)
             }
         }
@@ -167,12 +167,12 @@ class PermissionsManager: ObservableObject {
             }
 
             if statusChanged {
-                print("🔄 Accessibility status changed: \(wasGranted ? "granted" : "not granted") → \(finalStatus ? "granted" : "not granted")\(apiWorks ? " (API verified)" : "")")
+                debugLog("🔄 Accessibility status changed: \(wasGranted ? "granted" : "not granted") → \(finalStatus ? "granted" : "not granted")\(apiWorks ? " (API verified)" : "")")
                 self.objectWillChange.send()
 
                 // Automatically re-register keyboard shortcuts when permission is newly granted
                 if !wasGranted && finalStatus {
-                    print("   🎹 Accessibility permission newly granted - re-registering keyboard shortcuts...")
+                    debugLog("   🎹 Accessibility permission newly granted - re-registering keyboard shortcuts...")
                     NotificationCenter.default.post(name: NSNotification.Name("AccessibilityPermissionGranted"), object: nil)
                 }
             }
@@ -180,7 +180,7 @@ class PermissionsManager: ObservableObject {
     }
 
     func requestAccessibilityPermission() {
-        print("🔐 Requesting accessibility permission...")
+        debugLog("🔐 Requesting accessibility permission...")
         UserDefaults.standard.set(true, forKey: "hasRequestedAccessibilityPermission")
 
         // Check current status first
@@ -190,7 +190,7 @@ class PermissionsManager: ObservableObject {
         let alreadyTrusted = AXIsProcessTrustedWithOptions(options)
 
         if alreadyTrusted {
-            print("✅ Accessibility permission already granted!")
+            debugLog("✅ Accessibility permission already granted!")
             self.hasAccessibilityPermission = true
             self.accessibilityStatus = .granted
             return
@@ -206,7 +206,7 @@ class PermissionsManager: ObservableObject {
             task.arguments = ["reset", "Accessibility", bundleId]
             try? task.run()
             task.waitUntilExit()
-            print("   ✓ Reset TCC accessibility entry for \(bundleId)")
+            debugLog("   ✓ Reset TCC accessibility entry for \(bundleId)")
         }
 
         // Now show the system prompt — this will register the current binary fresh
@@ -214,7 +214,7 @@ class PermissionsManager: ObservableObject {
             kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true
         ]
         let _ = AXIsProcessTrustedWithOptions(promptOptions)
-        print("   ✓ System prompt triggered")
+        debugLog("   ✓ System prompt triggered")
 
         // Also open System Settings as a fallback — user can use the + button
         // to manually add the app if the system prompt doesn't appear
@@ -256,7 +256,7 @@ class PermissionsManager: ObservableObject {
         // Try opening Accessibility settings with the app's bundle identifier
         // This sometimes helps macOS recognize which app is requesting permission
         if let bundleId = Bundle.main.bundleIdentifier {
-            print("📦 Bundle ID: \(bundleId)")
+            debugLog("📦 Bundle ID: \(bundleId)")
             
             // For macOS 13+, try using the new System Settings format
             if osVersion.majorVersion >= 13 {
@@ -287,7 +287,7 @@ class PermissionsManager: ObservableObject {
             }
         }
         
-        print("⚠️ Could not open System Settings - please navigate manually to Privacy & Security → Accessibility")
+        debugLog("⚠️ Could not open System Settings - please navigate manually to Privacy & Security → Accessibility")
     }
 
     // Helper method to show instructions if app doesn't appear (call manually if needed)
@@ -316,12 +316,12 @@ class PermissionsManager: ObservableObject {
         // On older macOS, use CGWindowListCopyWindowInfo which doesn't trigger the prompt
         // (only CGWindowListCreateImage / CGDisplayCreateImage trigger it).
 
-        print("🔍 Checking Screen Recording Permission (non-intrusive)")
+        debugLog("🔍 Checking Screen Recording Permission (non-intrusive)")
 
         if #available(macOS 15.0, *) {
             // macOS 15+: preflight check — no prompt triggered
             let hasPermission = CGPreflightScreenCaptureAccess()
-            print("   CGPreflightScreenCaptureAccess: \(hasPermission)")
+            debugLog("   CGPreflightScreenCaptureAccess: \(hasPermission)")
 
             DispatchQueue.main.async {
                 self.hasScreenRecordingPermission = hasPermission
@@ -353,7 +353,7 @@ class PermissionsManager: ObservableObject {
             }
 
             let hasPermission = foundUserAppWindows >= 2
-            print("   Window info check: found \(foundUserAppWindows) user app windows → \(hasPermission ? "GRANTED" : "NOT GRANTED")")
+            debugLog("   Window info check: found \(foundUserAppWindows) user app windows → \(hasPermission ? "GRANTED" : "NOT GRANTED")")
 
             DispatchQueue.main.async {
                 self.hasScreenRecordingPermission = hasPermission
@@ -363,14 +363,14 @@ class PermissionsManager: ObservableObject {
     }
 
     func requestScreenRecordingPermission() {
-        print("🔐 Requesting screen recording permission...")
+        debugLog("🔐 Requesting screen recording permission...")
 
         // macOS 15+: Use CGRequestScreenCaptureAccess() which shows the native system prompt
         // and registers the app in one step. On older macOS, use CGDisplayCreateImage
         // (CGWindowListCopyWindowInfo does NOT trigger registration).
         if #available(macOS 15.0, *) {
             let granted = CGRequestScreenCaptureAccess()
-            print("   CGRequestScreenCaptureAccess: \(granted)")
+            debugLog("   CGRequestScreenCaptureAccess: \(granted)")
             if granted {
                 DispatchQueue.main.async {
                     self.hasScreenRecordingPermission = true
@@ -383,7 +383,7 @@ class PermissionsManager: ObservableObject {
             // This is what forces macOS to add EchoTune to the Screen Recording list
             if let displayID = CGMainDisplayID() as CGDirectDisplayID? {
                 let _ = CGDisplayCreateImage(displayID)
-                print("   ✓ Triggered CGDisplayCreateImage to register for screen recording")
+                debugLog("   ✓ Triggered CGDisplayCreateImage to register for screen recording")
             }
         }
 
@@ -406,7 +406,7 @@ class PermissionsManager: ObservableObject {
             }
         }
 
-        print("⚠️ Could not open System Settings - please navigate manually to Privacy & Security → Screen Recording")
+        debugLog("⚠️ Could not open System Settings - please navigate manually to Privacy & Security → Screen Recording")
     }
 
     // MARK: - Combined Check

@@ -115,7 +115,7 @@ class AIEnhancementEngine: ObservableObject {
 
     private init() {
         loadTriggerWordRules()
-        print("✅ AIEnhancementEngine initialized with \(triggerWordRules.count) trigger word rules")
+        debugLog("✅ AIEnhancementEngine initialized with \(triggerWordRules.count) trigger word rules")
     }
 
     // MARK: - Trigger Word Detection
@@ -133,7 +133,7 @@ class AIEnhancementEngine: ObservableObject {
             let containsTrigger = lowercased.contains(trigger)
 
             if startsWithTrigger || endsWithTrigger || containsTrigger {
-                print("🎯 Trigger word detected: \"\(rule.triggerPhrase)\"")
+                debugLog("🎯 Trigger word detected: \"\(rule.triggerPhrase)\"")
 
                 var cleanedTranscript = transcript
 
@@ -172,7 +172,7 @@ class AIEnhancementEngine: ObservableObject {
     func addTriggerWordRule(_ rule: TriggerWordRule) {
         triggerWordRules.append(rule)
         saveTriggerWordRules()
-        print("➕ Added trigger word: \(rule.triggerPhrase)")
+        debugLog("➕ Added trigger word: \(rule.triggerPhrase)")
     }
 
     func updateTriggerWordRule(_ rule: TriggerWordRule) {
@@ -185,7 +185,7 @@ class AIEnhancementEngine: ObservableObject {
     func deleteTriggerWordRule(_ rule: TriggerWordRule) {
         triggerWordRules.removeAll { $0.id == rule.id }
         saveTriggerWordRules()
-        print("🗑️ Deleted trigger word: \(rule.triggerPhrase)")
+        debugLog("🗑️ Deleted trigger word: \(rule.triggerPhrase)")
     }
 
     func resetTriggerWordsToDefaults() {
@@ -235,9 +235,9 @@ class AIEnhancementEngine: ObservableObject {
             }
         }
 
-        print("🎨 Starting AI enhancement...")
-        print("   Model: \(model.displayName)")
-        print("   Transcript length: \(transcript.count) characters")
+        debugLog("🎨 Starting AI enhancement...")
+        debugLog("   Model: \(model.displayName)")
+        debugLog("   Transcript length: \(transcript.count) characters")
 
         do {
             let enhanced: String
@@ -251,8 +251,8 @@ class AIEnhancementEngine: ObservableObject {
                 enhanced = try await enhanceWithGroq(transcript, model: model, apiKey: apiKey, customPrompt: customPrompt, dictionaryContext: dictionaryContext, screenContext: screenContext)
             }
 
-            print("✅ Enhancement successful")
-            print("   Enhanced length: \(enhanced.count) characters")
+            debugLog("✅ Enhancement successful")
+            debugLog("   Enhanced length: \(enhanced.count) characters")
 
             return enhanced
 

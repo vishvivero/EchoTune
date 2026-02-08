@@ -37,7 +37,7 @@ class PowerModeManager: ObservableObject {
         loadPowerModes()
         loadEnabledState()
         setupAppSwitchMonitoring()
-        print("✅ PowerModeManager initialized with \(powerModes.count) modes, auto-switch: \(isAutoSwitchEnabled)")
+        debugLog("✅ PowerModeManager initialized with \(powerModes.count) modes, auto-switch: \(isAutoSwitchEnabled)")
     }
 
     deinit {
@@ -67,7 +67,7 @@ class PowerModeManager: ObservableObject {
             // Don't re-trigger if we're still in the same app
             guard bundleId != self.currentAppIdentifier else { return }
 
-            print("🔀 App switched to: \(app.localizedName ?? bundleId)")
+            debugLog("🔀 App switched to: \(app.localizedName ?? bundleId)")
 
             // Debounce: cancel previous work item and schedule new one
             self.appSwitchWorkItem?.cancel()
@@ -92,7 +92,7 @@ class PowerModeManager: ObservableObject {
     func addPowerMode(_ mode: PowerMode) {
         powerModes.append(mode)
         savePowerModes()
-        print("➕ Added Power Mode: \(mode.name)")
+        debugLog("➕ Added Power Mode: \(mode.name)")
     }
 
     func updatePowerMode(_ mode: PowerMode) {
@@ -101,20 +101,20 @@ class PowerModeManager: ObservableObject {
             updatedMode.dateModified = Date()
             powerModes[index] = updatedMode
             savePowerModes()
-            print("✏️ Updated Power Mode: \(mode.name)")
+            debugLog("✏️ Updated Power Mode: \(mode.name)")
         }
     }
 
     func deletePowerMode(_ mode: PowerMode) {
         powerModes.removeAll { $0.id == mode.id }
         savePowerModes()
-        print("🗑️ Deleted Power Mode: \(mode.name)")
+        debugLog("🗑️ Deleted Power Mode: \(mode.name)")
     }
 
     func resetToDefaults() {
         powerModes = PowerMode.defaultModes
         savePowerModes()
-        print("🔄 Reset to default Power Modes")
+        debugLog("🔄 Reset to default Power Modes")
     }
 
     // MARK: - Context Detection
@@ -122,7 +122,7 @@ class PowerModeManager: ObservableObject {
     /// Detect current context and apply appropriate Power Mode
     func detectAndApplyPowerMode() {
         guard isEnabled else {
-            print("⚠️ Power Modes disabled, using global settings")
+            debugLog("⚠️ Power Modes disabled, using global settings")
             currentPowerMode = nil
             return
         }
@@ -137,9 +137,9 @@ class PowerModeManager: ObservableObject {
             currentWebsiteURL = nil
         }
 
-        print("🔍 Detecting Power Mode...")
-        print("   App: \(currentAppIdentifier ?? "unknown")")
-        print("   URL: \(currentWebsiteURL ?? "N/A")")
+        debugLog("🔍 Detecting Power Mode...")
+        debugLog("   App: \(currentAppIdentifier ?? "unknown")")
+        debugLog("   URL: \(currentWebsiteURL ?? "N/A")")
 
         // Find matching Power Mode
         let matchingMode = findMatchingPowerMode()
@@ -149,11 +149,11 @@ class PowerModeManager: ObservableObject {
         } else {
             // No match found — revert to global settings if we had a mode active
             if currentPowerMode != nil {
-                print("   No matching Power Mode, reverting to global settings")
+                debugLog("   No matching Power Mode, reverting to global settings")
                 currentPowerMode = nil
                 revertToGlobalSettings()
             } else {
-                print("   No matching Power Mode found, using global settings")
+                debugLog("   No matching Power Mode found, using global settings")
             }
         }
     }
@@ -179,7 +179,7 @@ class PowerModeManager: ObservableObject {
             powerModes[index].priority = max(0, min(100, priority))
             powerModes[index].dateModified = Date()
             savePowerModes()
-            print("✏️ Updated priority for \(powerModes[index].name) to \(priority)")
+            debugLog("✏️ Updated priority for \(powerModes[index].name) to \(priority)")
         }
     }
 
@@ -191,11 +191,11 @@ class PowerModeManager: ObservableObject {
 
     private func applyPowerMode(_ mode: PowerMode) {
         guard mode.id != currentPowerMode?.id else {
-            print("   ✅ Already using: \(mode.emoji) \(mode.name)")
+            debugLog("   ✅ Already using: \(mode.emoji) \(mode.name)")
             return
         }
 
-        print("   🎯 Applying Power Mode: \(mode.emoji) \(mode.name)")
+        debugLog("   🎯 Applying Power Mode: \(mode.emoji) \(mode.name)")
 
         currentPowerMode = mode
 
@@ -218,40 +218,40 @@ class PowerModeManager: ObservableObject {
     private func applySettingsFromPowerMode(_ mode: PowerMode) {
         let settings = AppSettings.shared
 
-        print("   ⚙️ Applying Power Mode settings:")
+        debugLog("   ⚙️ Applying Power Mode settings:")
 
         // AI Enhancement
         if mode.aiEnhancementEnabled {
             settings.aiEnhancementEnabled = true
             if let model = mode.enhancementModel {
                 settings.selectedEnhancementModel = model
-                print("      AI Enhancement: ✅ (\(model))")
+                debugLog("      AI Enhancement: ✅ (\(model))")
             }
             if let prompt = mode.customEnhancementPrompt {
                 settings.customEnhancementPrompt = prompt
             }
         } else {
             settings.aiEnhancementEnabled = false
-            print("      AI Enhancement: ❌")
+            debugLog("      AI Enhancement: ❌")
         }
 
         // Auto-Send
         settings.autoSendEnabled = mode.autoSendEnabled
-        print("      Auto-Send: \(mode.autoSendEnabled ? "✅" : "❌")")
+        debugLog("      Auto-Send: \(mode.autoSendEnabled ? "✅" : "❌")")
 
         // Language
         if let language = mode.preferredLanguage {
             settings.preferredLanguage = language
-            print("      Language: \(language)")
+            debugLog("      Language: \(language)")
         }
 
         // Apply model selection (Whisper vs Cloud)
         if let cloudModelId = mode.cloudModelId, !cloudModelId.isEmpty {
             settings.defaultTranscriptionModel = cloudModelId
-            print("      Model: Cloud (\(cloudModelId))")
+            debugLog("      Model: Cloud (\(cloudModelId))")
         } else if mode.useWhisper, let whisperSize = mode.whisperModelSize {
             settings.defaultTranscriptionModel = "whisper-\(whisperSize)"
-            print("      Model: Whisper (\(whisperSize))")
+            debugLog("      Model: Whisper (\(whisperSize))")
         }
     }
 
@@ -262,7 +262,7 @@ class PowerModeManager: ObservableObject {
             name: NSNotification.Name("PowerModeChanged"),
             object: nil
         )
-        print("   ⚙️ Reverted to global settings")
+        debugLog("   ⚙️ Reverted to global settings")
     }
 
     // MARK: - Helper Methods
@@ -300,11 +300,11 @@ class PowerModeManager: ObservableObject {
         if let data = UserDefaults.standard.data(forKey: storageKey),
            let decoded = try? JSONDecoder().decode([PowerMode].self, from: data) {
             powerModes = decoded
-            print("📂 Loaded \(powerModes.count) Power Modes from storage")
+            debugLog("📂 Loaded \(powerModes.count) Power Modes from storage")
         } else {
             powerModes = PowerMode.defaultModes
             savePowerModes()
-            print("📂 Initialized with default Power Modes")
+            debugLog("📂 Initialized with default Power Modes")
         }
     }
 
@@ -329,10 +329,10 @@ class PowerModeManager: ObservableObject {
         UserDefaults.standard.set(enabled, forKey: enabledKey)
 
         if enabled {
-            print("✅ Power Modes enabled")
+            debugLog("✅ Power Modes enabled")
             detectAndApplyPowerMode()
         } else {
-            print("❌ Power Modes disabled")
+            debugLog("❌ Power Modes disabled")
             currentPowerMode = nil
         }
     }
@@ -340,7 +340,7 @@ class PowerModeManager: ObservableObject {
     func setAutoSwitchEnabled(_ enabled: Bool) {
         isAutoSwitchEnabled = enabled
         UserDefaults.standard.set(enabled, forKey: autoSwitchKey)
-        print(enabled ? "✅ Auto-switch enabled" : "❌ Auto-switch disabled")
+        debugLog(enabled ? "✅ Auto-switch enabled" : "❌ Auto-switch disabled")
     }
 
     // MARK: - Statistics

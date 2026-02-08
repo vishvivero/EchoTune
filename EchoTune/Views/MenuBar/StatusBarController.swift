@@ -19,7 +19,7 @@ class StatusBarController {
         // Assign menu to status item after both are created
         statusItem.menu = menu
 
-        print("✓ Status bar initialized")
+        debugLog("✓ Status bar initialized")
     }
 
     private func setupStatusBar() {
@@ -36,7 +36,7 @@ class StatusBarController {
 
                 button.image = customImage
                 button.imagePosition = .imageOnly
-                print("✓ Status bar button created with custom logo")
+                debugLog("✓ Status bar button created with custom logo")
             } else {
                 // Fallback to system microphone icon if custom logo not found
                 if let image = NSImage(systemSymbolName: "waveform", accessibilityDescription: "EchoTune") {
@@ -44,13 +44,13 @@ class StatusBarController {
                     button.image = image
                     button.imagePosition = .imageOnly
                 }
-                print("⚠️ Custom logo not found, using waveform icon")
+                debugLog("⚠️ Custom logo not found, using waveform icon")
             }
 
             // Set tooltip for discoverability
             button.toolTip = "EchoTune - Click for menu, or press Control to record"
         } else {
-            print("❌ Failed to create status bar button")
+            debugLog("❌ Failed to create status bar button")
         }
     }
 
@@ -266,7 +266,7 @@ class StatusBarController {
 
     @objc private func copyLastTranscript() {
         guard let lastTranscript = TranscriptionHistoryManager.shared.transcriptions.first else {
-            print("❌ No transcripts available")
+            debugLog("❌ No transcripts available")
             return
         }
 
@@ -274,7 +274,7 @@ class StatusBarController {
         pasteboard.clearContents()
         pasteboard.setString(lastTranscript.text, forType: .string)
 
-        print("✓ Copied last transcript to clipboard: \(lastTranscript.text.prefix(50))...")
+        debugLog("✓ Copied last transcript to clipboard: \(lastTranscript.text.prefix(50))...")
 
         // Show subtle notification
         NotificationManager.shared.showNotification(
@@ -289,7 +289,7 @@ class StatusBarController {
         let recentTranscripts = Array(TranscriptionHistoryManager.shared.transcriptions.prefix(5))
 
         guard index < recentTranscripts.count else {
-            print("❌ Invalid transcript index")
+            debugLog("❌ Invalid transcript index")
             return
         }
 
@@ -298,7 +298,7 @@ class StatusBarController {
         pasteboard.clearContents()
         pasteboard.setString(transcript.text, forType: .string)
 
-        print("✓ Copied transcript to clipboard: \(transcript.text.prefix(50))...")
+        debugLog("✓ Copied transcript to clipboard: \(transcript.text.prefix(50))...")
 
         // Show subtle notification
         NotificationManager.shared.showNotification(
@@ -374,7 +374,7 @@ class StatusBarController {
         AI-powered voice dictation for Mac.
         100% private, all processing on your device.
 
-        © 2025 EchoTune
+        © \(Calendar.current.component(.year, from: Date())) EchoTune
         """
         alert.alertStyle = .informational
         alert.addButton(withTitle: "OK")
@@ -401,7 +401,7 @@ class StatusBarController {
         if alert.runModal() == .alertFirstButtonReturn {
             // Reset onboarding flag
             UserDefaults.standard.set(false, forKey: "hasCompletedOnboarding")
-            print("🔄 Onboarding reset - restarting app...")
+            debugLog("🔄 Onboarding reset - restarting app...")
 
             // Restart the app
             let url = URL(fileURLWithPath: Bundle.main.resourcePath!)

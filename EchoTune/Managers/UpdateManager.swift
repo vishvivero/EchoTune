@@ -38,7 +38,7 @@ class UpdateManager: ObservableObject {
     private init() {
         loadSettings()
         setupSparkle()
-        print("📦 UpdateManager initialized")
+        debugLog("📦 UpdateManager initialized")
     }
 
     private func setupSparkle() {
@@ -54,11 +54,11 @@ class UpdateManager: ObservableObject {
         updater.automaticallyChecksForUpdates = automaticUpdatesEnabled
         updater.updateCheckInterval = checkInterval
 
-        print("✅ Sparkle updater initialized")
-        print("   Feed URL: \(updater.feedURL?.absoluteString ?? updateFeedURL)")
-        print("   Auto-check: \(updater.automaticallyChecksForUpdates)")
+        debugLog("✅ Sparkle updater initialized")
+        debugLog("   Feed URL: \(updater.feedURL?.absoluteString ?? updateFeedURL)")
+        debugLog("   Auto-check: \(updater.automaticallyChecksForUpdates)")
         #else
-        print("⚠️ Sparkle not available - using manual update check")
+        debugLog("⚠️ Sparkle not available - using manual update check")
         #endif
     }
 
@@ -66,7 +66,7 @@ class UpdateManager: ObservableObject {
 
     /// Check for updates manually (shows UI)
     func checkForUpdates() {
-        print("🔍 Checking for updates...")
+        debugLog("🔍 Checking for updates...")
         isCheckingForUpdates = true
 
         #if canImport(Sparkle)
@@ -88,7 +88,7 @@ class UpdateManager: ObservableObject {
     func checkForUpdatesInBackground() {
         guard automaticUpdatesEnabled else { return }
 
-        print("🔍 Checking for updates in background...")
+        debugLog("🔍 Checking for updates in background...")
 
         #if canImport(Sparkle)
         updater.checkForUpdatesInBackground()
@@ -145,7 +145,7 @@ class UpdateManager: ObservableObject {
         updater.automaticallyChecksForUpdates = enabled
         #endif
 
-        print("⚙️ Automatic updates \(enabled ? "enabled" : "disabled")")
+        debugLog("⚙️ Automatic updates \(enabled ? "enabled" : "disabled")")
     }
 
     /// Get current app version string

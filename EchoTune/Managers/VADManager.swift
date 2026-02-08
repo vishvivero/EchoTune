@@ -45,7 +45,7 @@ class VADManager {
 
     var config: VADConfig {
         didSet {
-            print("🎙️ VAD Config updated: \(config)")
+            debugLog("🎙️ VAD Config updated: \(config)")
         }
     }
 
@@ -116,10 +116,10 @@ class VADManager {
             enabled: UserDefaults.standard.bool(forKey: "vadEnabled")
         )
 
-        print("🎙️ VAD Manager initialized")
-        print("   Method: \(config.method)")
-        print("   Sensitivity: \(config.sensitivity)")
-        print("   Enabled: \(config.enabled)")
+        debugLog("🎙️ VAD Manager initialized")
+        debugLog("   Method: \(config.method)")
+        debugLog("   Sensitivity: \(config.sensitivity)")
+        debugLog("   Enabled: \(config.enabled)")
     }
 
     // MARK: - Real-Time Speech Detection
@@ -197,7 +197,7 @@ class VADManager {
     private func detectSpeechSileroVAD(in buffer: AVAudioPCMBuffer) -> SpeechProbability {
         // Check if Silero VAD is ready
         guard SileroVADEngine.shared.isReady() else {
-            print("⚠️ Silero VAD not ready, falling back to energy-based")
+            debugLog("⚠️ Silero VAD not ready, falling back to energy-based")
             return detectSpeechEnergyBased(in: buffer)
         }
 
@@ -257,7 +257,7 @@ class VADManager {
             )
         }
 
-        print("🎙️ Analyzing \(buffers.count) audio buffers for speech...")
+        debugLog("🎙️ Analyzing \(buffers.count) audio buffers for speech...")
 
         var segments: [SpeechSegment] = []
         var currentSegmentStart: TimeInterval?
@@ -349,8 +349,8 @@ class VADManager {
             hasSignificantSpeech: hasSignificantSpeech
         )
 
-        print("📊 VAD Analysis complete:")
-        print(result.summary)
+        debugLog("📊 VAD Analysis complete:")
+        debugLog(result.summary)
 
         return result
     }
@@ -396,7 +396,7 @@ class VADManager {
             SileroVADEngine.shared.resetState()
         }
 
-        print("🎙️ VAD state reset")
+        debugLog("🎙️ VAD state reset")
     }
 
     /// Get recent speech activity summary
@@ -416,13 +416,13 @@ class VADManager {
     func updateSensitivity(_ sensitivity: Sensitivity) {
         config.sensitivity = sensitivity
         UserDefaults.standard.set(sensitivity.rawValue, forKey: "vadSensitivity")
-        print("🎙️ VAD sensitivity updated: \(sensitivity)")
+        debugLog("🎙️ VAD sensitivity updated: \(sensitivity)")
     }
 
     func setEnabled(_ enabled: Bool) {
         config.enabled = enabled
         UserDefaults.standard.set(enabled, forKey: "vadEnabled")
-        print("🎙️ VAD \(enabled ? "enabled" : "disabled")")
+        debugLog("🎙️ VAD \(enabled ? "enabled" : "disabled")")
     }
 }
 

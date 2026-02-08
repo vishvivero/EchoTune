@@ -21,7 +21,7 @@ class NotificationManager {
 
     private init() {
         requestAuthorization()
-        print("✓ NotificationManager initialized")
+        debugLog("✓ NotificationManager initialized")
     }
 
     // MARK: - Authorization
@@ -29,11 +29,11 @@ class NotificationManager {
     private func requestAuthorization() {
         center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
             if granted {
-                print("✓ Notification permission granted")
+                debugLog("✓ Notification permission granted")
             } else if let error = error {
-                print("❌ Notification permission error: \(error)")
+                debugLog("❌ Notification permission error: \(error)")
             } else {
-                print("⚠️ Notification permission denied")
+                debugLog("⚠️ Notification permission denied")
             }
         }
     }
@@ -64,11 +64,11 @@ class NotificationManager {
 
         center.add(request) { error in
             if let error = error {
-                print("❌ Failed to show notification: \(error)")
+                debugLog("❌ Failed to show notification: \(error)")
             }
         }
 
-        print("📢 Notification: Transcription success (\(wordCount) words)")
+        debugLog("📢 Notification: Transcription success (\(wordCount) words)")
     }
 
     func showTranscriptionError(error: String) {
@@ -89,11 +89,11 @@ class NotificationManager {
 
         center.add(request) { error in
             if let error = error {
-                print("❌ Failed to show error notification: \(error)")
+                debugLog("❌ Failed to show error notification: \(error)")
             }
         }
 
-        print("📢 Notification: Transcription error")
+        debugLog("📢 Notification: Transcription error")
     }
 
     func showTranscriptionProcessing() {
@@ -113,7 +113,7 @@ class NotificationManager {
 
         center.add(request) { error in
             if let error = error {
-                print("❌ Failed to show processing notification: \(error)")
+                debugLog("❌ Failed to show processing notification: \(error)")
             }
         }
     }
@@ -142,11 +142,11 @@ class NotificationManager {
 
         center.add(request) { error in
             if let error = error {
-                print("❌ Failed to show license notification: \(error)")
+                debugLog("❌ Failed to show license notification: \(error)")
             }
         }
 
-        print("📢 Notification: License activated (\(tier))")
+        debugLog("📢 Notification: License activated (\(tier))")
     }
 
     func showLicenseDeactivated() {
@@ -166,11 +166,11 @@ class NotificationManager {
 
         center.add(request) { error in
             if let error = error {
-                print("❌ Failed to show deactivation notification: \(error)")
+                debugLog("❌ Failed to show deactivation notification: \(error)")
             }
         }
 
-        print("📢 Notification: License deactivated")
+        debugLog("📢 Notification: License deactivated")
     }
 
     // MARK: - Trial Notifications
@@ -199,11 +199,11 @@ class NotificationManager {
 
         center.add(request) { error in
             if let error = error {
-                print("❌ Failed to show trial reminder: \(error)")
+                debugLog("❌ Failed to show trial reminder: \(error)")
             }
         }
 
-        print("📢 Notification: Trial reminder (\(daysLeft) days left)")
+        debugLog("📢 Notification: Trial reminder (\(daysLeft) days left)")
     }
 
     func showTrialExpired() {
@@ -224,11 +224,11 @@ class NotificationManager {
 
         center.add(request) { error in
             if let error = error {
-                print("❌ Failed to show trial expired notification: \(error)")
+                debugLog("❌ Failed to show trial expired notification: \(error)")
             }
         }
 
-        print("📢 Notification: Trial expired")
+        debugLog("📢 Notification: Trial expired")
     }
 
     // MARK: - Update Notifications
@@ -250,11 +250,11 @@ class NotificationManager {
 
         center.add(request) { error in
             if let error = error {
-                print("❌ Failed to show update notification: \(error)")
+                debugLog("❌ Failed to show update notification: \(error)")
             }
         }
 
-        print("📢 Notification: Update available (\(version))")
+        debugLog("📢 Notification: Update available (\(version))")
     }
 
     // MARK: - General Notifications
@@ -276,11 +276,11 @@ class NotificationManager {
 
         center.add(request) { error in
             if let error = error {
-                print("❌ Failed to show notification: \(error)")
+                debugLog("❌ Failed to show notification: \(error)")
             }
         }
 
-        print("📢 Notification: \(title)")
+        debugLog("📢 Notification: \(title)")
     }
 
     // MARK: - Settings
@@ -288,13 +288,13 @@ class NotificationManager {
     func setNotificationsEnabled(_ enabled: Bool) {
         notificationsEnabled = enabled
         UserDefaults.standard.set(enabled, forKey: "notificationsEnabled")
-        print(enabled ? "✓ Notifications enabled" : "⏸️ Notifications disabled")
+        debugLog(enabled ? "✓ Notifications enabled" : "⏸️ Notifications disabled")
     }
 
     func setSoundEnabled(_ enabled: Bool) {
         soundEnabled = enabled
         UserDefaults.standard.set(enabled, forKey: "notificationSoundEnabled")
-        print(enabled ? "✓ Notification sound enabled" : "🔇 Notification sound disabled")
+        debugLog(enabled ? "✓ Notification sound enabled" : "🔇 Notification sound disabled")
     }
 
     func loadSettings() {
@@ -306,7 +306,7 @@ class NotificationManager {
 
     func clearAllNotifications() {
         center.removeAllDeliveredNotifications()
-        print("🗑️ All notifications cleared")
+        debugLog("🗑️ All notifications cleared")
     }
 }
 
@@ -371,6 +371,6 @@ extension NotificationManager {
             updateCategory
         ])
 
-        print("✓ Notification categories registered")
+        debugLog("✓ Notification categories registered")
     }
 }

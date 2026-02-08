@@ -204,10 +204,10 @@ class PerformanceBenchmark {
         useVAD: Bool = true,
         completion: @escaping (Result<BenchmarkResult, Error>) -> Void
     ) {
-        print("🧪 Running benchmark: \(testName)")
-        print("   Audio: \(audioSource) (\(String(format: "%.1f", audioDuration))s)")
-        print("   Model: \(modelName)")
-        print("   Phase: \(phase)")
+        debugLog("🧪 Running benchmark: \(testName)")
+        debugLog("   Audio: \(audioSource) (\(String(format: "%.1f", audioDuration))s)")
+        debugLog("   Model: \(modelName)")
+        debugLog("   Phase: \(phase)")
 
         let systemInfo = getSystemInfo()
         let startTime = Date()
@@ -266,7 +266,7 @@ class PerformanceBenchmark {
 
         // This would call actual transcription engine
         // For benchmarking, we need to run real transcription
-        print("   ⏱️ Starting transcription...")
+        debugLog("   ⏱️ Starting transcription...")
 
         // Placeholder for actual transcription
         // In real implementation, this would call WhisperEngine or TranscriptionEngine
@@ -298,8 +298,8 @@ class PerformanceBenchmark {
                 metalSupported: systemInfo.metal
             )
 
-            print("✅ Benchmark complete: \(testName)")
-            print("   RTF: \(String(format: "%.2f", result.realTimeFactor))x")
+            debugLog("✅ Benchmark complete: \(testName)")
+            debugLog("   RTF: \(String(format: "%.2f", result.realTimeFactor))x")
             completion(.success(result))
         }
     }
@@ -308,7 +308,7 @@ class PerformanceBenchmark {
 
     /// Run comprehensive benchmark suite comparing phases
     func runComprehensiveBenchmark(completion: @escaping ([BenchmarkResult]) -> Void) {
-        print("🚀 Starting comprehensive benchmark suite...")
+        debugLog("🚀 Starting comprehensive benchmark suite...")
 
         var results: [BenchmarkResult] = []
 
@@ -322,8 +322,8 @@ class PerformanceBenchmark {
 
         // This would run actual tests
         // For now, create placeholder structure
-        print("📊 Test scenarios defined: \(scenarios.count)")
-        print("   Tests will be run when integrated with real audio")
+        debugLog("📊 Test scenarios defined: \(scenarios.count)")
+        debugLog("   Tests will be run when integrated with real audio")
 
         completion(results)
     }
@@ -339,7 +339,7 @@ class PerformanceBenchmark {
         }
 
         try csvContent.write(to: fileURL, atomically: true, encoding: .utf8)
-        print("✅ Benchmark results exported to: \(fileURL.path)")
+        debugLog("✅ Benchmark results exported to: \(fileURL.path)")
     }
 
     /// Generate markdown report from results

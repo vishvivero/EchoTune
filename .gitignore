@@ -141,3 +141,5 @@ BenchmarkResults/
 *.tmp
 *.temp
 
+LICENSE_KEYS.md
+generate_license_key.sh

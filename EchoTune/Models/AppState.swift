@@ -78,7 +78,7 @@ class AppState: ObservableObject {
         // Calculate current streak
         currentStreak = calculateStreak()
 
-        print("✓ AppState initialized - Trial days remaining: \(trialDaysRemaining)")
+        debugLog("✓ AppState initialized - Trial days remaining: \(trialDaysRemaining)")
     }
 
     func incrementTranscriptionCount(wordCount: Int) {

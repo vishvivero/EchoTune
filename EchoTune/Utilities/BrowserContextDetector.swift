@@ -71,7 +71,7 @@ class BrowserContextDetector {
             return nil
         }
 
-        print("🌐 Detected active browser: \(activeBrowser.rawValue)")
+        debugLog("🌐 Detected active browser: \(activeBrowser.rawValue)")
 
         let (url, title) = getBrowserInfo(for: activeBrowser)
         let domain = extractDomain(from: url)
@@ -84,9 +84,9 @@ class BrowserContextDetector {
         )
 
         if url != nil || title != nil {
-            print("   URL: \(url ?? "unknown")")
-            print("   Title: \(title ?? "unknown")")
-            print("   Domain: \(domain ?? "unknown")")
+            debugLog("   URL: \(url ?? "unknown")")
+            debugLog("   Title: \(title ?? "unknown")")
+            debugLog("   Domain: \(domain ?? "unknown")")
         }
 
         return context
@@ -229,7 +229,7 @@ class BrowserContextDetector {
                 // URL/title context is optional, text insertion will still work
                 if let errorNumber = error["NSAppleScriptErrorNumber"] as? Int,
                    errorNumber != -600 {  // -600 = "Application isn't running" (expected when Chrome closed)
-                    print("⚠️ AppleScript error: \(error)")
+                    debugLog("⚠️ AppleScript error: \(error)")
                 }
                 return nil
             }

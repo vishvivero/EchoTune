@@ -117,7 +117,7 @@ struct WaveformView: View {
             return result
 
         } catch {
-            print("❌ Failed to generate waveform: \(error)")
+            debugLog("❌ Failed to generate waveform: \(error)")
             return Array(repeating: 0.1, count: count)
         }
     }
@@ -580,7 +580,7 @@ class AudioPlayerManager: ObservableObject {
 
         let url = URL(fileURLWithPath: filePath)
         guard FileManager.default.fileExists(atPath: filePath) else {
-            print("❌ Audio file not found: \(filePath)")
+            debugLog("❌ Audio file not found: \(filePath)")
             return
         }
 
@@ -607,9 +607,9 @@ class AudioPlayerManager: ObservableObject {
                 }
             }
 
-            print("▶️ Playing audio: \(filePath)")
+            debugLog("▶️ Playing audio: \(filePath)")
         } catch {
-            print("❌ Failed to play audio: \(error.localizedDescription)")
+            debugLog("❌ Failed to play audio: \(error.localizedDescription)")
         }
     }
 
@@ -859,9 +859,9 @@ class TranscriptionHistoryManager: ObservableObject {
         if !FileManager.default.fileExists(atPath: dir.path) {
             do {
                 try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-                print("📁 Created recordings directory: \(dir.path)")
+                debugLog("📁 Created recordings directory: \(dir.path)")
             } catch {
-                print("❌ Failed to create recordings directory: \(error)")
+                debugLog("❌ Failed to create recordings directory: \(error)")
             }
         }
     }
@@ -877,7 +877,7 @@ class TranscriptionHistoryManager: ObservableObject {
         transcriptions.insert(item, at: 0) // Most recent first
         saveHistory()
 
-        print("📝 Added to history: \(text.prefix(50))... (audio: \(audioFilePath != nil ? "yes" : "no"))")
+        debugLog("📝 Added to history: \(text.prefix(50))... (audio: \(audioFilePath != nil ? "yes" : "no"))")
     }
 
     func updateTranscriptionText(for item: TranscriptionHistoryItem, newText: String) {
@@ -890,7 +890,7 @@ class TranscriptionHistoryManager: ObservableObject {
                 audioFilePath: item.audioFilePath
             )
             saveHistory()
-            print("📝 Updated transcription text for \(item.id)")
+            debugLog("📝 Updated transcription text for \(item.id)")
         }
     }
 
@@ -898,7 +898,7 @@ class TranscriptionHistoryManager: ObservableObject {
         // Delete associated audio file if it exists
         if let audioPath = item.audioFilePath {
             try? FileManager.default.removeItem(atPath: audioPath)
-            print("🗑️ Deleted audio file: \(audioPath)")
+            debugLog("🗑️ Deleted audio file: \(audioPath)")
         }
 
         transcriptions.removeAll { $0.id == item.id }
@@ -914,7 +914,7 @@ class TranscriptionHistoryManager: ObservableObject {
         }
 
         try? FileManager.default.removeItem(atPath: audioPath)
-        print("🗑️ Deleted audio file: \(audioPath)")
+        debugLog("🗑️ Deleted audio file: \(audioPath)")
 
         // Update the item to remove audio path
         if let index = transcriptions.firstIndex(where: { $0.id == item.id }) {
@@ -948,10 +948,10 @@ class TranscriptionHistoryManager: ObservableObject {
 
         do {
             try data.write(to: fileURL)
-            print("💾 Saved audio file: \(fileURL.path) (\(data.count) bytes)")
+            debugLog("💾 Saved audio file: \(fileURL.path) (\(data.count) bytes)")
             return fileURL.path
         } catch {
-            print("❌ Failed to save audio file: \(error)")
+            debugLog("❌ Failed to save audio file: \(error)")
             return nil
         }
     }
@@ -968,10 +968,10 @@ class TranscriptionHistoryManager: ObservableObject {
                 try FileManager.default.removeItem(at: destURL)
             }
             try FileManager.default.copyItem(at: sourceURL, to: destURL)
-            print("💾 Copied audio file: \(destURL.path)")
+            debugLog("💾 Copied audio file: \(destURL.path)")
             return destURL.path
         } catch {
-            print("❌ Failed to copy audio file: \(error)")
+            debugLog("❌ Failed to copy audio file: \(error)")
             return nil
         }
     }
@@ -1016,7 +1016,7 @@ class TranscriptionHistoryManager: ObservableObject {
         if let data = userDefaults.data(forKey: historyKey),
            let decoded = try? JSONDecoder().decode([TranscriptionHistoryItem].self, from: data) {
             transcriptions = decoded
-            print("📚 Loaded \(transcriptions.count) transcriptions from history")
+            debugLog("📚 Loaded \(transcriptions.count) transcriptions from history")
         }
     }
 

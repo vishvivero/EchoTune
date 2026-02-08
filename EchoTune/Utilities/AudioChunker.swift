@@ -73,11 +73,11 @@ class AudioChunker {
         let totalFrames = audioData.count / bytesPerFrame
         let totalDuration = Double(totalFrames) / sampleRate
 
-        print("🔪 AudioChunker: totalDuration=\(String(format: "%.1f", totalDuration))s, config.chunkDuration=\(config.chunkDurationSeconds)s")
+        debugLog("🔪 AudioChunker: totalDuration=\(String(format: "%.1f", totalDuration))s, config.chunkDuration=\(config.chunkDurationSeconds)s")
 
         // If audio is short enough, return as single chunk
         if totalDuration <= config.chunkDurationSeconds * 1.1 { // 10% tolerance
-            print("   → Audio is short enough, returning as single chunk")
+            debugLog("   → Audio is short enough, returning as single chunk")
             return ChunkResult(
                 chunks: [audioData],
                 totalDuration: totalDuration,
@@ -118,7 +118,7 @@ class AudioChunker {
             offset += advanceBytes
         }
 
-        print("   → Split into \(chunks.count) chunks: \(chunkDurations.map { String(format: "%.1fs", $0) }.joined(separator: ", "))")
+        debugLog("   → Split into \(chunks.count) chunks: \(chunkDurations.map { String(format: "%.1fs", $0) }.joined(separator: ", "))")
 
         return ChunkResult(
             chunks: chunks,
@@ -167,7 +167,7 @@ class AudioChunker {
             chunks.append(currentChunkBuffers)
         }
 
-        print("🔪 AudioChunker: Split \(buffers.count) buffers into \(chunks.count) buffer-chunks")
+        debugLog("🔪 AudioChunker: Split \(buffers.count) buffers into \(chunks.count) buffer-chunks")
         return chunks
     }
 

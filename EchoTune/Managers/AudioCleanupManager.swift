@@ -40,7 +40,7 @@ class AudioCleanupManager: ObservableObject {
             self?.performCleanupIfNeeded()
         }
 
-        print("🧹 Audio cleanup manager started")
+        debugLog("🧹 Audio cleanup manager started")
     }
 
     /// Stop the automatic cleanup process
@@ -51,7 +51,7 @@ class AudioCleanupManager: ObservableObject {
 
     private func performCleanupIfNeeded() {
         guard AppSettings.shared.isAudioCleanupEnabled else {
-            print("🧹 Auto-cleanup disabled, skipping")
+            debugLog("🧹 Auto-cleanup disabled, skipping")
             return
         }
 
@@ -86,9 +86,9 @@ class AudioCleanupManager: ObservableObject {
                 try FileManager.default.removeItem(atPath: audioPath)
                 historyManager.clearAudioPath(for: item.id)
                 deletedCount += 1
-                print("🧹 Cleaned up audio: \(audioPath)")
+                debugLog("🧹 Cleaned up audio: \(audioPath)")
             } catch {
-                print("❌ Failed to delete audio file: \(error)")
+                debugLog("❌ Failed to delete audio file: \(error)")
             }
         }
 
@@ -97,7 +97,7 @@ class AudioCleanupManager: ObservableObject {
         isCleanupRunning = false
 
         if deletedCount > 0 {
-            print("🧹 Cleaned up \(deletedCount) audio files (retention: \(retentionDays) days)")
+            debugLog("🧹 Cleaned up \(deletedCount) audio files (retention: \(retentionDays) days)")
         }
     }
 
@@ -134,7 +134,7 @@ class AudioCleanupManager: ObservableObject {
                 historyManager.clearAudioPath(for: item.id)
                 deletedCount += 1
             } catch {
-                print("❌ Failed to delete audio file: \(error)")
+                debugLog("❌ Failed to delete audio file: \(error)")
             }
         }
 
@@ -169,7 +169,7 @@ class AudioCleanupManager: ObservableObject {
                 historyManager.clearAudioPath(for: item.id)
                 deletedCount += 1
             } catch {
-                print("❌ Failed to delete audio file: \(error)")
+                debugLog("❌ Failed to delete audio file: \(error)")
             }
         }
 
@@ -190,7 +190,7 @@ class AudioCleanupManager: ObservableObject {
                         }
                         try? FileManager.default.removeItem(at: file)
                         deletedCount += 1
-                        print("🧹 Removed orphaned audio file: \(file.lastPathComponent)")
+                        debugLog("🧹 Removed orphaned audio file: \(file.lastPathComponent)")
                     }
                 }
             }

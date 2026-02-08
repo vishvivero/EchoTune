@@ -27,7 +27,7 @@ class LaunchAtLoginManager: ObservableObject {
         if #available(macOS 13.0, *) {
             // Use SMAppService for macOS 13+
             let status = SMAppService.mainApp.status
-            print("📍 Launch at login status: \(status)")
+            debugLog("📍 Launch at login status: \(status)")
             return status == .enabled
         } else {
             // Use legacy approach for older macOS versions
@@ -49,7 +49,7 @@ class LaunchAtLoginManager: ObservableObject {
                     try SMAppService.mainApp.unregister()
                 }
             } catch {
-                print("Failed to \(enable ? "enable" : "disable") launch at login: \(error.localizedDescription)")
+                debugLog("Failed to \(enable ? "enable" : "disable") launch at login: \(error.localizedDescription)")
             }
         } else {
             // Use legacy approach for older macOS versions
@@ -68,19 +68,19 @@ class LaunchAtLoginManager: ObservableObject {
                     // Only register if not already enabled
                     if currentStatus == .notRegistered {
                         try SMAppService.mainApp.register()
-                        print("✓ Registered for launch at login")
+                        debugLog("✓ Registered for launch at login")
                     } else if currentStatus == .enabled {
-                        print("✓ Already registered for launch at login")
+                        debugLog("✓ Already registered for launch at login")
                     }
                 } else {
                     // Only unregister if currently enabled
                     if currentStatus == .enabled {
                         try SMAppService.mainApp.unregister()
-                        print("✓ Unregistered from launch at login")
+                        debugLog("✓ Unregistered from launch at login")
                     } else if currentStatus == .notRegistered {
-                        print("✓ Already not registered for launch at login")
+                        debugLog("✓ Already not registered for launch at login")
                     } else if currentStatus == .notFound {
-                        print("⚠️ Service not found, cannot unregister")
+                        debugLog("⚠️ Service not found, cannot unregister")
                     }
                 }
 
@@ -91,13 +91,13 @@ class LaunchAtLoginManager: ObservableObject {
                     completion(.success(()))
                 }
             } catch let error as NSError {
-                print("❌ Failed to \(enabled ? "enable" : "disable") launch at login: \(error)")
-                print("   Error domain: \(error.domain), code: \(error.code)")
+                debugLog("❌ Failed to \(enabled ? "enable" : "disable") launch at login: \(error)")
+                debugLog("   Error domain: \(error.domain), code: \(error.code)")
 
                 // For some errors, we might still want to update the UI state
                 // This can happen if the system state is inconsistent
                 if error.code == 1 { // Operation not permitted
-                    print("⚠️ Permission denied - updating local state only")
+                    debugLog("⚠️ Permission denied - updating local state only")
                     DispatchQueue.main.async {
                         self.isEnabled = enabled
                         UserDefaults.standard.set(enabled, forKey: "launchAtLoginEnabled")

@@ -124,7 +124,7 @@ class ErrorLogger {
 
     private init() {
         loadLogs()
-        print("✓ ErrorLogger initialized")
+        debugLog("✓ ErrorLogger initialized")
     }
 
     // MARK: - Logging Methods
@@ -204,7 +204,7 @@ class ErrorLogger {
         saveLogs()
 
         // Print to console
-        print("\(level.emoji) [\(category)] \(message)")
+        debugLog("\(level.emoji) [\(category)] \(message)")
     }
 
     // MARK: - Log Retrieval
@@ -270,7 +270,7 @@ class ErrorLogger {
             output += "\n"
         }
 
-        print("📋 Logs exported (\(output.count) characters)")
+        debugLog("📋 Logs exported (\(output.count) characters)")
         return output
     }
 
@@ -283,10 +283,10 @@ class ErrorLogger {
 
         do {
             let data = try JSONSerialization.data(withJSONObject: exportData, options: .prettyPrinted)
-            print("📋 Logs exported as JSON (\(data.count) bytes)")
+            debugLog("📋 Logs exported as JSON (\(data.count) bytes)")
             return data
         } catch {
-            print("❌ Failed to export logs as JSON: \(error)")
+            debugLog("❌ Failed to export logs as JSON: \(error)")
             return nil
         }
     }
@@ -296,7 +296,7 @@ class ErrorLogger {
     func clearLogs() {
         logs.removeAll()
         saveLogs()
-        print("🗑️ All logs cleared")
+        debugLog("🗑️ All logs cleared")
     }
 
     func getLogCount() -> Int {
@@ -326,7 +326,7 @@ class ErrorLogger {
     private func loadLogs() {
         guard let dataString = UserDefaults.standard.string(forKey: "errorLogs"),
               let data = dataString.data(using: .utf8) else {
-            print("📋 No saved logs found")
+            debugLog("📋 No saved logs found")
             return
         }
 
@@ -334,7 +334,7 @@ class ErrorLogger {
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
             logs = try decoder.decode([LogEntry].self, from: data)
-            print("✓ Logs loaded (\(logs.count) entries)")
+            debugLog("✓ Logs loaded (\(logs.count) entries)")
         } catch {
             logger.error("Failed to load logs: \(error.localizedDescription)")
         }
@@ -343,25 +343,25 @@ class ErrorLogger {
     // MARK: - Statistics
 
     func printLogStatistics() {
-        print("\n📋 Log Statistics")
-        print(String(repeating: "=", count: 60))
+        debugLog("\n📋 Log Statistics")
+        debugLog(String(repeating: "=", count: 60))
 
         let groupedByLevel = Dictionary(grouping: logs) { $0.level }
         let groupedByCategory = Dictionary(grouping: logs) { $0.category }
 
-        print("\nBy Level:")
+        debugLog("\nBy Level:")
         for level in [LogEntry.LogLevel.debug, .info, .warning, .error, .critical] {
             let count = groupedByLevel[level]?.count ?? 0
-            print("  \(level.emoji) \(level.rawValue): \(count)")
+            debugLog("  \(level.emoji) \(level.rawValue): \(count)")
         }
 
-        print("\nBy Category:")
+        debugLog("\nBy Category:")
         for (category, entries) in groupedByCategory.sorted(by: { $0.value.count > $1.value.count }) {
-            print("  \(category): \(entries.count)")
+            debugLog("  \(category): \(entries.count)")
         }
 
-        print("\nTotal Entries: \(logs.count)")
-        print(String(repeating: "=", count: 60))
+        debugLog("\nTotal Entries: \(logs.count)")
+        debugLog(String(repeating: "=", count: 60))
     }
 }
 
@@ -381,6 +381,6 @@ extension ErrorLogger {
             )
         }
 
-        print("✓ Crash handler registered")
+        debugLog("✓ Crash handler registered")
     }
 }

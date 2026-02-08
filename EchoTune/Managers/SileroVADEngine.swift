@@ -48,16 +48,16 @@ class SileroVADEngine {
         // Download from: https://github.com/snakers4/silero-vad
         // Convert ONNX to CoreML using coremltools
 
-        print("🧠 Silero VAD v5: Model loading...")
+        debugLog("🧠 Silero VAD v5: Model loading...")
 
         // Check if model exists in bundle
         guard let modelURL = Bundle.main.url(forResource: "silero_vad_v5", withExtension: "mlmodelc") else {
-            print("⚠️ Silero VAD v5 model not found in bundle")
-            print("   To add the model:")
-            print("   1. Download from: https://github.com/snakers4/silero-vad/releases")
-            print("   2. Convert ONNX to CoreML: pip install coremltools && python convert_onnx.py")
-            print("   3. Add .mlmodelc to Xcode project")
-            print("   Falling back to energy-based detection")
+            debugLog("⚠️ Silero VAD v5 model not found in bundle")
+            debugLog("   To add the model:")
+            debugLog("   1. Download from: https://github.com/snakers4/silero-vad/releases")
+            debugLog("   2. Convert ONNX to CoreML: pip install coremltools && python convert_onnx.py")
+            debugLog("   3. Add .mlmodelc to Xcode project")
+            debugLog("   Falling back to energy-based detection")
             isModelLoaded = false
             return
         }
@@ -67,9 +67,9 @@ class SileroVADEngine {
             self.model = compiledModel
             initializeState()
             isModelLoaded = true
-            print("✅ Silero VAD v5 model loaded successfully")
+            debugLog("✅ Silero VAD v5 model loaded successfully")
         } catch {
-            print("❌ Failed to load Silero VAD v5 model: \(error)")
+            debugLog("❌ Failed to load Silero VAD v5 model: \(error)")
             isModelLoaded = false
         }
     }
@@ -90,16 +90,16 @@ class SileroVADEngine {
                 c![i] = 0.0
             }
 
-            print("🧠 Silero VAD state initialized")
+            debugLog("🧠 Silero VAD state initialized")
         } catch {
-            print("❌ Failed to initialize VAD state: \(error)")
+            debugLog("❌ Failed to initialize VAD state: \(error)")
         }
     }
 
     /// Reset VAD state (call when starting new recording)
     func resetState() {
         initializeState()
-        print("🔄 Silero VAD state reset")
+        debugLog("🔄 Silero VAD state reset")
     }
 
     // MARK: - Speech Detection
@@ -109,7 +109,7 @@ class SileroVADEngine {
     /// - Returns: Speech probability (0.0 - 1.0)
     func detectSpeech(in buffer: AVAudioPCMBuffer) -> Float {
         guard isModelLoaded, let model = model else {
-            print("⚠️ Silero VAD model not loaded, cannot detect speech")
+            debugLog("⚠️ Silero VAD model not loaded, cannot detect speech")
             return 0.0
         }
 
@@ -117,7 +117,7 @@ class SileroVADEngine {
         let processedBuffer: AVAudioPCMBuffer
         if buffer.format.sampleRate != config.sampleRate {
             guard let resampled = resample(buffer: buffer, to: config.sampleRate) else {
-                print("❌ Failed to resample audio")
+                debugLog("❌ Failed to resample audio")
                 return 0.0
             }
             processedBuffer = resampled
@@ -127,7 +127,7 @@ class SileroVADEngine {
 
         // Convert audio to MLMultiArray
         guard let audioArray = convertToMLMultiArray(buffer: processedBuffer) else {
-            print("❌ Failed to convert audio to MLMultiArray")
+            debugLog("❌ Failed to convert audio to MLMultiArray")
             return 0.0
         }
 
@@ -139,7 +139,7 @@ class SileroVADEngine {
             // Extract speech probability
             guard let outputFeatures = output.featureValue(for: "output"),
                   let probability = outputFeatures.multiArrayValue else {
-                print("❌ Failed to extract output from model")
+                debugLog("❌ Failed to extract output from model")
                 return 0.0
             }
 
@@ -156,7 +156,7 @@ class SileroVADEngine {
             return speechProb
 
         } catch {
-            print("❌ Silero VAD inference error: \(error)")
+            debugLog("❌ Silero VAD inference error: \(error)")
             return 0.0
         }
     }
@@ -192,7 +192,7 @@ class SileroVADEngine {
         }
 
         if let error = error {
-            print("⚠️ Resampling error: \(error)")
+            debugLog("⚠️ Resampling error: \(error)")
             return nil
         }
 
@@ -216,7 +216,7 @@ class SileroVADEngine {
 
             return array
         } catch {
-            print("❌ Failed to create MLMultiArray: \(error)")
+            debugLog("❌ Failed to create MLMultiArray: \(error)")
             return nil
         }
     }

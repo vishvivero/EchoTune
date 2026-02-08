@@ -184,11 +184,11 @@ class DictionaryManager: ObservableObject {
 
         let imported = try decoder.decode(DictionaryExport.self, from: data)
 
-        print("📥 Importing dictionary...")
-        print("   Version: \(imported.version)")
-        print("   Date: \(imported.exportDate)")
-        print("   Word Replacements: \(imported.wordReplacements.count)")
-        print("   Correct Spellings: \(imported.correctSpellings.count)")
+        debugLog("📥 Importing dictionary...")
+        debugLog("   Version: \(imported.version)")
+        debugLog("   Date: \(imported.exportDate)")
+        debugLog("   Word Replacements: \(imported.wordReplacements.count)")
+        debugLog("   Correct Spellings: \(imported.correctSpellings.count)")
 
         // Merge word replacements (avoid duplicates)
         var addedReplacements = 0
@@ -214,9 +214,9 @@ class DictionaryManager: ObservableObject {
         saveReplacements()
         saveSpellings()
 
-        print("✅ Import complete!")
-        print("   Added \(addedReplacements) word replacements")
-        print("   Added \(addedSpellings) correct spellings")
+        debugLog("✅ Import complete!")
+        debugLog("   Added \(addedReplacements) word replacements")
+        debugLog("   Added \(addedSpellings) correct spellings")
     }
 
     /// Import dictionary and return merge counts
@@ -252,7 +252,7 @@ class DictionaryManager: ObservableObject {
     func saveDictionaryToFile(at url: URL) throws {
         let data = try exportDictionary()
         try data.write(to: url)
-        print("💾 Dictionary saved to: \(url.path)")
+        debugLog("💾 Dictionary saved to: \(url.path)")
     }
 
     /// Load dictionary from file
@@ -278,7 +278,7 @@ class DictionaryManager: ObservableObject {
         correctSpellings.removeAll()
         saveReplacements()
         saveSpellings()
-        print("🗑️ Dictionary cleared")
+        debugLog("🗑️ Dictionary cleared")
     }
 
     /// Reset to default word replacements
@@ -294,7 +294,7 @@ class DictionaryManager: ObservableObject {
             WordReplacement(spokenForm: "eta", writtenForm: "estimated time of arrival")
         ]
         saveReplacements()
-        print("🔄 Reset to default word replacements")
+        debugLog("🔄 Reset to default word replacements")
     }
 }
 

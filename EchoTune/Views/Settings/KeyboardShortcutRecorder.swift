@@ -384,6 +384,6 @@ struct KeyboardShortcutRecorder: View {
 
 #Preview {
     KeyboardShortcutRecorder(isPresented: .constant(true)) { keyCode, modifiers in
-        print("Saved: \(keyCode), \(modifiers)")
+        debugLog("Saved: \(keyCode), \(modifiers)")
     }
 }

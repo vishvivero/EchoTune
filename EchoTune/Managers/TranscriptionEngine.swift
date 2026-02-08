@@ -105,7 +105,7 @@ class TranscriptionEngine: NSObject, ObservableObject {
         // This uses AppSettings.defaultTranscriptionModel which is kept in sync
         // with ModelManager.currentModel via setCurrentModel().
         let selectedModel = AppSettings.shared.defaultTranscriptionModel
-        print("🎯 Using transcription model: \(selectedModel)")
+        debugLog("🎯 Using transcription model: \(selectedModel)")
 
         // Route to cloud services
         if selectedModel.hasPrefix("groq-") {
@@ -116,13 +116,13 @@ class TranscriptionEngine: NSObject, ObservableObject {
             return
         } else if selectedModel != "apple-speech" {
             // Any non-Apple-Speech, non-cloud model is a local Whisper model
-            print("🎙️ Routing to local Whisper engine")
+            debugLog("🎙️ Routing to local Whisper engine")
             routeToWhisper(audioData, selectedModel: selectedModel, completion: completion)
             return
         }
 
         // Default to Apple Speech for "apple-speech" or unrecognized models
-        print("🍎 Using Apple Speech (default)")
+        debugLog("🍎 Using Apple Speech (default)")
 
         guard isAvailable else {
             completion(.failure(.unavailable))
@@ -143,20 +143,20 @@ class TranscriptionEngine: NSObject, ObservableObject {
         do {
             try audioData.write(to: tempURL)
 
-            print("📄 Wrote audio data to temp file: \(tempURL.path)")
-            print("   File size: \(audioData.count) bytes")
+            debugLog("📄 Wrote audio data to temp file: \(tempURL.path)")
+            debugLog("   File size: \(audioData.count) bytes")
 
             // Use URL-based recognition instead of buffer-based
             // This is more reliable for file-based audio
             let urlRequest = SFSpeechURLRecognitionRequest(url: tempURL)
             urlRequest.shouldReportPartialResults = false
 
-            print("🎯 Starting URL-based speech recognition...")
-            print("   File URL: \(tempURL.path)")
-            print("   Speech recognizer available: \(self.speechRecognizer != nil)")
+            debugLog("🎯 Starting URL-based speech recognition...")
+            debugLog("   File URL: \(tempURL.path)")
+            debugLog("   Speech recognizer available: \(self.speechRecognizer != nil)")
 
             guard let speechRecognizer = self.speechRecognizer else {
-                print("❌ Speech recognizer not available")
+                debugLog("❌ Speech recognizer not available")
                 self.isProcessing = false
                 completion(.failure(.unavailable))
                 return
@@ -166,10 +166,10 @@ class TranscriptionEngine: NSObject, ObservableObject {
                 guard let self = self else { return }
 
                 if let error = error {
-                    print("❌ Recognition error: \(error)")
-                    print("   Error domain: \((error as NSError).domain)")
-                    print("   Error code: \((error as NSError).code)")
-                    print("   Error description: \(error.localizedDescription)")
+                    debugLog("❌ Recognition error: \(error)")
+                    debugLog("   Error domain: \((error as NSError).domain)")
+                    debugLog("   Error code: \((error as NSError).code)")
+                    debugLog("   Error description: \(error.localizedDescription)")
                     self.isProcessing = false
                     completion(.failure(.recognitionError(error)))
                     return
@@ -177,12 +177,12 @@ class TranscriptionEngine: NSObject, ObservableObject {
 
                 if let result = result {
                     let transcription = result.bestTranscription.formattedString
-                    print("📝 Transcription result: \(transcription)")
+                    debugLog("📝 Transcription result: \(transcription)")
                     self.currentText = transcription
 
                     // If we're done, return the final result
                     if result.isFinal {
-                        print("✅ Final transcription: \(transcription)")
+                        debugLog("✅ Final transcription: \(transcription)")
                         self.isProcessing = false
 
                         // Process text with formatting options
@@ -190,22 +190,22 @@ class TranscriptionEngine: NSObject, ObservableObject {
                         completion(.success(processedText))
                     }
                 } else {
-                    print("⚠️ No result and no error - recognition may still be processing")
+                    debugLog("⚠️ No result and no error - recognition may still be processing")
                 }
             }
 
             if recognitionTask == nil {
-                print("❌ Failed to create recognition task")
+                debugLog("❌ Failed to create recognition task")
                 self.isProcessing = false
                 completion(.failure(.unavailable))
                 return
             }
 
-            print("✓ Recognition task created successfully")
+            debugLog("✓ Recognition task created successfully")
         } catch let outerError {
-            print("❌ Outer catch block error: \(outerError)")
-            print("   Error type: \(type(of: outerError))")
-            print("   Error description: \(outerError.localizedDescription)")
+            debugLog("❌ Outer catch block error: \(outerError)")
+            debugLog("   Error type: \(type(of: outerError))")
+            debugLog("   Error description: \(outerError.localizedDescription)")
             isProcessing = false
             completion(.failure(.audioFormatError))
         }
@@ -323,17 +323,17 @@ class TranscriptionEngine: NSObject, ObservableObject {
     private static let sessionRestartThresholdSeconds: Double = 50 // Restart before 60s timeout
 
     func startLiveTranscription(audioFormat: AVAudioFormat, completion: @escaping (Result<String, TranscriptionError>) -> Void) {
-        print("🎤 Starting live transcription (with auto-restart for long recordings)...")
+        debugLog("🎤 Starting live transcription (with auto-restart for long recordings)...")
 
         // Prevent multiple simultaneous tasks
         guard !isTranscribing else {
-            print("⚠️ Already transcribing, ignoring start request")
+            debugLog("⚠️ Already transcribing, ignoring start request")
             return
         }
 
         // Cancel any existing task before starting new one
         if let existingTask = recognitionTask {
-            print("🛑 Cancelling existing recognition task")
+            debugLog("🛑 Cancelling existing recognition task")
             existingTask.cancel()
         }
         recognitionTask = nil
@@ -372,7 +372,7 @@ class TranscriptionEngine: NSObject, ObservableObject {
             channels: audioFormat.channelCount,
             interleaved: false
         ) else {
-            print("❌ Failed to create Int16 format")
+            debugLog("❌ Failed to create Int16 format")
             completion(.failure(.audioFormatError))
             return
         }
@@ -381,7 +381,7 @@ class TranscriptionEngine: NSObject, ObservableObject {
 
         // Create converter from Float32 to Int16
         guard let converter = AVAudioConverter(from: audioFormat, to: int16Format) else {
-            print("❌ Failed to create audio converter")
+            debugLog("❌ Failed to create audio converter")
             completion(.failure(.audioFormatError))
             return
         }
@@ -391,7 +391,7 @@ class TranscriptionEngine: NSObject, ObservableObject {
         // Start the first recognition session
         startRecognitionSession()
 
-        print("✓ Live recognition task started (auto-restart enabled)")
+        debugLog("✓ Live recognition task started (auto-restart enabled)")
     }
 
     /// Starts or restarts a recognition session.
@@ -407,14 +407,14 @@ class TranscriptionEngine: NSObject, ObservableObject {
         recognitionRequest?.shouldReportPartialResults = true
 
         guard let speechRecognizer = self.speechRecognizer else {
-            print("❌ Speech recognizer not available")
+            debugLog("❌ Speech recognizer not available")
             isProcessing = false
             liveCompletion?(.failure(.unavailable))
             return
         }
 
         let sessionIndex = sessionRestartCount
-        print("🔄 Starting recognition session #\(sessionIndex)")
+        debugLog("🔄 Starting recognition session #\(sessionIndex)")
 
         recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest!) { [weak self] result, error in
             guard let self = self else { return }
@@ -425,7 +425,7 @@ class TranscriptionEngine: NSObject, ObservableObject {
 
             if let error = error {
                 let nsError = error as NSError
-                print("⚠️ Recognition session #\(sessionIndex) error: \(error.localizedDescription) (code: \(nsError.code))")
+                debugLog("⚠️ Recognition session #\(sessionIndex) error: \(error.localizedDescription) (code: \(nsError.code))")
 
                 // Only auto-restart if we're still actively transcribing
                 let recoverableCodes = [203, 209, 216, 1110]
@@ -433,12 +433,12 @@ class TranscriptionEngine: NSObject, ObservableObject {
                     // Save current partial text and restart
                     if !self.currentSessionText.isEmpty {
                         self.accumulatedTranscriptions.append(self.currentSessionText)
-                        print("📝 Saved session #\(sessionIndex) text: \(self.currentSessionText)")
+                        debugLog("📝 Saved session #\(sessionIndex) text: \(self.currentSessionText)")
                     }
                     self.currentSessionText = ""
                     self.sessionRestartCount += 1
 
-                    print("🔄 Auto-restarting recognition (session \(self.sessionRestartCount))...")
+                    debugLog("🔄 Auto-restarting recognition (session \(self.sessionRestartCount))...")
                     self.startRecognitionSession()
                     return
                 }
@@ -476,14 +476,14 @@ class TranscriptionEngine: NSObject, ObservableObject {
                 self.currentText = displayText
 
                 if result.isFinal {
-                    print("✅ Session #\(sessionIndex) final: \(transcription)")
+                    debugLog("✅ Session #\(sessionIndex) final: \(transcription)")
                     self.accumulatedTranscriptions.append(transcription)
                     self.currentSessionText = ""
 
                     // If we're still recording, auto-restart for continued transcription
                     if self.isTranscribing {
                         self.sessionRestartCount += 1
-                        print("🔄 Session ended, auto-restarting (session \(self.sessionRestartCount))...")
+                        debugLog("🔄 Session ended, auto-restarting (session \(self.sessionRestartCount))...")
                         self.startRecognitionSession()
                     }
                 }
@@ -511,7 +511,7 @@ class TranscriptionEngine: NSObject, ObservableObject {
             if self.bufferCount % 100 == 1 || self.bufferCount <= 5 {
                 let totalSec = Double(self.totalFrames) / buffer.format.sampleRate
                 let sessionSec = Double(self.lastSessionFrameCount) / buffer.format.sampleRate
-                print("🎵 Buffer #\(self.bufferCount): total=\(String(format: "%.1f", totalSec))s, session=\(String(format: "%.1f", sessionSec))s")
+                debugLog("🎵 Buffer #\(self.bufferCount): total=\(String(format: "%.1f", totalSec))s, session=\(String(format: "%.1f", sessionSec))s")
             }
 
             // Create output buffer for converted audio
@@ -520,7 +520,7 @@ class TranscriptionEngine: NSObject, ObservableObject {
                 pcmFormat: targetFormat,
                 frameCapacity: frameCapacity
             ) else {
-                print("❌ Failed to create converted buffer")
+                debugLog("❌ Failed to create converted buffer")
                 return
             }
 
@@ -541,12 +541,12 @@ class TranscriptionEngine: NSObject, ObservableObject {
 
             // Log detailed conversion info for first few buffers
             if self.bufferCount <= 3 {
-                print("   Conversion status: \(status)")
-                print("   Converted buffer format: \(convertedBuffer.format)")
+                debugLog("   Conversion status: \(status)")
+                debugLog("   Converted buffer format: \(convertedBuffer.format)")
             }
 
             if status == .error {
-                print("❌ Buffer conversion error: \(error?.localizedDescription ?? "unknown")")
+                debugLog("❌ Buffer conversion error: \(error?.localizedDescription ?? "unknown")")
                 return
             }
 
@@ -568,10 +568,10 @@ class TranscriptionEngine: NSObject, ObservableObject {
     }
 
     func endLiveTranscription() {
-        print("🛑 Ending live transcription")
-        print("📊 Total buffers processed: \(bufferCount)")
-        print("📊 Total frames: \(totalFrames) (\(Double(totalFrames) / 48000.0) seconds)")
-        print("📊 Sessions used: \(sessionRestartCount + 1)")
+        debugLog("🛑 Ending live transcription")
+        debugLog("📊 Total buffers processed: \(bufferCount)")
+        debugLog("📊 Total frames: \(totalFrames) (\(Double(totalFrames) / 48000.0) seconds)")
+        debugLog("📊 Sessions used: \(sessionRestartCount + 1)")
 
         // End audio on current request
         recognitionRequest?.endAudio()
@@ -596,7 +596,7 @@ class TranscriptionEngine: NSObject, ObservableObject {
             guard !completionFired else { return }
             completionFired = true
 
-            print("⏱️ Recognition didn't finalize in time — returning accumulated text")
+            debugLog("⏱️ Recognition didn't finalize in time — returning accumulated text")
 
             var allParts = existingAccumulated
             if !existingCurrent.isEmpty {
@@ -635,12 +635,12 @@ class TranscriptionEngine: NSObject, ObservableObject {
     private func routeToGroq(_ audioData: Data, completion: @escaping (Result<String, TranscriptionError>) -> Void) {
         let apiKey = AppSettings.shared.groqAPIKey
         guard !apiKey.isEmpty else {
-            print("❌ Groq API key not configured")
+            debugLog("❌ Groq API key not configured")
             completion(.failure(.unavailable))
             return
         }
 
-        print("📡 Routing to Groq transcription service")
+        debugLog("📡 Routing to Groq transcription service")
         Task {
             do {
                 let language = AppSettings.shared.autoDetectLanguage ? nil : AppSettings.shared.preferredLanguage.components(separatedBy: "-").first
@@ -655,7 +655,7 @@ class TranscriptionEngine: NSObject, ObservableObject {
                 }
             } catch {
                 await MainActor.run {
-                    print("❌ Groq transcription failed: \(error)")
+                    debugLog("❌ Groq transcription failed: \(error)")
                     completion(.failure(.recognitionError(error)))
                 }
             }
@@ -665,12 +665,12 @@ class TranscriptionEngine: NSObject, ObservableObject {
     private func routeToDeepgram(_ audioData: Data, completion: @escaping (Result<String, TranscriptionError>) -> Void) {
         let apiKey = AppSettings.shared.deepgramAPIKey
         guard !apiKey.isEmpty else {
-            print("❌ Deepgram API key not configured")
+            debugLog("❌ Deepgram API key not configured")
             completion(.failure(.unavailable))
             return
         }
 
-        print("📡 Routing to Deepgram transcription service")
+        debugLog("📡 Routing to Deepgram transcription service")
         Task {
             do {
                 let language = AppSettings.shared.autoDetectLanguage ? nil : AppSettings.shared.preferredLanguage.components(separatedBy: "-").first
@@ -686,7 +686,7 @@ class TranscriptionEngine: NSObject, ObservableObject {
                 }
             } catch {
                 await MainActor.run {
-                    print("❌ Deepgram transcription failed: \(error)")
+                    debugLog("❌ Deepgram transcription failed: \(error)")
                     completion(.failure(.recognitionError(error)))
                 }
             }
@@ -694,14 +694,14 @@ class TranscriptionEngine: NSObject, ObservableObject {
     }
 
     private func routeToWhisper(_ audioData: Data, selectedModel: String, completion: @escaping (Result<String, TranscriptionError>) -> Void) {
-        print("🎙️ Routing to local Whisper engine: \(selectedModel)")
+        debugLog("🎙️ Routing to local Whisper engine: \(selectedModel)")
         
         let whisperEngine = WhisperEngine.shared
         let modelManager = ModelManager.shared
         
         // Find the AIModel for the selected model ID
         guard let aiModel = modelManager.availableModels.first(where: { $0.id == selectedModel }) else {
-            print("❌ Model not found in available models: \(selectedModel)")
+            debugLog("❌ Model not found in available models: \(selectedModel)")
             completion(.failure(.processingError))
             return
         }
@@ -714,13 +714,13 @@ class TranscriptionEngine: NSObject, ObservableObject {
                 case .success(let text):
                     completion(.success(text))
                 case .failure(let error):
-                    print("❌ Whisper transcription failed: \(error)")
+                    debugLog("❌ Whisper transcription failed: \(error)")
                     completion(.failure(.processingError))
                 }
             }
         } else {
             // Need to load the model first
-            print("📦 Loading Whisper model before transcription: \(aiModel.name)")
+            debugLog("📦 Loading Whisper model before transcription: \(aiModel.name)")
             whisperEngine.loadModel(aiModel) { [weak self] loadResult in
                 switch loadResult {
                 case .success:
@@ -729,12 +729,12 @@ class TranscriptionEngine: NSObject, ObservableObject {
                         case .success(let text):
                             completion(.success(text))
                         case .failure(let error):
-                            print("❌ Whisper transcription failed after model load: \(error)")
+                            debugLog("❌ Whisper transcription failed after model load: \(error)")
                             completion(.failure(.processingError))
                         }
                     }
                 case .failure(let error):
-                    print("❌ Failed to load Whisper model: \(error)")
+                    debugLog("❌ Failed to load Whisper model: \(error)")
                     completion(.failure(.processingError))
                 }
             }
@@ -761,17 +761,17 @@ class TranscriptionEngine: NSObject, ObservableObject {
         do {
             try audioData.write(to: tempURL)
 
-            print("📄 Wrote audio data to temp file: \(tempURL.path)")
-            print("   File size: \(audioData.count) bytes")
+            debugLog("📄 Wrote audio data to temp file: \(tempURL.path)")
+            debugLog("   File size: \(audioData.count) bytes")
 
             // Use URL-based recognition instead of buffer-based
             let urlRequest = SFSpeechURLRecognitionRequest(url: tempURL)
             urlRequest.shouldReportPartialResults = false
 
-            print("🎯 Starting URL-based speech recognition...")
+            debugLog("🎯 Starting URL-based speech recognition...")
 
             guard let speechRecognizer = self.speechRecognizer else {
-                print("❌ Speech recognizer not available")
+                debugLog("❌ Speech recognizer not available")
                 self.isProcessing = false
                 completion(.failure(.unavailable))
                 return
@@ -781,7 +781,7 @@ class TranscriptionEngine: NSObject, ObservableObject {
                 guard let self = self else { return }
 
                 if let error = error {
-                    print("❌ Recognition error: \(error)")
+                    debugLog("❌ Recognition error: \(error)")
                     self.isProcessing = false
                     completion(.failure(.recognitionError(error)))
                     return
@@ -792,7 +792,7 @@ class TranscriptionEngine: NSObject, ObservableObject {
                     self.currentText = transcription
 
                     if result.isFinal {
-                        print("✅ Final transcription: \(transcription)")
+                        debugLog("✅ Final transcription: \(transcription)")
                         self.isProcessing = false
                         let processedText = self.processText(transcription)
                         completion(.success(processedText))
@@ -801,12 +801,12 @@ class TranscriptionEngine: NSObject, ObservableObject {
             }
 
             if recognitionTask == nil {
-                print("❌ Failed to create recognition task")
+                debugLog("❌ Failed to create recognition task")
                 self.isProcessing = false
                 completion(.failure(.unavailable))
             }
         } catch {
-            print("❌ Error: \(error)")
+            debugLog("❌ Error: \(error)")
             isProcessing = false
             completion(.failure(.audioFormatError))
         }

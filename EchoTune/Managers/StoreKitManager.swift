@@ -26,7 +26,7 @@ class StoreKitManager: ObservableObject {
     private var transactionListener: Task<Void, Error>?
 
     private init() {
-        print("✓ StoreKitManager initialized")
+        debugLog("✓ StoreKitManager initialized")
 
         // Start listening for transactions
         transactionListener = listenForTransactions()
@@ -47,13 +47,13 @@ class StoreKitManager: ObservableObject {
         do {
             let loadedProducts = try await Product.products(for: [proUnlockID])
             products = loadedProducts
-            print("✓ Loaded \(products.count) products from App Store")
+            debugLog("✓ Loaded \(products.count) products from App Store")
 
             if let product = products.first {
-                print("  Product: \(product.displayName) - \(product.displayPrice)")
+                debugLog("  Product: \(product.displayName) - \(product.displayPrice)")
             }
         } catch {
-            print("❌ Failed to load products: \(error)")
+            debugLog("❌ Failed to load products: \(error)")
         }
     }
 
@@ -63,7 +63,7 @@ class StoreKitManager: ObservableObject {
         isPurchasing = true
         defer { isPurchasing = false }
 
-        print("🛒 Starting purchase for: \(product.id)")
+        debugLog("🛒 Starting purchase for: \(product.id)")
 
         let result = try await product.purchase()
 
@@ -78,7 +78,7 @@ class StoreKitManager: ObservableObject {
             // Finish transaction
             await transaction.finish()
 
-            print("✅ Purchase successful: \(product.id)")
+            debugLog("✅ Purchase successful: \(product.id)")
 
             // Notify app - LicenseManager will update
             NotificationCenter.default.post(
@@ -89,11 +89,11 @@ class StoreKitManager: ObservableObject {
             return true
 
         case .userCancelled:
-            print("⏸️ Purchase cancelled by user")
+            debugLog("⏸️ Purchase cancelled by user")
             return false
 
         case .pending:
-            print("⏳ Purchase pending approval")
+            debugLog("⏳ Purchase pending approval")
             return false
 
         @unknown default:
@@ -104,14 +104,14 @@ class StoreKitManager: ObservableObject {
     // MARK: - Restore Purchases
 
     func restorePurchases() async {
-        print("🔄 Restoring purchases...")
+        debugLog("🔄 Restoring purchases...")
 
         do {
             try await AppStore.sync()
             await updatePurchasedProducts()
 
             if isProUnlocked {
-                print("✅ Purchases restored - Pro unlocked")
+                debugLog("✅ Purchases restored - Pro unlocked")
 
                 // Notify app
                 NotificationCenter.default.post(
@@ -119,10 +119,10 @@ class StoreKitManager: ObservableObject {
                     object: nil
                 )
             } else {
-                print("ℹ️ No purchases found to restore")
+                debugLog("ℹ️ No purchases found to restore")
             }
         } catch {
-            print("❌ Restore failed: \(error)")
+            debugLog("❌ Restore failed: \(error)")
         }
     }
 
@@ -136,9 +136,9 @@ class StoreKitManager: ObservableObject {
                     await self.updatePurchasedProducts()
                     await transaction.finish()
 
-                    print("✓ Transaction update processed: \(transaction.productID)")
+                    debugLog("✓ Transaction update processed: \(transaction.productID)")
                 } catch {
-                    print("❌ Transaction verification failed: \(error)")
+                    debugLog("❌ Transaction verification failed: \(error)")
                 }
             }
         }
@@ -149,7 +149,7 @@ class StoreKitManager: ObservableObject {
     nonisolated private func checkVerified<T>(_ result: VerificationResult<T>) throws -> T {
         switch result {
         case .unverified:
-            print("❌ Transaction failed verification")
+            debugLog("❌ Transaction failed verification")
             throw StoreError.failedVerification
         case .verified(let safe):
             return safe
@@ -170,14 +170,14 @@ class StoreKitManager: ObservableObject {
                     purchasedIDs.insert(transaction.productID)
                 }
             } catch {
-                print("❌ Failed to verify entitlement: \(error)")
+                debugLog("❌ Failed to verify entitlement: \(error)")
             }
         }
 
         purchasedProductIDs = purchasedIDs
 
         if !purchasedIDs.isEmpty {
-            print("✓ Updated purchased products: \(purchasedIDs)")
+            debugLog("✓ Updated purchased products: \(purchasedIDs)")
         }
     }
 

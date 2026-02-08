@@ -43,7 +43,7 @@ class WhisperEngine: ObservableObject {
     private var pendingLoadCompletions: [(Result<Void, WhisperError>) -> Void] = []
 
     private init() {
-        print("🎙️ WhisperEngine initialized")
+        debugLog("🎙️ WhisperEngine initialized")
     }
 
     // MARK: - Model Loading
@@ -51,7 +51,7 @@ class WhisperEngine: ObservableObject {
     func loadModel(_ model: AIModel, completion: @escaping (Result<Void, WhisperError>) -> Void) {
         // If Apple Speech, no need to load Whisper model
         if model.isBuiltIn {
-            print("ℹ️ Using Apple Speech - no Whisper model needed")
+            debugLog("ℹ️ Using Apple Speech - no Whisper model needed")
             isAvailable = false
             loadedModelName = model.name
             currentModelID = model.id
@@ -66,14 +66,14 @@ class WhisperEngine: ObservableObject {
 
         // Don't reload if already loaded
         if currentModelID == model.id && whisperKit != nil {
-            print("ℹ️ Model \(model.name) already loaded")
+            debugLog("ℹ️ Model \(model.name) already loaded")
             completion(.success(()))
             return
         }
 
         // Guard against concurrent loads — enqueue completion for when current load finishes
         guard !isLoading else {
-            print("⚠️ Model is already loading, enqueueing completion for \(model.name)")
+            debugLog("⚠️ Model is already loading, enqueueing completion for \(model.name)")
             pendingLoadCompletions.append(completion)
             return
         }
@@ -81,13 +81,13 @@ class WhisperEngine: ObservableObject {
         isLoading = true
         loadedModelName = nil
 
-        print("📦 Loading Whisper model: \(model.name) (\(model.id))")
+        debugLog("📦 Loading Whisper model: \(model.name) (\(model.id))")
 
         Task {
             do {
                 // ✅ PHASE 3: Metal GPU Acceleration + Neural Engine
                 // Configure optimal compute units for maximum performance
-                print("⚡ Configuring Metal GPU acceleration...")
+                debugLog("⚡ Configuring Metal GPU acceleration...")
 
                 let computeOptions = ModelComputeOptions(
                     melCompute: .cpuAndGPU,              // GPU-accelerated mel-spectrogram (fastest)
@@ -96,10 +96,10 @@ class WhisperEngine: ObservableObject {
                     prefillCompute: .cpuAndGPU           // GPU-accelerated cache prefilling (vs .cpuOnly default)
                 )
 
-                print("   Mel-spectrogram: GPU accelerated")
-                print("   Audio Encoder: All compute units (CPU + GPU + Neural Engine)")
-                print("   Text Decoder: All compute units (CPU + GPU + Neural Engine)")
-                print("   Cache Prefill: GPU accelerated")
+                debugLog("   Mel-spectrogram: GPU accelerated")
+                debugLog("   Audio Encoder: All compute units (CPU + GPU + Neural Engine)")
+                debugLog("   Text Decoder: All compute units (CPU + GPU + Neural Engine)")
+                debugLog("   Cache Prefill: GPU accelerated")
 
                 // Use the model's localPath if set by ModelManager (which knows the correct
                 // folder naming convention, e.g., "base" → "openai_whisper-base").
@@ -123,8 +123,8 @@ class WhisperEngine: ObservableObject {
                 }
 
                 let modelExists = FileManager.default.fileExists(atPath: modelFolderPath)
-                print("📂 Model folder: \(modelFolderPath)")
-                print("   Exists: \(modelExists)")
+                debugLog("📂 Model folder: \(modelFolderPath)")
+                debugLog("   Exists: \(modelExists)")
 
                 // Load WhisperKit with Metal optimization and model prewarming
                 let whisper = try await WhisperKit(
@@ -146,8 +146,8 @@ class WhisperEngine: ObservableObject {
                     self.isAvailable = true
                     self.isLoading = false
 
-                    print("✅ Whisper model loaded with Metal acceleration: \(model.name)")
-                    print("🚀 Expected performance: 2-3x faster on Apple Silicon")
+                    debugLog("✅ Whisper model loaded with Metal acceleration: \(model.name)")
+                    debugLog("🚀 Expected performance: 2-3x faster on Apple Silicon")
                     completion(.success(()))
 
                     // Drain pending completions
@@ -160,7 +160,7 @@ class WhisperEngine: ObservableObject {
                     self.isLoading = false
                     self.isAvailable = false
 
-                    print("❌ Failed to load Whisper model: \(error)")
+                    debugLog("❌ Failed to load Whisper model: \(error)")
                     completion(.failure(.modelLoadFailed(error)))
 
                     // Drain pending completions
@@ -188,8 +188,8 @@ class WhisperEngine: ObservableObject {
         isProcessing = true
         currentText = ""
 
-        print("🎯 Starting Whisper transcription (direct buffer mode)...")
-        print("   Audio data size: \(audioData.count) bytes")
+        debugLog("🎯 Starting Whisper transcription (direct buffer mode)...")
+        debugLog("   Audio data size: \(audioData.count) bytes")
 
         // Start performance monitoring
         PerformanceMonitor.shared.startAudioConversion(dataSize: audioData.count)
@@ -202,8 +202,8 @@ class WhisperEngine: ObservableObject {
 
                 PerformanceMonitor.shared.endAudioConversion()
 
-                print("✅ Converted to audio buffer: \(audioBuffer.frameLength) frames")
-                print("🎙️ Transcribing directly from buffer (no file I/O)...")
+                debugLog("✅ Converted to audio buffer: \(audioBuffer.frameLength) frames")
+                debugLog("🎙️ Transcribing directly from buffer (no file I/O)...")
 
                 // Convert buffer to Float array
                 let audioArray = try convertBufferToFloatArray(audioBuffer)
@@ -225,7 +225,7 @@ class WhisperEngine: ObservableObject {
                 let allSegments = results.map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) }
                     .filter { !$0.isEmpty }
                 let transcription = allSegments.joined(separator: " ")
-                print("📝 WhisperKit returned \(results.count) segments")
+                debugLog("📝 WhisperKit returned \(results.count) segments")
 
                 await MainActor.run {
                     PerformanceMonitor.shared.endTranscription(
@@ -235,14 +235,14 @@ class WhisperEngine: ObservableObject {
                     let cleaned = TranscriptionEngine.shared.processText(transcription)
                     self.currentText = cleaned
                     self.isProcessing = false
-                    print("✅ Whisper transcription: \(cleaned)")
+                    debugLog("✅ Whisper transcription: \(cleaned)")
                     completion(.success(cleaned))
                 }
             } catch {
                 await MainActor.run {
                     self.isProcessing = false
 
-                    print("❌ Whisper transcription failed: \(error)")
+                    debugLog("❌ Whisper transcription failed: \(error)")
                     completion(.failure(.transcriptionFailed(error)))
                 }
             }
@@ -255,7 +255,7 @@ class WhisperEngine: ObservableObject {
     private var streamingTask: Task<Void, Never>?
 
     func startStreamingTranscription(completion: @escaping (Result<String, WhisperError>) -> Void) {
-        os_log("🎤 startStreamingTranscription, whisperKit=%{public}@, isAvailable=%d", log: wLog, type: .error, whisperKit == nil ? "nil" : "loaded", isAvailable ? 1 : 0)
+        os_log("🎤 startStreamingTranscription, whisperKit=%{public}@, isAvailable=%d", log: wLog, type: .info, whisperKit == nil ? "nil" : "loaded", isAvailable ? 1 : 0)
         guard whisperKit != nil else {
             os_log("❌ whisperKit is nil — modelNotLoaded", log: wLog, type: .error)
             completion(.failure(.modelNotLoaded))
@@ -266,7 +266,7 @@ class WhisperEngine: ObservableObject {
         currentText = ""
         audioBuffers = []
 
-        print("🎤 Starting streaming transcription...")
+        debugLog("🎤 Starting streaming transcription...")
     }
 
     func appendAudioBuffer(_ buffer: AVAudioPCMBuffer) {
@@ -282,9 +282,9 @@ class WhisperEngine: ObservableObject {
     }
 
     func endStreamingTranscription(completion: @escaping (Result<String, WhisperError>) -> Void) {
-        print("🛑 Ending streaming transcription")
-        print("📊 Total buffers accumulated: \(audioBuffers.count)")
-        os_log("🛑 endStreamingTranscription: buffers=%d whisperKit=%{public}@", log: wLog, type: .error, audioBuffers.count, whisperKit == nil ? "nil" : "loaded")
+        debugLog("🛑 Ending streaming transcription")
+        debugLog("📊 Total buffers accumulated: \(audioBuffers.count)")
+        os_log("🛑 endStreamingTranscription: buffers=%d whisperKit=%{public}@", log: wLog, type: .info, audioBuffers.count, whisperKit == nil ? "nil" : "loaded")
 
         guard let whisperKit = whisperKit else {
             os_log("❌ whisperKit nil at endStreaming", log: wLog, type: .error)
@@ -309,21 +309,21 @@ class WhisperEngine: ObservableObject {
 
         Task {
             do {
-                os_log("🔄 Task started: processing %d buffers", log: wLog, type: .error, buffersSnapshot.count)
+                os_log("🔄 Task started: processing %d buffers", log: wLog, type: .info, buffersSnapshot.count)
 
                 // Calculate total frames from all buffers
                 let totalFrameCount = buffersSnapshot.reduce(0) { $0 + Int($1.frameLength) }
                 let sampleRate = buffersSnapshot[0].format.sampleRate
                 let audioDuration = Double(totalFrameCount) / sampleRate
-                os_log("📊 Audio: %.2fs (%d frames, %.0fHz)", log: wLog, type: .error, audioDuration, totalFrameCount, sampleRate)
+                os_log("📊 Audio: %.2fs (%d frames, %.0fHz)", log: wLog, type: .info, audioDuration, totalFrameCount, sampleRate)
 
                 // Convert all buffers to a single Float array
                 let audioArray = try self.convertBuffersToFloatArray(buffersSnapshot)
-                os_log("✅ Converted to %d samples", log: wLog, type: .error, audioArray.count)
+                os_log("✅ Converted to %d samples", log: wLog, type: .info, audioArray.count)
 
                 // Calculate RMS to verify audio is present
                 let rms = sqrt(audioArray.map { $0 * $0 }.reduce(0, +) / Float(max(audioArray.count, 1)))
-                os_log("🔊 RMS=%.6f (need >0.001)", log: wLog, type: .error, rms)
+                os_log("🔊 RMS=%.6f (need >0.001)", log: wLog, type: .info, rms)
 
                 // Start performance monitoring for transcription
                 await MainActor.run {
@@ -334,20 +334,20 @@ class WhisperEngine: ObservableObject {
                 }
 
                 // Transcribe directly from audio array
-                os_log("🎙️ Calling whisperKit.transcribe(audioArray:)...", log: wLog, type: .error)
+                os_log("🎙️ Calling whisperKit.transcribe(audioArray:)...", log: wLog, type: .info)
                 let decodeOptions = DecodingOptions(
                     task: AppSettings.shared.translateToEnglish ? .translate : .transcribe,
                     language: AppSettings.shared.autoDetectLanguage ? nil : AppSettings.shared.preferredLanguage.components(separatedBy: "-").first,
                     detectLanguage: AppSettings.shared.autoDetectLanguage
                 )
                 let results = try await whisperKit.transcribe(audioArray: audioArray, decodeOptions: decodeOptions)
-                os_log("✅ WhisperKit returned %d segments", log: wLog, type: .error, results.count)
+                os_log("✅ WhisperKit returned %d segments", log: wLog, type: .info, results.count)
 
                 // Extract text from ALL result segments
                 let allSegments = results.map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) }
                     .filter { !$0.isEmpty }
                 let transcription = allSegments.joined(separator: " ")
-                os_log("📝 Transcription: '%{public}@' (%d words)", log: wLog, type: .error, transcription, transcription.split(separator: " ").count)
+                os_log("📝 Transcription: '%{public}@' (%d words)", log: wLog, type: .info, transcription, transcription.split(separator: " ").count)
 
                 await MainActor.run {
                     // End performance monitoring with word count
@@ -358,7 +358,7 @@ class WhisperEngine: ObservableObject {
                     let cleaned = TranscriptionEngine.shared.processText(transcription)
                     self.currentText = cleaned
                     self.isProcessing = false
-                    os_log("✅ Final cleaned: '%{public}@'", log: wLog, type: .error, cleaned)
+                    os_log("✅ Final cleaned: '%{public}@'", log: wLog, type: .info, cleaned)
                     completion(.success(cleaned))
                 }
             } catch {
@@ -366,7 +366,7 @@ class WhisperEngine: ObservableObject {
                 await MainActor.run {
                     self.isProcessing = false
 
-                    print("❌ Streaming transcription failed: \(error)")
+                    debugLog("❌ Streaming transcription failed: \(error)")
                     completion(.failure(.transcriptionFailed(error)))
                 }
             }
@@ -414,7 +414,7 @@ class WhisperEngine: ObservableObject {
         let targetSampleRate: Double = 16000
 
         os_log("🔄 convertBuffers: %d buffers, format=%.0fHz %dch %{public}@",
-               log: wLog, type: .error, buffers.count, inputFormat.sampleRate, inputFormat.channelCount,
+               log: wLog, type: .info, buffers.count, inputFormat.sampleRate, inputFormat.channelCount,
                inputFormat.commonFormat == .pcmFormatFloat32 ? "Float32" : inputFormat.commonFormat == .pcmFormatInt16 ? "Int16" : "other")
 
         // If already 16kHz mono Float32, just extract float data directly
@@ -428,7 +428,7 @@ class WhisperEngine: ObservableObject {
                 let frameCount = Int(buffer.frameLength)
                 result.append(contentsOf: UnsafeBufferPointer(start: channelData[0], count: frameCount))
             }
-            os_log("✅ Already 16kHz mono Float32, %d samples", log: wLog, type: .error, result.count)
+            os_log("✅ Already 16kHz mono Float32, %d samples", log: wLog, type: .info, result.count)
             return result
         }
 
@@ -456,7 +456,7 @@ class WhisperEngine: ObservableObject {
 
         let inputDuration = Double(totalInputFrames) / inputFormat.sampleRate
         os_log("📦 Merged: %d frames (%.1fs at %.0fHz)",
-               log: wLog, type: .error, totalInputFrames, inputDuration, inputFormat.sampleRate)
+               log: wLog, type: .info, totalInputFrames, inputDuration, inputFormat.sampleRate)
 
         // Step 2: Convert directly with AVAudioConverter (no temp file — avoids format issues)
         let targetFormat = AVAudioFormat(
@@ -493,17 +493,17 @@ class WhisperEngine: ObservableObject {
         let status = converter.convert(to: outputBuffer, error: &convError, withInputFrom: inputBlock)
 
         os_log("🔧 Convert: status=%d outFrames=%d capacity=%d err=%{public}@",
-               log: wLog, type: .error, status.rawValue, outputBuffer.frameLength, outputFrameCapacity,
+               log: wLog, type: .info, status.rawValue, outputBuffer.frameLength, outputFrameCapacity,
                convError?.localizedDescription ?? "none")
 
         // AVAudioConverter sometimes returns .inputRanDry with valid data in the buffer
         if outputBuffer.frameLength == 0 {
-            os_log("⚠️ frameLength=0, checking if data exists...", log: wLog, type: .error)
+            os_log("⚠️ frameLength=0, checking if data exists...", log: wLog, type: .info)
             // Try estimating the output size
             let estimated = AVAudioFrameCount(ceil(inputDuration * targetSampleRate))
             if estimated > 0 && (status == .haveData || status == .inputRanDry) {
                 outputBuffer.frameLength = estimated
-                os_log("⚠️ Set frameLength to estimated %d", log: wLog, type: .error, estimated)
+                os_log("⚠️ Set frameLength to estimated %d", log: wLog, type: .info, estimated)
             }
         }
 
@@ -516,7 +516,7 @@ class WhisperEngine: ObservableObject {
 
         // Verify audio content
         let rms = sqrt(floatArray.map { $0 * $0 }.reduce(0, +) / Float(max(floatArray.count, 1)))
-        os_log("✅ Output: %d samples (%.1fs), RMS=%.6f", log: wLog, type: .error,
+        os_log("✅ Output: %d samples (%.1fs), RMS=%.6f", log: wLog, type: .info,
                floatArray.count, Double(floatArray.count) / targetSampleRate, rms)
 
         return floatArray
@@ -612,26 +612,26 @@ class WhisperEngine: ObservableObject {
             interleaved: false
         )!
 
-        print("🔄 Converting audio for Whisper:")
-        print("   Input: \(buffer.format.sampleRate)Hz, \(buffer.format.channelCount) ch, \(buffer.frameLength) frames")
-        print("   Target: \(targetFormat.sampleRate)Hz, \(targetFormat.channelCount) ch")
+        debugLog("🔄 Converting audio for Whisper:")
+        debugLog("   Input: \(buffer.format.sampleRate)Hz, \(buffer.format.channelCount) ch, \(buffer.frameLength) frames")
+        debugLog("   Target: \(targetFormat.sampleRate)Hz, \(targetFormat.channelCount) ch")
 
         // Create converter
         guard let converter = AVAudioConverter(from: buffer.format, to: targetFormat) else {
-            print("❌ Failed to create audio converter")
+            debugLog("❌ Failed to create audio converter")
             throw WhisperError.audioFormatError
         }
 
         // Calculate output frame capacity
         let frameCapacity = AVAudioFrameCount(ceil(Double(buffer.frameLength) * targetFormat.sampleRate / buffer.format.sampleRate))
 
-        print("   Calculated output capacity: \(frameCapacity) frames")
+        debugLog("   Calculated output capacity: \(frameCapacity) frames")
 
         guard let convertedBuffer = AVAudioPCMBuffer(
             pcmFormat: targetFormat,
             frameCapacity: frameCapacity
         ) else {
-            print("❌ Failed to create output buffer")
+            debugLog("❌ Failed to create output buffer")
             throw WhisperError.audioFormatError
         }
 
@@ -652,27 +652,27 @@ class WhisperEngine: ObservableObject {
         let status = converter.convert(to: convertedBuffer, error: &error, withInputFrom: inputBlock)
 
         if let error = error {
-            print("❌ Conversion error: \(error)")
+            debugLog("❌ Conversion error: \(error)")
             throw WhisperError.transcriptionFailed(error)
         }
 
         if status != .haveData {
-            print("⚠️ Conversion status: \(status)")
+            debugLog("⚠️ Conversion status: \(status)")
         }
 
         // Set the actual frame length (converter doesn't set this automatically)
         convertedBuffer.frameLength = frameCapacity
 
-        print("✅ Converted buffer: \(convertedBuffer.frameLength) frames")
+        debugLog("✅ Converted buffer: \(convertedBuffer.frameLength) frames")
 
         // Check if buffer has actual audio data
         if let channelData = convertedBuffer.floatChannelData {
             let samples = UnsafeBufferPointer(start: channelData[0], count: Int(convertedBuffer.frameLength))
             let rms = sqrt(samples.map { $0 * $0 }.reduce(0, +) / Float(convertedBuffer.frameLength))
-            print("   RMS level: \(rms) (should be > 0.001 for speech)")
+            debugLog("   RMS level: \(rms) (should be > 0.001 for speech)")
 
             if rms < 0.001 {
-                print("⚠️ WARNING: Audio level too low - may not contain speech!")
+                debugLog("⚠️ WARNING: Audio level too low - may not contain speech!")
             }
         }
 
@@ -690,7 +690,7 @@ class WhisperEngine: ObservableObject {
         try audioFile.write(from: convertedBuffer)
 
         let data = try Data(contentsOf: tempURL)
-        print("✅ WAV file created: \(data.count) bytes at \(tempURL.lastPathComponent)")
+        debugLog("✅ WAV file created: \(data.count) bytes at \(tempURL.lastPathComponent)")
 
         try? FileManager.default.removeItem(at: tempURL)
 
@@ -706,6 +706,6 @@ class WhisperEngine: ObservableObject {
         isAvailable = false
         audioBuffers = []
 
-        print("🗑️ Whisper model unloaded")
+        debugLog("🗑️ Whisper model unloaded")
     }
 }

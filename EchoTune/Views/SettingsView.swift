@@ -621,7 +621,7 @@ struct AIAutomationSettingsView: View {
 
                     APIKeyField(
                         title: "Anthropic API (for AI Enhancement)",
-                        key: $settings.anthropicAPIKey,
+                        key: $settings.claudeAPIKey,
                         showKey: $showClaudeKey,
                         linkURL: "https://console.anthropic.com/",
                         linkText: "Get Key",
@@ -657,7 +657,7 @@ struct AIAutomationSettingsView: View {
         let key: String
         switch provider {
         case "openai": key = settings.openaiAPIKey
-        case "anthropic": key = settings.anthropicAPIKey
+        case "anthropic": key = settings.claudeAPIKey
         default: key = ""
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
@@ -768,7 +768,7 @@ struct AboutLicenseSettingsView: View {
 
         if alert.runModal() == .alertFirstButtonReturn {
             settings.resetToDefaults()
-            print("✓ Settings reset to defaults")
+            debugLog("✓ Settings reset to defaults")
         }
     }
 }

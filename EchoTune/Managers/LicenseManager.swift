@@ -48,8 +48,8 @@ class LicenseManager {
         // Check for existing license
         validateStoredLicense()
 
-        print("✓ LicenseManager initialized")
-        print("📅 Trial days remaining: \(trialDaysRemaining)")
+        debugLog("✓ LicenseManager initialized")
+        debugLog("📅 Trial days remaining: \(trialDaysRemaining)")
     }
 
     // MARK: - License Validation
@@ -57,14 +57,14 @@ class LicenseManager {
     private func validateStoredLicense() {
         #if APPSTORE
         // App Store builds: Don't check keychain (no license keys allowed)
-        print("⏳ No stored license found (App Store build)")
+        debugLog("⏳ No stored license found (App Store build)")
         #else
         // Direct sale builds: Check keychain for license
         guard let _ = getFromKeychain("licenseKey"),
               let licenseDataString = getFromKeychain("licenseData"),
               let licenseData = licenseDataString.data(using: .utf8),
               let storedInfo = try? JSONDecoder().decode(LicenseInfo.self, from: licenseData) else {
-            print("⏳ No stored license found")
+            debugLog("⏳ No stored license found")
             return
         }
 
@@ -72,9 +72,9 @@ class LicenseManager {
         if storedInfo.isValid {
             isLicensed = true
             licenseInfo = storedInfo
-            print("✓ Valid license found: \(storedInfo.tier.rawValue)")
+            debugLog("✓ Valid license found: \(storedInfo.tier.rawValue)")
         } else {
-            print("❌ Stored license expired or invalid")
+            debugLog("❌ Stored license expired or invalid")
             clearStoredLicense()
         }
         #endif
@@ -94,12 +94,11 @@ class LicenseManager {
             return
         }
 
-        print("🔑 Activating license: \(maskLicenseKey(key))")
+        debugLog("🔑 Activating license: \(maskLicenseKey(key))")
 
-        // For demo: simple validation
-        // In production, you'd call Keygen or your license server
+        #if DEBUG
+        // Demo license for testing — only available in debug builds
         if key.hasPrefix("DEMO-") {
-            // Demo license for testing
             let info = LicenseInfo(
                 key: key,
                 tier: .pro,
@@ -113,11 +112,13 @@ class LicenseManager {
             licenseInfo = info
 
             completion(.success(info))
-            print("✓ Demo license activated")
-        } else {
-            // Real validation (would be async API call)
-            validateLicenseWithServer(key: key, completion: completion)
+            debugLog("✓ Demo license activated")
+            return
         }
+        #endif
+
+        // Real validation (would be async API call)
+        validateLicenseWithServer(key: key, completion: completion)
         #endif
     }
 
@@ -142,12 +143,12 @@ class LicenseManager {
                     self.isLicensed = true
                     self.licenseInfo = info
                     completion(.success(info))
-                    print("✓ License activated: \(info.tier.rawValue)")
+                    debugLog("✓ License activated: \(info.tier.rawValue)")
                 }
             } else {
                 DispatchQueue.main.async {
                     completion(.failure(LicenseError.activationFailed))
-                    print("❌ License activation failed")
+                    debugLog("❌ License activation failed")
                 }
             }
         }
@@ -167,7 +168,7 @@ class LicenseManager {
             return
         }
 
-        print("🔓 Deactivating license")
+        debugLog("🔓 Deactivating license")
 
         // In production, call API to deactivate on server
         // For now, just remove local storage
@@ -177,7 +178,7 @@ class LicenseManager {
         licenseInfo = nil
 
         completion(.success(()))
-        print("✓ License deactivated")
+        debugLog("✓ License deactivated")
         #endif
     }
 
@@ -194,17 +195,17 @@ class LicenseManager {
             let data = try encoder.encode(info)
             if let dataString = String(data: data, encoding: .utf8) {
                 saveToKeychain("licenseData", value: dataString)
-                print("✓ License stored securely")
+                debugLog("✓ License stored securely")
             }
         } catch {
-            print("❌ Failed to store license: \(error)")
+            debugLog("❌ Failed to store license: \(error)")
         }
     }
 
     private func clearStoredLicense() {
         deleteFromKeychain("licenseKey")
         deleteFromKeychain("licenseData")
-        print("🗑️ License removed from storage")
+        debugLog("🗑️ License removed from storage")
     }
 
     // MARK: - Keychain Helpers
@@ -225,7 +226,7 @@ class LicenseManager {
         // Add new item
         let status = SecItemAdd(query as CFDictionary, nil)
         if status != errSecSuccess {
-            print("❌ Keychain save failed for \(key): \(status)")
+            debugLog("❌ Keychain save failed for \(key): \(status)")
         }
     }
 
@@ -243,16 +244,16 @@ class LicenseManager {
 
         // Handle different error cases
         if status == errSecUserCanceled {
-            print("ℹ️ User canceled keychain access for \(key) - this is normal, continuing without license")
+            debugLog("ℹ️ User canceled keychain access for \(key) - this is normal, continuing without license")
             return nil
         } else if status == errSecAuthFailed {
-            print("ℹ️ Keychain auth failed for \(key) - continuing without license")
+            debugLog("ℹ️ Keychain auth failed for \(key) - continuing without license")
             return nil
         } else if status == errSecItemNotFound {
             // Item doesn't exist - this is normal for new installations
             return nil
         } else if status != errSecSuccess {
-            print("ℹ️ Keychain access status \(status) for \(key) - continuing without license")
+            debugLog("ℹ️ Keychain access status \(status) for \(key) - continuing without license")
             return nil
         }
 

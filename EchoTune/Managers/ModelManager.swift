@@ -293,8 +293,8 @@ class ModelManager: ObservableObject {
             .appendingPathComponent("argmaxinc")
             .appendingPathComponent("whisperkit-coreml")
 
-        print("🔍 Checking for installed models at:")
-        print("   WhisperKit path: \(whisperKitModelsPath.path)")
+        debugLog("🔍 Checking for installed models at:")
+        debugLog("   WhisperKit path: \(whisperKitModelsPath.path)")
 
         // Accumulate results on background thread
         var foundInstalled: [AIModel] = []
@@ -305,7 +305,7 @@ class ModelManager: ObservableObject {
                 var m = model; m.isInstalled = true
                 foundInstalled.append(m)
                 installFlags.append((id: model.id, isInstalled: true, localPath: nil))
-                print("   ✅ Built-in model: \(model.name)")
+                debugLog("   ✅ Built-in model: \(model.name)")
                 continue
             }
 
@@ -315,9 +315,9 @@ class ModelManager: ObservableObject {
                     var m = model; m.isInstalled = true
                     foundInstalled.append(m)
                     installFlags.append((id: model.id, isInstalled: true, localPath: nil))
-                    print("   ✅ Cloud model enabled: \(model.name)")
+                    debugLog("   ✅ Cloud model enabled: \(model.name)")
                 } else {
-                    print("   ⚠️ Cloud model (no API key): \(model.name)")
+                    debugLog("   ⚠️ Cloud model (no API key): \(model.name)")
                 }
                 continue
             }
@@ -336,26 +336,26 @@ class ModelManager: ObservableObject {
                 var m = model; m.isInstalled = true; m.localPath = whisperKitModelPath
                 foundInstalled.append(m)
                 installFlags.append((id: model.id, isInstalled: true, localPath: whisperKitModelPath))
-                print("   ✅ Found installed model: \(model.name) at \(whisperKitModelPath.lastPathComponent)")
+                debugLog("   ✅ Found installed model: \(model.name) at \(whisperKitModelPath.lastPathComponent)")
             } else {
-                print("   ❌ Model not found: \(model.name) (looking for \(whisperKitModelName))")
+                debugLog("   ❌ Model not found: \(model.name) (looking for \(whisperKitModelName))")
             }
         }
 
-        print("📊 Total installed models: \(foundInstalled.count)")
+        debugLog("📊 Total installed models: \(foundInstalled.count)")
 
         let savedDefaultID = UserDefaults.standard.string(forKey: "defaultModelID")
-        print("🔍 Saved default model ID: \(savedDefaultID ?? "none")")
-        print("   Installed model IDs: \(foundInstalled.map { $0.id })")
+        debugLog("🔍 Saved default model ID: \(savedDefaultID ?? "none")")
+        debugLog("   Installed model IDs: \(foundInstalled.map { $0.id })")
 
         let resolvedCurrent: AIModel?
         if let savedDefaultID = savedDefaultID,
            let savedModel = foundInstalled.first(where: { $0.id == savedDefaultID }) {
             resolvedCurrent = savedModel
-            print("✅ Restored default model: \(savedModel.name) (id: \(savedModel.id))")
+            debugLog("✅ Restored default model: \(savedModel.name) (id: \(savedModel.id))")
         } else if let firstInstalled = foundInstalled.first {
             resolvedCurrent = firstInstalled
-            print("✅ Set default model (fallback): \(firstInstalled.name) (id: \(firstInstalled.id))")
+            debugLog("✅ Set default model (fallback): \(firstInstalled.name) (id: \(firstInstalled.id))")
         } else {
             resolvedCurrent = nil
         }
@@ -434,7 +434,7 @@ class ModelManager: ObservableObject {
 
         // Only WhisperKit-supported variants can be downloaded
         guard let variant = whisperVariant(for: model.id) else {
-            print("❌ Download not supported for model: \(model.id)")
+            debugLog("❌ Download not supported for model: \(model.id)")
             completion(.failure(.invalidModel))
             return
         }
@@ -448,7 +448,7 @@ class ModelManager: ObservableObject {
         currentDownloadModel = model
         downloadProgress = 0
 
-        print("📥 Starting download for \(model.name) (\(model.id))")
+        debugLog("📥 Starting download for \(model.name) (\(model.id))")
 
         // Use WhisperKit to download the model
         Task {
@@ -458,12 +458,12 @@ class ModelManager: ObservableObject {
                     DispatchQueue.main.async {
                         self.downloadProgress = progress.fractionCompleted
                         progressHandler?(progress.fractionCompleted)
-                        print("⏬ Download progress: \(Int(progress.fractionCompleted * 100))%")
+                        debugLog("⏬ Download progress: \(Int(progress.fractionCompleted * 100))%")
                     }
                 }
 
                 await MainActor.run {
-                    print("✅ Model downloaded successfully: \(model.name)")
+                    debugLog("✅ Model downloaded successfully: \(model.name)")
 
                     // Update installed models
                     var installedModel = model
@@ -508,7 +508,7 @@ class ModelManager: ObservableObject {
                 }
             } catch {
                 await MainActor.run {
-                    print("❌ Download failed: \(error)")
+                    debugLog("❌ Download failed: \(error)")
                     self.isDownloading = false
                     self.currentDownloadModel = nil
                     completion(.failure(.downloadFailed))
@@ -588,24 +588,24 @@ class ModelManager: ObservableObject {
     func deleteModel(_ model: AIModel) -> Bool {
         // Don't allow deleting built-in models
         guard !model.isBuiltIn else {
-            print("❌ Cannot delete built-in model: \(model.name)")
+            debugLog("❌ Cannot delete built-in model: \(model.name)")
             return false
         }
 
         // Don't allow deleting the current model
         guard currentModel?.id != model.id else {
-            print("❌ Cannot delete current model: \(model.name). Please select a different model first.")
+            debugLog("❌ Cannot delete current model: \(model.name). Please select a different model first.")
             return false
         }
 
         guard model.isInstalled, let localPath = model.localPath else {
-            print("❌ Model not installed or no local path: \(model.name)")
+            debugLog("❌ Model not installed or no local path: \(model.name)")
             return false
         }
 
         do {
             try FileManager.default.removeItem(at: localPath)
-            print("✅ Deleted model file: \(localPath.path)")
+            debugLog("✅ Deleted model file: \(localPath.path)")
 
             // Remove from installed models
             installedModels.removeAll { $0.id == model.id }
@@ -618,7 +618,7 @@ class ModelManager: ObservableObject {
             // Update current model if needed (extra safety check)
             if currentModel?.id == model.id {
                 currentModel = installedModels.first
-                print("⚠️ Current model was deleted, switching to: \(currentModel?.name ?? "none")")
+                debugLog("⚠️ Current model was deleted, switching to: \(currentModel?.name ?? "none")")
             }
 
             // Update storage info
@@ -627,10 +627,10 @@ class ModelManager: ObservableObject {
             // Force UI refresh
             objectWillChange.send()
 
-            print("✅ Model deleted successfully: \(model.name)")
+            debugLog("✅ Model deleted successfully: \(model.name)")
             return true
         } catch {
-            print("❌ Failed to delete model: \(error.localizedDescription)")
+            debugLog("❌ Failed to delete model: \(error.localizedDescription)")
             return false
         }
     }
@@ -647,7 +647,7 @@ class ModelManager: ObservableObject {
 
         // Keep AppSettings.defaultTranscriptionModel in sync (used by TranscriptionEngine routing)
         AppSettings.shared.defaultTranscriptionModel = model.id
-        print("💾 Saved default model: \(model.name) (synced to AppSettings)")
+        debugLog("💾 Saved default model: \(model.name) (synced to AppSettings)")
 
         return true
     }
@@ -670,7 +670,7 @@ class ModelManager: ObservableObject {
                 }
             }
         } catch {
-            print("Failed to get storage info: \(error.localizedDescription)")
+            debugLog("Failed to get storage info: \(error.localizedDescription)")
         }
     }
     

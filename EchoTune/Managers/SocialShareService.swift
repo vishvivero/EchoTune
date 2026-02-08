@@ -24,7 +24,7 @@ class SocialShareService: ObservableObject {
         hasShared = AppSettings.shared.hasSharedForDiscount
         discountCode = AppSettings.shared.socialShareDiscountCode
 
-        print("✅ SocialShareService initialized")
+        debugLog("✅ SocialShareService initialized")
     }
 
     // MARK: - Share Methods
@@ -117,7 +117,7 @@ class SocialShareService: ObservableObject {
         pasteboard.clearContents()
         pasteboard.setString(shareText, forType: .string)
 
-        print("📋 Share text copied to clipboard")
+        debugLog("📋 Share text copied to clipboard")
 
         // Show notification
         NotificationManager.shared.showNotification(
@@ -141,7 +141,7 @@ class SocialShareService: ObservableObject {
     /// Mark that user has shared and generate discount code
     func markAsShared() {
         guard !hasShared else {
-            print("⚠️ User already shared and received discount")
+            debugLog("⚠️ User already shared and received discount")
             return
         }
 
@@ -154,7 +154,7 @@ class SocialShareService: ObservableObject {
         AppSettings.shared.hasSharedForDiscount = true
         AppSettings.shared.socialShareDiscountCode = code
 
-        print("✅ User shared! Discount code generated: \(code)")
+        debugLog("✅ User shared! Discount code generated: \(code)")
 
         // Show success notification
         DispatchQueue.main.async {

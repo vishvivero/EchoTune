@@ -32,7 +32,7 @@ class SoundManager {
         startSound?.volume = 0.3
         stopSound?.volume = 0.3
 
-        print("✓ Sound manager initialized with system sounds")
+        debugLog("✓ Sound manager initialized with system sounds")
     }
 
     func playStartSound() {
@@ -40,7 +40,7 @@ class SoundManager {
 
         startSound?.stop() // Stop if already playing
         startSound?.play()
-        print("🔊 Playing start sound")
+        debugLog("🔊 Playing start sound")
     }
 
     func playStopSound() {
@@ -48,6 +48,6 @@ class SoundManager {
 
         stopSound?.stop() // Stop if already playing
         stopSound?.play()
-        print("🔊 Playing stop sound")
+        debugLog("🔊 Playing stop sound")
     }
 }

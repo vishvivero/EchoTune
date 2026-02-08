@@ -59,7 +59,7 @@ class AnalyticsManager: ObservableObject {
         dateFormatter.dateFormat = "yyyy-MM-dd"
 
         loadStatistics()
-        print("✓ AnalyticsManager initialized")
+        debugLog("✓ AnalyticsManager initialized")
         printSummary()
     }
 
@@ -94,7 +94,7 @@ class AnalyticsManager: ObservableObject {
 
         saveStatistics()
 
-        print("📊 Recorded transcription: \(wordCount) words, \(String(format: "%.1f", duration))s")
+        debugLog("📊 Recorded transcription: \(wordCount) words, \(String(format: "%.1f", duration))s")
     }
 
     func recordError(type: String, context: String = "") {
@@ -111,7 +111,7 @@ class AnalyticsManager: ObservableObject {
 
         saveStatistics()
 
-        print("📊 Recorded error: \(type)")
+        debugLog("📊 Recorded error: \(type)")
     }
 
     // MARK: - Statistics Queries
@@ -173,7 +173,7 @@ class AnalyticsManager: ObservableObject {
     func resetStatistics() {
         statistics = UsageStatistics()
         saveStatistics()
-        print("📊 Statistics reset")
+        debugLog("📊 Statistics reset")
     }
 
     func exportStatistics() -> Data? {
@@ -183,10 +183,10 @@ class AnalyticsManager: ObservableObject {
 
         do {
             let data = try encoder.encode(statistics)
-            print("📊 Statistics exported (\(data.count) bytes)")
+            debugLog("📊 Statistics exported (\(data.count) bytes)")
             return data
         } catch {
-            print("❌ Failed to export statistics: \(error)")
+            debugLog("❌ Failed to export statistics: \(error)")
             return nil
         }
     }
@@ -206,7 +206,7 @@ class AnalyticsManager: ObservableObject {
             }
         }
 
-        print("📊 Statistics exported as CSV (\(csv.count) chars)")
+        debugLog("📊 Statistics exported as CSV (\(csv.count) chars)")
         return csv
     }
 
@@ -222,14 +222,14 @@ class AnalyticsManager: ObservableObject {
                 UserDefaults.standard.set(dataString, forKey: statsKey)
             }
         } catch {
-            print("❌ Failed to save statistics: \(error)")
+            debugLog("❌ Failed to save statistics: \(error)")
         }
     }
 
     private func loadStatistics() {
         guard let dataString = UserDefaults.standard.string(forKey: statsKey),
               let data = dataString.data(using: .utf8) else {
-            print("📊 No saved statistics found")
+            debugLog("📊 No saved statistics found")
             return
         }
 
@@ -237,69 +237,69 @@ class AnalyticsManager: ObservableObject {
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
             statistics = try decoder.decode(UsageStatistics.self, from: data)
-            print("✓ Statistics loaded")
+            debugLog("✓ Statistics loaded")
         } catch {
-            print("❌ Failed to load statistics: \(error)")
+            debugLog("❌ Failed to load statistics: \(error)")
         }
     }
 
     // MARK: - Helpers
 
     private func printSummary() {
-        print("📊 Statistics Summary:")
-        print("   Total transcriptions: \(statistics.totalTranscriptions)")
-        print("   Total words: \(statistics.totalWords)")
-        print("   Total recording time: \(String(format: "%.1f", statistics.totalRecordingTime))s")
-        print("   Average words/transcription: \(statistics.averageWordsPerTranscription)")
-        print("   Success rate: \(String(format: "%.1f%%", statistics.successRate * 100))")
-        print("   Total errors: \(statistics.errorCount)")
-        print("   Days used: \(getTotalUsageDays())")
+        debugLog("📊 Statistics Summary:")
+        debugLog("   Total transcriptions: \(statistics.totalTranscriptions)")
+        debugLog("   Total words: \(statistics.totalWords)")
+        debugLog("   Total recording time: \(String(format: "%.1f", statistics.totalRecordingTime))s")
+        debugLog("   Average words/transcription: \(statistics.averageWordsPerTranscription)")
+        debugLog("   Success rate: \(String(format: "%.1f%%", statistics.successRate * 100))")
+        debugLog("   Total errors: \(statistics.errorCount)")
+        debugLog("   Days used: \(getTotalUsageDays())")
     }
 
     func printDetailedReport() {
-        print("\n📊 Detailed Analytics Report")
-        print("=" * 60)
+        debugLog("\n📊 Detailed Analytics Report")
+        debugLog("=" * 60)
 
-        print("\nOverall Statistics:")
-        print("  Total Transcriptions: \(statistics.totalTranscriptions)")
-        print("  Total Words: \(statistics.totalWords)")
-        print("  Total Recording Time: \(formatDuration(statistics.totalRecordingTime))")
-        print("  Average Transcription Time: \(String(format: "%.2f", statistics.averageTranscriptionTime))s")
-        print("  Average Words per Transcription: \(statistics.averageWordsPerTranscription)")
-        print("  Average Recording Duration: \(String(format: "%.1f", statistics.averageRecordingDuration))s")
-        print("  Success Rate: \(String(format: "%.1f%%", statistics.successRate * 100))")
-        print("  Total Errors: \(statistics.errorCount)")
-        print("  Days Used: \(getTotalUsageDays())")
+        debugLog("\nOverall Statistics:")
+        debugLog("  Total Transcriptions: \(statistics.totalTranscriptions)")
+        debugLog("  Total Words: \(statistics.totalWords)")
+        debugLog("  Total Recording Time: \(formatDuration(statistics.totalRecordingTime))")
+        debugLog("  Average Transcription Time: \(String(format: "%.2f", statistics.averageTranscriptionTime))s")
+        debugLog("  Average Words per Transcription: \(statistics.averageWordsPerTranscription)")
+        debugLog("  Average Recording Duration: \(String(format: "%.1f", statistics.averageRecordingDuration))s")
+        debugLog("  Success Rate: \(String(format: "%.1f%%", statistics.successRate * 100))")
+        debugLog("  Total Errors: \(statistics.errorCount)")
+        debugLog("  Days Used: \(getTotalUsageDays())")
 
         if let firstUsed = statistics.firstUsedDate {
-            print("  First Used: \(dateFormatter.string(from: firstUsed))")
+            debugLog("  First Used: \(dateFormatter.string(from: firstUsed))")
         }
 
         if let lastUsed = statistics.lastUsedDate {
-            print("  Last Used: \(dateFormatter.string(from: lastUsed))")
+            debugLog("  Last Used: \(dateFormatter.string(from: lastUsed))")
         }
 
         // Top errors
         let topErrors = getTopErrors()
         if !topErrors.isEmpty {
-            print("\nTop Errors:")
+            debugLog("\nTop Errors:")
             for (i, (errorType, count)) in topErrors.enumerated() {
-                print("  \(i + 1). \(errorType): \(count) occurrences")
+                debugLog("  \(i + 1). \(errorType): \(count) occurrences")
             }
         }
 
         // Weekly stats
-        print("\nLast 7 Days:")
+        debugLog("\nLast 7 Days:")
         let weekStats = getWeeklyStats()
         let calendar = Calendar.current
         for (i, stats) in weekStats.enumerated() {
             if let date = calendar.date(byAdding: .day, value: -(6 - i), to: Date()) {
                 let dateStr = dateFormatter.string(from: date)
-                print("  \(dateStr): \(stats.transcriptionCount) transcriptions, \(stats.wordCount) words")
+                debugLog("  \(dateStr): \(stats.transcriptionCount) transcriptions, \(stats.wordCount) words")
             }
         }
 
-        print("=" * 60)
+        debugLog("=" * 60)
     }
 
     private func formatDuration(_ duration: TimeInterval) -> String {

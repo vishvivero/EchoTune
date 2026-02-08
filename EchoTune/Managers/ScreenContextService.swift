@@ -25,7 +25,7 @@ class ScreenContextService: ObservableObject {
 
     private init() {
         loadEnabledState()
-        print("✅ ScreenContextService initialized")
+        debugLog("✅ ScreenContextService initialized")
     }
 
     // MARK: - Screen Context Capture (Enhanced)
@@ -33,11 +33,11 @@ class ScreenContextService: ObservableObject {
     /// Captures full context: OCR screen text, clipboard, selected text, active app, browser URL
     func captureCurrentContext() -> ScreenContext? {
         guard isEnabled else {
-            print("⚠️ Screen context disabled")
+            debugLog("⚠️ Screen context disabled")
             return nil
         }
 
-        print("📸 Capturing enhanced screen context...")
+        debugLog("📸 Capturing enhanced screen context...")
 
         let appIdentifier = getFrontmostAppIdentifier()
         let appName = getFrontmostAppName()
@@ -78,16 +78,16 @@ class ScreenContextService: ObservableObject {
 
         // Debug logging
         if let text = extractedText {
-            print("   ✅ OCR: \(text.count) chars")
+            debugLog("   ✅ OCR: \(text.count) chars")
         }
         if let clip = clipboardText {
-            print("   ✅ Clipboard: \(clip.count) chars")
+            debugLog("   ✅ Clipboard: \(clip.count) chars")
         }
         if let sel = selectedText {
-            print("   ✅ Selected text: \(sel.count) chars")
+            debugLog("   ✅ Selected text: \(sel.count) chars")
         }
         if let url = browserURL {
-            print("   ✅ Browser URL: \(url)")
+            debugLog("   ✅ Browser URL: \(url)")
         }
 
         return context
@@ -185,7 +185,7 @@ class ScreenContextService: ObservableObject {
     /// Fallback: capture the full main display
     private func captureFullScreenOCR() -> String? {
         guard let screenshot = CGDisplayCreateImage(CGMainDisplayID()) else {
-            print("   ❌ Failed to capture screenshot")
+            debugLog("   ❌ Failed to capture screenshot")
             return nil
         }
         return extractTextFromImage(screenshot)
@@ -217,7 +217,7 @@ class ScreenContextService: ObservableObject {
             return truncated.isEmpty ? nil : truncated
 
         } catch {
-            print("   ❌ Text recognition failed: \(error.localizedDescription)")
+            debugLog("   ❌ Text recognition failed: \(error.localizedDescription)")
             return nil
         }
     }
@@ -234,7 +234,7 @@ class ScreenContextService: ObservableObject {
     }
 
     func requestScreenRecordingPermission() {
-        print("🔐 Requesting screen recording permission...")
+        debugLog("🔐 Requesting screen recording permission...")
 
         DispatchQueue.main.async {
             let alert = NSAlert()
@@ -453,7 +453,7 @@ class ScreenContextService: ObservableObject {
             requestScreenRecordingPermission()
         }
 
-        print(enabled ? "✅ Screen context enabled" : "❌ Screen context disabled")
+        debugLog(enabled ? "✅ Screen context enabled" : "❌ Screen context disabled")
     }
 }
 

@@ -105,13 +105,13 @@ class AudioManager: NSObject, ObservableObject {
     
     func startRecording() {
         guard !isRecording else {
-            print("⚠️ Already recording, ignoring start request")
+            debugLog("⚠️ Already recording, ignoring start request")
             return
         }
 
         // Clean up any existing audio engine first
         if let existingEngine = audioEngine, existingEngine.isRunning {
-            print("⚠️ Stopping existing audio engine")
+            debugLog("⚠️ Stopping existing audio engine")
             existingEngine.stop()
             existingEngine.inputNode.removeTap(onBus: 0)
         }
@@ -130,18 +130,18 @@ class AudioManager: NSObject, ObservableObject {
         inputNode = audioEngine?.inputNode
 
         guard let inputNode = inputNode else {
-            print("❌ Failed to get input node")
+            debugLog("❌ Failed to get input node")
             return
         }
 
         // Use the hardware's native input format instead of forcing a specific sample rate
         let hardwareFormat = inputNode.inputFormat(forBus: 0)
 
-        print("🎤 Recording with hardware format: \(hardwareFormat)")
-        print("   Sample rate: \(hardwareFormat.sampleRate) Hz")
-        print("   Channels: \(hardwareFormat.channelCount)")
-        print("🎙️ VAD enabled: \(VADManager.shared.config.enabled)")
-        print("📏 Max recording duration: \(AudioManager.maxRecordingDuration > 0 ? "\(Int(AudioManager.maxRecordingDuration))s" : "unlimited")")
+        debugLog("🎤 Recording with hardware format: \(hardwareFormat)")
+        debugLog("   Sample rate: \(hardwareFormat.sampleRate) Hz")
+        debugLog("   Channels: \(hardwareFormat.channelCount)")
+        debugLog("🎙️ VAD enabled: \(VADManager.shared.config.enabled)")
+        debugLog("📏 Max recording duration: \(AudioManager.maxRecordingDuration > 0 ? "\(Int(AudioManager.maxRecordingDuration))s" : "unlimited")")
 
         // Normalize to Float32 non-interleaved if hardware format isn't already
         if hardwareFormat.commonFormat != .pcmFormatFloat32 || hardwareFormat.isInterleaved {
@@ -154,12 +154,12 @@ class AudioManager: NSObject, ObservableObject {
             tapConverter = AVAudioConverter(from: hardwareFormat, to: normalized)
             normalizedFormat = normalized
             recordingFormat = normalized
-            print("🔄 Tap format normalization: \(hardwareFormat) → Float32 non-interleaved")
+            debugLog("🔄 Tap format normalization: \(hardwareFormat) → Float32 non-interleaved")
         } else {
             tapConverter = nil
             normalizedFormat = nil
             recordingFormat = hardwareFormat
-            print("✅ Hardware format is already Float32 non-interleaved")
+            debugLog("✅ Hardware format is already Float32 non-interleaved")
         }
 
         let activeFormat = normalizedFormat ?? hardwareFormat
@@ -239,7 +239,7 @@ class AudioManager: NSObject, ObservableObject {
                 }
             }
         } catch {
-            print("Failed to start audio engine: \(error.localizedDescription)")
+            debugLog("Failed to start audio engine: \(error.localizedDescription)")
             return
         }
     }
@@ -265,12 +265,12 @@ class AudioManager: NSObject, ObservableObject {
                 let maxChunks = 600
                 if audioChunks.count > maxChunks {
                     audioChunks.removeFirst()
-                    print("⚠️ Audio buffer memory cap reached — dropped oldest chunk")
+                    debugLog("⚠️ Audio buffer memory cap reached — dropped oldest chunk")
                 }
 
                 let newCapacity = AVAudioFrameCount(buffer.format.sampleRate * AudioManager.chunkDurationSeconds)
                 guard let newChunk = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: newCapacity) else {
-                    print("⚠️ Failed to allocate new audio chunk — recording may be truncated")
+                    debugLog("⚠️ Failed to allocate new audio chunk — recording may be truncated")
                     return
                 }
                 currentChunk = newChunk
@@ -278,7 +278,7 @@ class AudioManager: NSObject, ObservableObject {
                 currentChunkFrameOffset = 0
 
                 let totalSeconds = Double(audioChunks.count) * AudioManager.chunkDurationSeconds
-                print("📦 Audio chunk \(audioChunks.count) stored (\(Int(totalSeconds))s total buffered)")
+                debugLog("📦 Audio chunk \(audioChunks.count) stored (\(Int(totalSeconds))s total buffered)")
                 continue
             }
 
@@ -348,13 +348,13 @@ class AudioManager: NSObject, ObservableObject {
         let mergedBuffer = mergeAllAudioChunks()
 
         guard let finalBuffer = mergedBuffer else {
-            print("⚠️ No audio data captured")
+            debugLog("⚠️ No audio data captured")
             cleanup()
             return nil
         }
 
         let totalDuration = Double(finalBuffer.frameLength) / finalBuffer.format.sampleRate
-        print("📊 Total recorded audio: \(String(format: "%.1f", totalDuration))s (\(finalBuffer.frameLength) frames across \(audioChunks.count + 1) chunks)")
+        debugLog("📊 Total recorded audio: \(String(format: "%.1f", totalDuration))s (\(finalBuffer.frameLength) frames across \(audioChunks.count + 1) chunks)")
 
         // Convert buffer using optimized path for target engine
         let audioData = convertBufferToWAVData(finalBuffer, forEngine: engine)
@@ -386,7 +386,7 @@ class AudioManager: NSObject, ObservableObject {
 
         let format = allChunks[0].format
         guard let merged = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: totalFrames) else {
-            print("⚠️ Failed to allocate merged buffer (\(totalFrames) frames) — falling back to legacy buffer")
+            debugLog("⚠️ Failed to allocate merged buffer (\(totalFrames) frames) — falling back to legacy buffer")
             return audioBuffer
         }
 
@@ -466,15 +466,15 @@ class AudioManager: NSObject, ObservableObject {
     private func convertBufferToWAVData(_ buffer: AVAudioPCMBuffer, forEngine engine: AudioEngine = .appleSpeech) -> Data {
         // Check if buffer has any data
         if buffer.frameLength == 0 {
-            print("❌ Buffer is empty - no audio data recorded")
+            debugLog("❌ Buffer is empty - no audio data recorded")
             return Data()
         }
 
-        print("📊 Buffer info:")
-        print("   Frame length: \(buffer.frameLength)")
-        print("   Frame capacity: \(buffer.frameCapacity)")
-        print("   Format: \(buffer.format)")
-        print("   Target engine: \(engine)")
+        debugLog("📊 Buffer info:")
+        debugLog("   Frame length: \(buffer.frameLength)")
+        debugLog("   Frame capacity: \(buffer.frameCapacity)")
+        debugLog("   Format: \(buffer.format)")
+        debugLog("   Target engine: \(engine)")
 
         // Start performance monitoring
         PerformanceMonitor.shared.startAudioConversion(dataSize: Int(buffer.frameLength) * 4)
@@ -492,7 +492,7 @@ class AudioManager: NSObject, ObservableObject {
             switch engine {
             case .whisper:
                 // ✅ OPTIMIZED: Whisper path - Keep Float32, no conversion needed!
-                print("🚀 Optimized path: Whisper (Float32, no conversion)")
+                debugLog("🚀 Optimized path: Whisper (Float32, no conversion)")
 
                 // Whisper uses Float32 directly - just write the buffer as-is
                 let settings: [String: Any] = [
@@ -513,13 +513,13 @@ class AudioManager: NSObject, ObservableObject {
                 )
 
                 try audioFile?.write(from: buffer)
-                print("✓ CAF file written (Float32, no conversion)")
+                debugLog("✓ CAF file written (Float32, no conversion)")
 
                 data = try Data(contentsOf: tempFileURL)
 
             case .appleSpeech:
                 // Apple Speech path - Convert to Int16 (what SFSpeechRecognizer prefers)
-                print("🔄 Converting Float32 → Int16 for Apple Speech Recognition")
+                debugLog("🔄 Converting Float32 → Int16 for Apple Speech Recognition")
 
                 guard let targetFormat = AVAudioFormat(
                     commonFormat: .pcmFormatInt16,
@@ -527,13 +527,13 @@ class AudioManager: NSObject, ObservableObject {
                     channels: sourceFormat.channelCount,
                     interleaved: false
                 ) else {
-                    print("❌ Failed to create Int16 format")
+                    debugLog("❌ Failed to create Int16 format")
                     PerformanceMonitor.shared.endAudioConversion()
                     return Data()
                 }
 
                 guard let converter = AVAudioConverter(from: sourceFormat, to: targetFormat) else {
-                    print("❌ Failed to create audio converter")
+                    debugLog("❌ Failed to create audio converter")
                     PerformanceMonitor.shared.endAudioConversion()
                     return Data()
                 }
@@ -558,12 +558,12 @@ class AudioManager: NSObject, ObservableObject {
                 let status = converter.convert(to: targetBuffer, error: &error, withInputFrom: inputBlock)
 
                 if status == .error {
-                    print("❌ Conversion failed: \(error?.localizedDescription ?? "unknown")")
+                    debugLog("❌ Conversion failed: \(error?.localizedDescription ?? "unknown")")
                     PerformanceMonitor.shared.endAudioConversion()
                     return Data()
                 }
 
-                print("✓ Converted to Int16 PCM (\(targetBuffer.frameLength) frames)")
+                debugLog("✓ Converted to Int16 PCM (\(targetBuffer.frameLength) frames)")
 
                 let settings: [String: Any] = [
                     AVFormatIDKey: kAudioFormatLinearPCM,
@@ -583,14 +583,14 @@ class AudioManager: NSObject, ObservableObject {
                 )
 
                 try audioFile?.write(from: targetBuffer)
-                print("✓ CAF file written (Int16 PCM)")
+                debugLog("✓ CAF file written (Int16 PCM)")
 
                 data = try Data(contentsOf: tempFileURL)
 
             case .cloud:
                 // Cloud services (Groq/Deepgram) need proper WAV (RIFF) format
                 // Convert to 16kHz mono Int16 WAV — universally accepted
-                print("☁️ Converting to WAV (RIFF) for cloud upload")
+                debugLog("☁️ Converting to WAV (RIFF) for cloud upload")
 
                 let cloudSampleRate: Double = 16000
                 guard let targetFormat = AVAudioFormat(
@@ -599,20 +599,20 @@ class AudioManager: NSObject, ObservableObject {
                     channels: 1,
                     interleaved: true
                 ) else {
-                    print("❌ Failed to create cloud target format")
+                    debugLog("❌ Failed to create cloud target format")
                     PerformanceMonitor.shared.endAudioConversion()
                     return Data()
                 }
 
                 guard let converter = AVAudioConverter(from: sourceFormat, to: targetFormat) else {
-                    print("❌ Failed to create audio converter for cloud")
+                    debugLog("❌ Failed to create audio converter for cloud")
                     PerformanceMonitor.shared.endAudioConversion()
                     return Data()
                 }
 
                 let outputFrameCapacity = AVAudioFrameCount(ceil(Double(buffer.frameLength) * cloudSampleRate / sourceFormat.sampleRate)) + 100
                 guard let targetBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: outputFrameCapacity) else {
-                    print("❌ Failed to create cloud output buffer")
+                    debugLog("❌ Failed to create cloud output buffer")
                     PerformanceMonitor.shared.endAudioConversion()
                     return Data()
                 }
@@ -628,12 +628,12 @@ class AudioManager: NSObject, ObservableObject {
                 var convError: NSError?
                 let convStatus = converter.convert(to: targetBuffer, error: &convError, withInputFrom: inputBlock)
                 if convStatus == .error {
-                    print("❌ Cloud audio conversion failed: \(convError?.localizedDescription ?? "unknown")")
+                    debugLog("❌ Cloud audio conversion failed: \(convError?.localizedDescription ?? "unknown")")
                     PerformanceMonitor.shared.endAudioConversion()
                     return Data()
                 }
 
-                print("✓ Converted to 16kHz mono Int16 (\(targetBuffer.frameLength) frames)")
+                debugLog("✓ Converted to 16kHz mono Int16 (\(targetBuffer.frameLength) frames)")
 
                 // Write as proper WAV (RIFF) file
                 let wavURL = FileManager.default.temporaryDirectory.appendingPathComponent("cloud_upload.wav")
@@ -649,15 +649,15 @@ class AudioManager: NSObject, ObservableObject {
 
                 data = try Data(contentsOf: wavURL)
                 try? FileManager.default.removeItem(at: wavURL)
-                print("✓ WAV file created: \(data.count) bytes")
+                debugLog("✓ WAV file created: \(data.count) bytes")
             }
 
             PerformanceMonitor.shared.endAudioConversion()
 
-            print("✓ Audio data size: \(data.count) bytes")
+            debugLog("✓ Audio data size: \(data.count) bytes")
             return data
         } catch {
-            print("❌ Failed to convert buffer: \(error.localizedDescription)")
+            debugLog("❌ Failed to convert buffer: \(error.localizedDescription)")
             PerformanceMonitor.shared.endAudioConversion()
             return Data()
         }
@@ -682,7 +682,7 @@ class AudioManager: NSObject, ObservableObject {
         var status = AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &propertyAddress, 0, nil, &dataSize)
 
         guard status == noErr else {
-            print("❌ Failed to get audio devices size")
+            debugLog("❌ Failed to get audio devices size")
             return devices
         }
 
@@ -692,7 +692,7 @@ class AudioManager: NSObject, ObservableObject {
         status = AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &propertyAddress, 0, nil, &dataSize, &audioDevices)
 
         guard status == noErr else {
-            print("❌ Failed to get audio devices")
+            debugLog("❌ Failed to get audio devices")
             return devices
         }
 
@@ -785,7 +785,7 @@ class AudioManager: NSObject, ObservableObject {
 
     func selectAudioDevice(id: String) {
         guard let deviceID = AudioDeviceID(id) else {
-            print("❌ Invalid device ID")
+            debugLog("❌ Invalid device ID")
             return
         }
 
@@ -807,7 +807,7 @@ class AudioManager: NSObject, ObservableObject {
         )
 
         if status == noErr {
-            print("✓ Successfully set audio input device: \(id)")
+            debugLog("✓ Successfully set audio input device: \(id)")
 
             // Update current device
             let devices = getAvailableInputDevices()
@@ -821,7 +821,7 @@ class AudioManager: NSObject, ObservableObject {
                 }
             }
         } else {
-            print("❌ Failed to set audio input device: \(status)")
+            debugLog("❌ Failed to set audio input device: \(status)")
         }
     }
 
@@ -830,12 +830,12 @@ class AudioManager: NSObject, ObservableObject {
     /// Get VAD analysis of recorded audio
     func getVADAnalysis() -> VADManager.AnalysisResult? {
         guard !recordedBuffers.isEmpty else {
-            print("⚠️ No recorded buffers available for VAD analysis")
+            debugLog("⚠️ No recorded buffers available for VAD analysis")
             return nil
         }
 
         guard let format = recordingFormat else {
-            print("⚠️ No recording format available")
+            debugLog("⚠️ No recording format available")
             return nil
         }
 

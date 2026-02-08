@@ -20,10 +20,10 @@ struct GeneralSettingsView: View {
                         launchAtLoginManager.setLaunchAtLogin(enabled: newValue) { result in
                             switch result {
                             case .success:
-                                print("✓ Launch at login: \(newValue)")
+                                debugLog("✓ Launch at login: \(newValue)")
                                 settings.launchAtStartup = newValue
                             case .failure(let error):
-                                print("❌ Failed to set launch at login: \(error)")
+                                debugLog("❌ Failed to set launch at login: \(error)")
                             }
                         }
                     }

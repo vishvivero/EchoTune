@@ -280,7 +280,7 @@ struct StatisticsSettingsView: View {
 
     private func exportJSON() {
         guard let data = analyticsManager.exportStatistics() else {
-            print("Failed to export statistics")
+            debugLog("Failed to export statistics")
             return
         }
 
@@ -292,9 +292,9 @@ struct StatisticsSettingsView: View {
             if response == .OK, let url = panel.url {
                 do {
                     try data.write(to: url)
-                    print("✓ Statistics exported to \(url.path)")
+                    debugLog("✓ Statistics exported to \(url.path)")
                 } catch {
-                    print("❌ Failed to save: \(error)")
+                    debugLog("❌ Failed to save: \(error)")
                 }
             }
         }
@@ -312,9 +312,9 @@ struct StatisticsSettingsView: View {
             if response == .OK, let url = panel.url {
                 do {
                     try data.write(to: url)
-                    print("✓ Statistics exported to \(url.path)")
+                    debugLog("✓ Statistics exported to \(url.path)")
                 } catch {
-                    print("❌ Failed to save: \(error)")
+                    debugLog("❌ Failed to save: \(error)")
                 }
             }
         }
@@ -331,7 +331,7 @@ struct StatisticsSettingsView: View {
         if alert.runModal() == .alertFirstButtonReturn {
             analyticsManager.resetStatistics()
             refreshStatistics()
-            print("✓ Statistics reset")
+            debugLog("✓ Statistics reset")
         }
     }
 

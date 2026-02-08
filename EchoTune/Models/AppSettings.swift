@@ -122,31 +122,39 @@ class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(customEnhancementPrompt, forKey: "customEnhancementPrompt") }
     }
 
-    // Phase 6A: API Keys (stored securely in Keychain in production)
+    // Phase 6A: API Keys (stored securely in macOS Keychain)
     @Published var groqAPIKey: String {
         didSet {
-            UserDefaults.standard.set(groqAPIKey, forKey: "groqAPIKey")
+            KeychainHelper.save(groqAPIKey, forKey: "groqAPIKey")
             NotificationCenter.default.post(name: NSNotification.Name("APIKeyChanged"), object: nil)
         }
     }
 
     @Published var openaiAPIKey: String {
-        didSet { UserDefaults.standard.set(openaiAPIKey, forKey: "openaiAPIKey") }
-    }
-
-    @Published var claudeAPIKey: String {
-        didSet { UserDefaults.standard.set(claudeAPIKey, forKey: "claudeAPIKey") }
-    }
-
-    @Published var deepgramAPIKey: String {
         didSet {
-            UserDefaults.standard.set(deepgramAPIKey, forKey: "deepgramAPIKey")
+            KeychainHelper.save(openaiAPIKey, forKey: "openaiAPIKey")
             NotificationCenter.default.post(name: NSNotification.Name("APIKeyChanged"), object: nil)
         }
     }
 
-    @Published var anthropicAPIKey: String {
-        didSet { UserDefaults.standard.set(anthropicAPIKey, forKey: "anthropicAPIKey") }
+    @Published var claudeAPIKey: String {
+        didSet {
+            KeychainHelper.save(claudeAPIKey, forKey: "claudeAPIKey")
+            NotificationCenter.default.post(name: NSNotification.Name("APIKeyChanged"), object: nil)
+        }
+    }
+
+    @Published var deepgramAPIKey: String {
+        didSet {
+            KeychainHelper.save(deepgramAPIKey, forKey: "deepgramAPIKey")
+            NotificationCenter.default.post(name: NSNotification.Name("APIKeyChanged"), object: nil)
+        }
+    }
+
+    // anthropicAPIKey is an alias for claudeAPIKey (they refer to the same provider)
+    var anthropicAPIKey: String {
+        get { claudeAPIKey }
+        set { claudeAPIKey = newValue }
     }
 
     // Phase 6A: Social Share Settings
@@ -268,12 +276,11 @@ class AppSettings: ObservableObject {
         self.selectedEnhancementModel = UserDefaults.standard.string(forKey: "selectedEnhancementModel") ?? "gpt-4o-mini"
         self.customEnhancementPrompt = UserDefaults.standard.string(forKey: "customEnhancementPrompt") ?? ""
 
-        // Phase 6A: Initialize API Keys
-        self.groqAPIKey = UserDefaults.standard.string(forKey: "groqAPIKey") ?? ""
-        self.openaiAPIKey = UserDefaults.standard.string(forKey: "openaiAPIKey") ?? ""
-        self.claudeAPIKey = UserDefaults.standard.string(forKey: "claudeAPIKey") ?? ""
-        self.deepgramAPIKey = UserDefaults.standard.string(forKey: "deepgramAPIKey") ?? ""
-        self.anthropicAPIKey = UserDefaults.standard.string(forKey: "anthropicAPIKey") ?? ""
+        // Phase 6A: Initialize API Keys (from Keychain)
+        self.groqAPIKey = KeychainHelper.load(forKey: "groqAPIKey")
+        self.openaiAPIKey = KeychainHelper.load(forKey: "openaiAPIKey")
+        self.claudeAPIKey = KeychainHelper.load(forKey: "claudeAPIKey")
+        self.deepgramAPIKey = KeychainHelper.load(forKey: "deepgramAPIKey")
 
         // Phase 6A: Initialize Social Share Settings
         if UserDefaults.standard.object(forKey: "hasSharedForDiscount") != nil {
@@ -322,6 +329,26 @@ class AppSettings: ObservableObject {
             setDefaults()
             UserDefaults.standard.set(true, forKey: "hasLaunchedBefore")
         }
+
+        // Migrate any API keys still in UserDefaults to Keychain
+        migrateAPIKeysToKeychain()
+    }
+
+    private func migrateAPIKeysToKeychain() {
+        let keys = ["groqAPIKey", "openaiAPIKey", "claudeAPIKey", "deepgramAPIKey", "anthropicAPIKey"]
+        for key in keys {
+            if let value = UserDefaults.standard.string(forKey: key), !value.isEmpty {
+                if KeychainHelper.load(forKey: key).isEmpty {
+                    KeychainHelper.save(value, forKey: key)
+                }
+                UserDefaults.standard.removeObject(forKey: key)
+            }
+        }
+        // After migration, reload keys from Keychain (in case migration populated them)
+        self.groqAPIKey = KeychainHelper.load(forKey: "groqAPIKey")
+        self.openaiAPIKey = KeychainHelper.load(forKey: "openaiAPIKey")
+        self.claudeAPIKey = KeychainHelper.load(forKey: "claudeAPIKey")
+        self.deepgramAPIKey = KeychainHelper.load(forKey: "deepgramAPIKey")
     }
     
     private func setDefaults() {
@@ -348,6 +375,16 @@ class AppSettings: ObservableObject {
     // Reset all settings to default values
     func resetToDefaults() {
         setDefaults()
+        // Clear API keys from Keychain
+        KeychainHelper.delete(forKey: "groqAPIKey")
+        KeychainHelper.delete(forKey: "openaiAPIKey")
+        KeychainHelper.delete(forKey: "claudeAPIKey")
+        KeychainHelper.delete(forKey: "deepgramAPIKey")
+        KeychainHelper.delete(forKey: "anthropicAPIKey")
+        self.groqAPIKey = ""
+        self.openaiAPIKey = ""
+        self.claudeAPIKey = ""
+        self.deepgramAPIKey = ""
     }
 }
 

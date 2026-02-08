@@ -149,7 +149,7 @@ struct SidebarView: View {
 
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 4) {
-                        ForEach(NavigationItem.allCases) { item in
+                        ForEach(NavigationItem.allCases.filter { $0 != .notes }) { item in
                             ModernSidebarItem(
                                 item: item,
                                 isSelected: selectedView == item,
@@ -939,7 +939,7 @@ struct AboutContentView: View {
             Divider()
                 .padding(.vertical)
 
-            Text("© 2025 EchoTune")
+            Text("© \(Calendar.current.component(.year, from: Date())) EchoTune")
                 .font(.caption)
                 .foregroundColor(.secondary)
         }

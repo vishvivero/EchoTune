@@ -58,7 +58,7 @@ class DeepgramTranscriptionService: ObservableObject {
     private let endpoint = "https://api.deepgram.com/v1/listen"
 
     private init() {
-        print("✅ DeepgramTranscriptionService initialized")
+        debugLog("✅ DeepgramTranscriptionService initialized")
     }
 
     // MARK: - Main Transcription Method
@@ -89,9 +89,9 @@ class DeepgramTranscriptionService: ObservableObject {
             }
         }
 
-        print("🚀 Starting Deepgram transcription...")
-        print("   Audio size: \(audioData.count) bytes (\(String(format: "%.1f", Double(audioData.count) / 1024.0 / 1024.0)) MB)")
-        print("   Model: \(model.displayName)")
+        debugLog("🚀 Starting Deepgram transcription...")
+        debugLog("   Audio size: \(audioData.count) bytes (\(String(format: "%.1f", Double(audioData.count) / 1024.0 / 1024.0)) MB)")
+        debugLog("   Model: \(model.displayName)")
 
         // Build query parameters
         var queryItems: [URLQueryItem] = [
@@ -133,7 +133,7 @@ class DeepgramTranscriptionService: ObservableObject {
                 throw DeepgramError.networkError(NSError(domain: "com.echotune", code: -1))
             }
 
-            print("   Response status: \(httpResponse.statusCode)")
+            debugLog("   Response status: \(httpResponse.statusCode)")
 
             if httpResponse.statusCode != 200 {
                 // Try to parse error message
@@ -146,7 +146,7 @@ class DeepgramTranscriptionService: ObservableObject {
             // Parse successful response
             let deepgramResponse = try JSONDecoder().decode(DeepgramResponse.self, from: data)
 
-            print("✅ Deepgram transcription successful")
+            debugLog("✅ Deepgram transcription successful")
 
             return deepgramResponse
 

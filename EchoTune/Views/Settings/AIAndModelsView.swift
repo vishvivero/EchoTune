@@ -244,7 +244,7 @@ struct AIAndModelsView: View {
                 // Anthropic
                 APIKeyField(
                     title: "Anthropic API (for AI Enhancement)",
-                    key: $settings.anthropicAPIKey,
+                    key: $settings.claudeAPIKey,
                     showKey: $showClaudeKey,
                     linkURL: "https://console.anthropic.com/",
                     linkText: "Get Key",
@@ -393,7 +393,7 @@ struct AIAndModelsView: View {
         testingKey = "anthropic"
         testResult = "Testing..."
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            testResult = settings.anthropicAPIKey.isEmpty ? "✗ No key" : "✓ Key set"
+            testResult = settings.claudeAPIKey.isEmpty ? "✗ No key" : "✓ Key set"
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                 if testingKey == "anthropic" {
                     testingKey = nil
@@ -697,9 +697,9 @@ struct LocalModelManagementRow: View {
         modelManager.downloadModel(model) { result in
             switch result {
             case .success:
-                print("Model downloaded successfully")
+                debugLog("Model downloaded successfully")
             case .failure(let error):
-                print("Failed to download model: \(error)")
+                debugLog("Failed to download model: \(error)")
             }
         }
     }

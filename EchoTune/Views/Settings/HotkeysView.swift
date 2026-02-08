@@ -332,7 +332,7 @@ struct HotkeyRecordSheet: View {
             )
             MultiHotkeyManager.shared.updateBinding(updatedBinding)
 
-            print("✅ Saved shortcut: \(recordedShortcut) for \(action.rawValue)")
+            debugLog("✅ Saved shortcut: \(recordedShortcut) for \(action.rawValue)")
 
             NotificationManager.shared.showNotification(
                 title: "Shortcut Updated",
