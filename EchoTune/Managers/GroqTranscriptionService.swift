@@ -157,11 +157,18 @@ class GroqTranscriptionService: ObservableObject {
         body.append("Content-Disposition: form-data; name=\"model\"\r\n\r\n")
         body.append("\(model)\r\n")
 
-        // Add language field if specified
+        // Add language field if specified (skip when auto-detect is on)
         if let language = language {
             body.append("--\(boundary)\r\n")
             body.append("Content-Disposition: form-data; name=\"language\"\r\n\r\n")
             body.append("\(language)\r\n")
+        }
+
+        // Add task field (translate = output English regardless of input language)
+        if AppSettings.shared.translateToEnglish {
+            body.append("--\(boundary)\r\n")
+            body.append("Content-Disposition: form-data; name=\"task\"\r\n\r\n")
+            body.append("translate\r\n")
         }
 
         // Add response_format field (prefer JSON for easier parsing)

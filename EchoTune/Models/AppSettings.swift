@@ -32,6 +32,14 @@ class AppSettings: ObservableObject {
     @Published var preferredLanguage: String {
         didSet { UserDefaults.standard.set(preferredLanguage, forKey: "preferredLanguage") }
     }
+
+    @Published var autoDetectLanguage: Bool {
+        didSet { UserDefaults.standard.set(autoDetectLanguage, forKey: "autoDetectLanguage") }
+    }
+
+    @Published var translateToEnglish: Bool {
+        didSet { UserDefaults.standard.set(translateToEnglish, forKey: "translateToEnglish") }
+    }
     
     // Privacy Settings
     @Published var keepAudioHistory: Bool {
@@ -197,6 +205,8 @@ class AppSettings: ObservableObject {
         self.defaultTranscriptionModel = UserDefaults.standard.string(forKey: "defaultTranscriptionModel") ?? "apple-speech"
 
         self.preferredLanguage = UserDefaults.standard.string(forKey: "preferredLanguage") ?? "en-US"
+        self.autoDetectLanguage = UserDefaults.standard.object(forKey: "autoDetectLanguage") as? Bool ?? true
+        self.translateToEnglish = UserDefaults.standard.object(forKey: "translateToEnglish") as? Bool ?? false
         self.keepAudioHistory = UserDefaults.standard.bool(forKey: "keepAudioHistory")
         self.shareAnalytics = UserDefaults.standard.bool(forKey: "shareAnalytics")
         self.autoPunctuation = UserDefaults.standard.bool(forKey: "autoPunctuation")
@@ -319,6 +329,8 @@ class AppSettings: ObservableObject {
         self.recordingMode = .toggle
         self.selectedModelSize = .balanced
         self.preferredLanguage = "en-US"
+        self.autoDetectLanguage = true
+        self.translateToEnglish = false
         self.keepAudioHistory = false
         self.shareAnalytics = false
         self.autoPunctuation = true

@@ -643,7 +643,7 @@ class TranscriptionEngine: NSObject, ObservableObject {
         print("📡 Routing to Groq transcription service")
         Task {
             do {
-                let language = AppSettings.shared.preferredLanguage.components(separatedBy: "-").first
+                let language = AppSettings.shared.autoDetectLanguage ? nil : AppSettings.shared.preferredLanguage.components(separatedBy: "-").first
                 let text = try await GroqTranscriptionService.shared.transcribe(
                     audioData: audioData,
                     language: language,
@@ -673,7 +673,7 @@ class TranscriptionEngine: NSObject, ObservableObject {
         print("📡 Routing to Deepgram transcription service")
         Task {
             do {
-                let language = AppSettings.shared.preferredLanguage.components(separatedBy: "-").first
+                let language = AppSettings.shared.autoDetectLanguage ? nil : AppSettings.shared.preferredLanguage.components(separatedBy: "-").first
                 let text = try await DeepgramTranscriptionService.shared.transcribeToText(
                     audioData: audioData,
                     model: .nova,

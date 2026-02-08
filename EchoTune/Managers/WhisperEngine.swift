@@ -214,7 +214,12 @@ class WhisperEngine: ObservableObject {
                 )
 
                 // Transcribe directly from audio array (no file I/O!)
-                let results = try await whisperKit.transcribe(audioArray: audioArray)
+                let decodeOptions = DecodingOptions(
+                    task: AppSettings.shared.translateToEnglish ? .translate : .transcribe,
+                    language: AppSettings.shared.autoDetectLanguage ? nil : AppSettings.shared.preferredLanguage.components(separatedBy: "-").first,
+                    detectLanguage: AppSettings.shared.autoDetectLanguage
+                )
+                let results = try await whisperKit.transcribe(audioArray: audioArray, decodeOptions: decodeOptions)
 
                 // Extract text from ALL result segments (WhisperKit returns multiple for long audio)
                 let allSegments = results.map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -330,7 +335,12 @@ class WhisperEngine: ObservableObject {
 
                 // Transcribe directly from audio array
                 os_log("🎙️ Calling whisperKit.transcribe(audioArray:)...", log: wLog, type: .error)
-                let results = try await whisperKit.transcribe(audioArray: audioArray)
+                let decodeOptions = DecodingOptions(
+                    task: AppSettings.shared.translateToEnglish ? .translate : .transcribe,
+                    language: AppSettings.shared.autoDetectLanguage ? nil : AppSettings.shared.preferredLanguage.components(separatedBy: "-").first,
+                    detectLanguage: AppSettings.shared.autoDetectLanguage
+                )
+                let results = try await whisperKit.transcribe(audioArray: audioArray, decodeOptions: decodeOptions)
                 os_log("✅ WhisperKit returned %d segments", log: wLog, type: .error, results.count)
 
                 // Extract text from ALL result segments

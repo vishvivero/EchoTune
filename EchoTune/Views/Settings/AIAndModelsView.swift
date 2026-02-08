@@ -30,6 +30,12 @@ struct AIAndModelsView: View {
                 Divider()
                     .padding(.vertical, 8)
 
+                // Section A.5: Language Settings
+                languageSection
+
+                Divider()
+                    .padding(.vertical, 8)
+
                 // Section B: API Keys
                 apiKeysSection
 
@@ -46,6 +52,56 @@ struct AIAndModelsView: View {
                 localModelsSection
             }
             .padding(.vertical)
+        }
+    }
+
+    // MARK: - Language Section
+
+    private var languageSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Image(systemName: "globe")
+                    .font(.title2)
+                    .foregroundColor(.teal)
+                Text("Language")
+                    .font(.headline)
+            }
+            .padding(.horizontal)
+
+            VStack(alignment: .leading, spacing: 12) {
+                Toggle("Auto-detect language", isOn: $settings.autoDetectLanguage)
+                    .padding(.horizontal)
+
+                Picker("Language", selection: $settings.preferredLanguage) {
+                    Text("English").tag("en")
+                    Text("Hindi").tag("hi")
+                    Text("Malayalam").tag("ml")
+                    Text("Tamil").tag("ta")
+                    Text("Telugu").tag("te")
+                    Text("Bengali").tag("bn")
+                    Text("Spanish").tag("es")
+                    Text("French").tag("fr")
+                    Text("German").tag("de")
+                    Text("Japanese").tag("ja")
+                    Text("Chinese").tag("zh")
+                    Text("Korean").tag("ko")
+                    Text("Arabic").tag("ar")
+                    Text("Portuguese").tag("pt")
+                    Text("Russian").tag("ru")
+                    Text("Italian").tag("it")
+                }
+                .pickerStyle(.menu)
+                .disabled(settings.autoDetectLanguage)
+                .padding(.horizontal)
+
+                Toggle("Translate to English", isOn: $settings.translateToEnglish)
+                    .padding(.horizontal)
+
+                Text("When enabled, speech in any language will be automatically translated to English. Uses Whisper's built-in translation — no extra API calls.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal)
+            }
         }
     }
 

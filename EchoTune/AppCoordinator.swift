@@ -476,7 +476,7 @@ class AppCoordinator: ObservableObject {
                     PerformanceMonitor.shared.startTranscription(engine: "Groq", model: "whisper-large-v3-turbo")
                     transcribedText = try await GroqTranscriptionService.shared.transcribe(
                         audioData: audioData,
-                        language: settings.preferredLanguage.components(separatedBy: "-").first,
+                        language: AppSettings.shared.autoDetectLanguage ? nil : settings.preferredLanguage.components(separatedBy: "-").first,
                         apiKey: apiKey
                     )
                     os_log("✅ Groq returned: '%{public}@'", log: debugLog, type: .error, transcribedText)
@@ -496,7 +496,7 @@ class AppCoordinator: ObservableObject {
                     transcribedText = try await DeepgramTranscriptionService.shared.transcribeToText(
                         audioData: audioData,
                         model: .nova,
-                        language: settings.preferredLanguage.components(separatedBy: "-").first,
+                        language: AppSettings.shared.autoDetectLanguage ? nil : settings.preferredLanguage.components(separatedBy: "-").first,
                         apiKey: apiKey
                     )
 
@@ -1255,7 +1255,7 @@ class AppCoordinator: ObservableObject {
                         }
                         transcribedText = try await GroqTranscriptionService.shared.transcribe(
                             audioData: audioData,
-                            language: settings.preferredLanguage.components(separatedBy: "-").first,
+                            language: AppSettings.shared.autoDetectLanguage ? nil : settings.preferredLanguage.components(separatedBy: "-").first,
                             apiKey: apiKey
                         )
                     } else if currentModel.id.contains("deepgram") || currentModel.name.lowercased().contains("deepgram") {
@@ -1267,7 +1267,7 @@ class AppCoordinator: ObservableObject {
                         transcribedText = try await DeepgramTranscriptionService.shared.transcribeToText(
                             audioData: audioData,
                             model: .nova,
-                            language: settings.preferredLanguage.components(separatedBy: "-").first,
+                            language: AppSettings.shared.autoDetectLanguage ? nil : settings.preferredLanguage.components(separatedBy: "-").first,
                             apiKey: apiKey
                         )
                     } else {
