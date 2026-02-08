@@ -67,6 +67,14 @@ class ModelManager: ObservableObject {
                 NotificationCenter.default.post(name: NSNotification.Name("ModelManagerReady"), object: nil)
             }
         }
+
+        // Observe API key changes to refresh cloud model availability
+        NotificationCenter.default.addObserver(forName: NSNotification.Name("APIKeyChanged"), object: nil, queue: nil) { [weak self] _ in
+            guard let self = self else { return }
+            DispatchQueue.global(qos: .utility).async {
+                self.checkInstalledModels()
+            }
+        }
     }
     
     private func loadAvailableModels() {
