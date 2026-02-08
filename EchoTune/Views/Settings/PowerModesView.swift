@@ -15,20 +15,6 @@ struct PowerModesView: View {
 
     var body: some View {
         Form {
-            // Header
-            Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Power Modes")
-                        .font(.title2)
-                        .fontWeight(.bold)
-
-                    Text("Context-aware configurations that automatically switch settings based on the active app or website.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .padding(.vertical, 8)
-            }
-
             // Master Toggle
             Section {
                 Toggle("Enable Power Modes", isOn: Binding(

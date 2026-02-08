@@ -10,25 +10,9 @@ import SwiftUI
 struct GeneralSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var launchAtLoginManager = LaunchAtLoginManager.shared
-    private let shortcutManager = ShortcutManager.shared
-    @State private var showShortcutRecorder = false
-    @State private var currentShortcut = ""
 
     var body: some View {
         Form {
-            Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("General Settings")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-
-                    Text("Configure basic app behavior and startup options")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .padding(.bottom, 8)
-            }
-
             Section("Startup") {
                 Toggle("Launch at Login", isOn: Binding(
                     get: { launchAtLoginManager.isEnabled },
@@ -93,44 +77,6 @@ struct GeneralSettingsView: View {
                     }
                 }
                 .pickerStyle(.radioGroup)
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Keyboard Shortcut")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    HStack(spacing: 12) {
-                        Text(currentShortcut.isEmpty ? shortcutManager.getShortcutString() : currentShortcut)
-                            .font(.system(.body, design: .monospaced))
-                            .fontWeight(.medium)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .background(Color.blue.opacity(0.1))
-                            .foregroundColor(.blue)
-                            .cornerRadius(8)
-
-                        Button("Change") {
-                            changeShortcut()
-                        }
-                        .buttonStyle(.bordered)
-
-                        Button("Reset") {
-                            shortcutManager.resetToDefault()
-                            settings.activationShortcut = shortcutManager.getShortcutString()
-                            currentShortcut = shortcutManager.getShortcutString()
-
-                            // Unregister and re-register with default shortcut
-                            shortcutManager.unregisterGlobalShortcut()
-                            shortcutManager.registerGlobalShortcut()
-                        }
-                        .buttonStyle(.bordered)
-                    }
-
-                    Text("The default shortcut is the Control key. Press once to start/stop dictation.")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-                .padding(.top, 8)
             }
 
             Section("Recorder UI Style") {
@@ -171,26 +117,5 @@ struct GeneralSettingsView: View {
         }
         .formStyle(.grouped)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear {
-            currentShortcut = shortcutManager.getShortcutString()
-        }
-        .sheet(isPresented: $showShortcutRecorder) {
-            KeyboardShortcutRecorder(isPresented: $showShortcutRecorder) { keyCode, modifiers in
-                // Save the new shortcut
-                shortcutManager.updateShortcut(keyCode: keyCode, modifiers: modifiers)
-                settings.activationShortcut = shortcutManager.getShortcutString()
-                currentShortcut = shortcutManager.getShortcutString()
-
-                // Unregister and re-register with the new shortcut
-                shortcutManager.unregisterGlobalShortcut()
-                shortcutManager.registerGlobalShortcut()
-
-                print("✓ Shortcut updated to: \(shortcutManager.getShortcutString())")
-            }
-        }
-    }
-
-    private func changeShortcut() {
-        showShortcutRecorder = true
     }
 }

@@ -225,11 +225,12 @@ class ScreenContextService: ObservableObject {
     // MARK: - Permission Management
 
     func checkScreenRecordingPermission() -> Bool {
-        if #available(macOS 10.15, *) {
-            let testImage = CGDisplayCreateImage(CGMainDisplayID())
-            return testImage != nil
+        if #available(macOS 15.0, *) {
+            return CGPreflightScreenCaptureAccess()
+        } else {
+            // Fallback: check via PermissionsManager (which uses non-intrusive check)
+            return PermissionsManager.shared.hasScreenRecordingPermission
         }
-        return false
     }
 
     func requestScreenRecordingPermission() {

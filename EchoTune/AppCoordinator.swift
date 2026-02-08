@@ -124,14 +124,15 @@ class AppCoordinator: ObservableObject {
     /// Called after onboarding completes (or on launch if already done).
     /// Requests permissions and sets up the keyboard shortcut.
     private func initializeAfterOnboarding() {
-        // 1. Request accessibility permission (triggers macOS prompt)
+        // 1. Check accessibility silently — do NOT show the system prompt on every launch.
+        //    The prompt is only shown when the user explicitly clicks "Grant" in settings.
         let options: NSDictionary = [
-            kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true
+            kAXTrustedCheckOptionPrompt.takeUnretainedValue(): false
         ]
         let trusted = AXIsProcessTrustedWithOptions(options as CFDictionary)
-        print("🔐 Accessibility permission: \(trusted ? "granted" : "requesting...")")
+        print("🔐 Accessibility permission: \(trusted ? "granted" : "not yet granted")")
 
-        // 2. Check all permissions
+        // 2. Check all permissions (non-prompting)
         checkPermissions()
 
         // 3. Setup keyboard shortcut
@@ -140,15 +141,61 @@ class AppCoordinator: ObservableObject {
         // 4. Start audio cleanup manager
         AudioCleanupManager.shared.startAutomaticCleanup()
 
-        // 5. If accessibility was just requested, poll for it
-        if !trusted {
-            Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] timer in
-                if AXIsProcessTrusted() {
-                    print("✅ Accessibility permission granted — registering shortcut")
-                    timer.invalidate()
-                    self?.shortcutManager.unregisterGlobalShortcut()
-                    self?.shortcutManager.registerGlobalShortcut()
-                }
+        // 5. PermissionsManager already polls every 2 seconds via startPermissionMonitoring().
+        //    Listen for the notification it posts when permission is newly granted.
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("AccessibilityPermissionGranted"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            print("✅ Accessibility permission granted — registering shortcut")
+            self?.shortcutManager.unregisterGlobalShortcut()
+            self?.shortcutManager.registerGlobalShortcut()
+            self?.updatePermissionState()
+        }
+
+        // 6. Pre-load the default Whisper model in the background at launch.
+        //    This eliminates the cold-start delay on first transcription.
+        //    Wait for ModelManager to finish scanning installed models first.
+        if modelManager.isReady {
+            preloadDefaultModel()
+        } else {
+            NotificationCenter.default.addObserver(
+                forName: NSNotification.Name("ModelManagerReady"),
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.preloadDefaultModel()
+            }
+        }
+    }
+
+    /// Pre-load the default transcription model at startup so the first
+    /// dictation is instant. Runs on a background thread to avoid blocking UI.
+    private func preloadDefaultModel() {
+        guard let currentModel = modelManager.currentModel else {
+            print("⚠️ No default model set — skipping preload")
+            return
+        }
+
+        // Only preload local Whisper models (not Apple Speech or cloud)
+        guard currentModel.category == .local && !currentModel.isBuiltIn else {
+            print("ℹ️ Default model is \(currentModel.name) — no preload needed")
+            return
+        }
+
+        guard currentModel.isInstalled else {
+            print("⚠️ Default model \(currentModel.name) not installed — skipping preload")
+            return
+        }
+
+        print("🚀 Pre-loading default model at launch: \(currentModel.name)")
+        whisperEngine.loadModel(currentModel) { result in
+            switch result {
+            case .success:
+                print("✅ Model pre-loaded and ready: \(currentModel.name)")
+            case .failure(let error):
+                print("⚠️ Model preload failed (will retry on first dictation): \(error)")
             }
         }
     }
@@ -746,17 +793,21 @@ class AppCoordinator: ObservableObject {
             print("⚠️ Accessibility permission not granted - will copy to clipboard instead")
         }
 
-        // Check transcription engine availability
-        if transcriptionEngine.authorizationStatus != .authorized {
-            print("⚠️ Speech recognition not authorized - requesting permission")
-            transcriptionEngine.requestAuthorization { granted in
-                if granted {
-                    print("✓ Speech recognition authorized")
-                } else {
-                    print("❌ Speech recognition denied")
+        // Only check Apple Speech Recognition authorization when using Apple Speech engine
+        // WhisperKit and cloud models (Groq, etc.) don't need this permission
+        if !useWhisper, let currentModel = modelManager.currentModel,
+           !currentModel.id.contains("groq") && !currentModel.id.contains("deepgram") && currentModel.category != .cloud {
+            if transcriptionEngine.authorizationStatus != .authorized {
+                print("⚠️ Speech recognition not authorized - requesting permission")
+                transcriptionEngine.requestAuthorization { granted in
+                    if granted {
+                        print("✓ Speech recognition authorized")
+                    } else {
+                        print("❌ Speech recognition denied")
+                    }
                 }
+                // Can still proceed - will show error during transcription if denied
             }
-            // Can still proceed - will show error during transcription if denied
         }
 
         return true
@@ -1077,6 +1128,9 @@ class AppCoordinator: ObservableObject {
 
     private func processTranscription(_ text: String) -> String {
         var processed = text
+
+        // Apply dictionary transformations (word replacements + correct spellings)
+        processed = DictionaryManager.shared.process(text: processed)
 
         // Apply settings
         if settings.autoPunctuation {

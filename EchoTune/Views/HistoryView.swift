@@ -9,11 +9,373 @@ import SwiftUI
 import Combine
 import AVFoundation
 
+// MARK: - Waveform View
+
+struct WaveformView: View {
+    let audioFilePath: String
+    let progress: Double
+    let duration: TimeInterval
+    let onSeek: (TimeInterval) -> Void
+
+    @State private var samples: [Float] = []
+    private let barCount = 150
+
+    var body: some View {
+        GeometryReader { geometry in
+            let barWidth = max(1, (geometry.size.width - CGFloat(barCount - 1) * 1.5) / CGFloat(barCount))
+            let totalBarSpace = barWidth + 1.5
+
+            HStack(alignment: .center, spacing: 1.5) {
+                ForEach(0..<samples.count, id: \.self) { index in
+                    let normalizedHeight = CGFloat(samples[index]) * geometry.size.height
+                    let barHeight = max(2, normalizedHeight)
+                    let barProgress = Double(index) / Double(max(1, samples.count - 1))
+                    let isPlayed = barProgress <= progress
+
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(isPlayed ? Color.accentColor : Color.secondary.opacity(0.3))
+                        .frame(width: barWidth, height: barHeight)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        let fraction = max(0, min(1, value.location.x / geometry.size.width))
+                        let seekTime = fraction * duration
+                        onSeek(seekTime)
+                    }
+            )
+        }
+        .onAppear {
+            loadWaveformSamples()
+        }
+    }
+
+    private func loadWaveformSamples() {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let generated = Self.generateSamples(from: audioFilePath, count: barCount)
+            DispatchQueue.main.async {
+                self.samples = generated
+            }
+        }
+    }
+
+    static func generateSamples(from filePath: String, count: Int) -> [Float] {
+        let url = URL(fileURLWithPath: filePath)
+        guard FileManager.default.fileExists(atPath: filePath) else {
+            return Array(repeating: 0.1, count: count)
+        }
+
+        do {
+            let audioFile = try AVAudioFile(forReading: url)
+            let format = audioFile.processingFormat
+            let frameCount = AVAudioFrameCount(audioFile.length)
+
+            guard frameCount > 0 else {
+                return Array(repeating: 0.1, count: count)
+            }
+
+            guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount) else {
+                return Array(repeating: 0.1, count: count)
+            }
+
+            try audioFile.read(into: buffer)
+
+            guard let channelData = buffer.floatChannelData else {
+                return Array(repeating: 0.1, count: count)
+            }
+
+            let data = channelData[0]
+            let totalFrames = Int(buffer.frameLength)
+            let samplesPerBar = max(1, totalFrames / count)
+
+            var result: [Float] = []
+            for i in 0..<count {
+                let start = i * samplesPerBar
+                let end = min(start + samplesPerBar, totalFrames)
+                if start >= totalFrames { break }
+
+                var sum: Float = 0
+                for j in start..<end {
+                    sum += abs(data[j])
+                }
+                let avg = sum / Float(end - start)
+                result.append(avg)
+            }
+
+            // Normalize to 0...1
+            let maxVal = result.max() ?? 1.0
+            if maxVal > 0 {
+                result = result.map { min(1.0, $0 / maxVal) }
+            }
+
+            // Ensure minimum bar height visibility
+            result = result.map { max(0.05, $0) }
+
+            return result
+
+        } catch {
+            print("❌ Failed to generate waveform: \(error)")
+            return Array(repeating: 0.1, count: count)
+        }
+    }
+}
+
+// MARK: - Detail View
+
+struct TranscriptionDetailView: View {
+    let item: TranscriptionHistoryItem
+    let isRetranscribing: Bool
+    let onDelete: () -> Void
+    let onRetranscribe: () -> Void
+    let onDeleteAudio: () -> Void
+    let onUpdateText: (String) -> Void
+
+    @ObservedObject private var audioPlayerManager = AudioPlayerManager.shared
+    @State private var editableText: String
+    @State private var isEditing = false
+
+    init(item: TranscriptionHistoryItem, isRetranscribing: Bool, onDelete: @escaping () -> Void, onRetranscribe: @escaping () -> Void, onDeleteAudio: @escaping () -> Void, onUpdateText: @escaping (String) -> Void) {
+        self.item = item
+        self.isRetranscribing = isRetranscribing
+        self.onDelete = onDelete
+        self.onRetranscribe = onRetranscribe
+        self.onDeleteAudio = onDeleteAudio
+        self.onUpdateText = onUpdateText
+        self._editableText = State(initialValue: item.text)
+    }
+
+    private var hasAudioFile: Bool {
+        guard let path = item.audioFilePath else { return false }
+        return FileManager.default.fileExists(atPath: path)
+    }
+
+    private var audioFileSize: String? {
+        guard let path = item.audioFilePath,
+              let attrs = try? FileManager.default.attributesOfItem(atPath: path),
+              let size = attrs[.size] as? Int64 else { return nil }
+        return AudioCleanupManager.shared.formatFileSize(size)
+    }
+
+    private var isCurrentlyPlaying: Bool {
+        audioPlayerManager.currentlyPlayingId == item.id && audioPlayerManager.isPlaying
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+
+            // Waveform player
+            if hasAudioFile, let audioPath = item.audioFilePath {
+                VStack(spacing: 8) {
+                    WaveformView(
+                        audioFilePath: audioPath,
+                        progress: audioPlayerManager.currentlyPlayingId == item.id ? audioPlayerManager.playbackProgress : 0,
+                        duration: audioPlayerManager.currentlyPlayingId == item.id ? audioPlayerManager.duration : item.duration,
+                        onSeek: { time in
+                            if audioPlayerManager.currentlyPlayingId == item.id {
+                                audioPlayerManager.seek(to: time)
+                            } else {
+                                audioPlayerManager.play(filePath: audioPath, itemId: item.id)
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                    audioPlayerManager.seek(to: time)
+                                }
+                            }
+                        }
+                    )
+                    .frame(height: 60)
+                    .padding(.horizontal, 4)
+
+                    // Time display
+                    HStack {
+                        Text(audioPlayerManager.currentlyPlayingId == item.id ? audioPlayerManager.currentTimeFormatted : "0:00")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .monospacedDigit()
+                        Spacer()
+                        Text(audioPlayerManager.currentlyPlayingId == item.id ? audioPlayerManager.durationFormatted : Self.formatTime(item.duration))
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .monospacedDigit()
+                    }
+                    .padding(.horizontal, 4)
+                }
+                .padding(12)
+                .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+                .cornerRadius(10)
+            }
+
+            // Transcription text
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Transcription")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .textCase(.uppercase)
+
+                    Spacer()
+
+                    if isEditing {
+                        Button("Save") {
+                            onUpdateText(editableText)
+                            isEditing = false
+                        }
+                        .font(.caption)
+                        .buttonStyle(.plain)
+                        .foregroundColor(.accentColor)
+                    }
+
+                    Button(isEditing ? "Cancel" : "Edit") {
+                        if isEditing {
+                            editableText = item.text
+                        }
+                        isEditing.toggle()
+                    }
+                    .font(.caption)
+                    .buttonStyle(.plain)
+                    .foregroundColor(.secondary)
+                }
+
+                if isEditing {
+                    TextEditor(text: $editableText)
+                        .font(.body)
+                        .frame(minHeight: 80, maxHeight: 200)
+                        .scrollContentBackground(.hidden)
+                        .padding(8)
+                        .background(Color(NSColor.textBackgroundColor))
+                        .cornerRadius(6)
+                } else {
+                    ScrollView {
+                        Text(item.text)
+                            .font(.body)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(minHeight: 40, maxHeight: 160)
+                }
+            }
+
+            // Metadata
+            HStack(spacing: 16) {
+                Label(item.formattedDate, systemImage: "calendar")
+                Label(String(format: "%.1fs", item.duration), systemImage: "timer")
+                Label("\(item.wordCount) words", systemImage: "textformat")
+                if let size = audioFileSize {
+                    Label(size, systemImage: "waveform")
+                }
+            }
+            .font(.caption)
+            .foregroundColor(.secondary)
+
+            Divider()
+
+            // Action buttons
+            HStack(spacing: 12) {
+                if hasAudioFile {
+                    Button(action: {
+                        if let path = item.audioFilePath {
+                            audioPlayerManager.togglePlayback(filePath: path, itemId: item.id)
+                        }
+                    }) {
+                        Label(isCurrentlyPlaying ? "Pause" : "Play", systemImage: isCurrentlyPlaying ? "pause.fill" : "play.fill")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(.accentColor)
+                }
+
+                if hasAudioFile {
+                    if isRetranscribing {
+                        HStack(spacing: 4) {
+                            ProgressView()
+                                .controlSize(.mini)
+                            Text("Transcribing...")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    } else {
+                        Button(action: onRetranscribe) {
+                            Label("Re-transcribe", systemImage: "arrow.clockwise")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(.orange)
+                    }
+                }
+
+                Button(action: copyToClipboard) {
+                    Label("Copy", systemImage: "doc.on.doc")
+                        .font(.caption)
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(.blue)
+
+                Button(action: exportTranscription) {
+                    Label("Export", systemImage: "square.and.arrow.up")
+                        .font(.caption)
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(.green)
+
+                Spacer()
+
+                if hasAudioFile {
+                    Button(action: onDeleteAudio) {
+                        Label("Delete Audio", systemImage: "waveform.badge.minus")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(.orange)
+                }
+
+                Button(action: onDelete) {
+                    Label("Delete", systemImage: "trash")
+                        .font(.caption)
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(.red)
+            }
+        }
+        .padding(16)
+        .onChange(of: item.text) { newValue in
+            if !isEditing {
+                editableText = newValue
+            }
+        }
+    }
+
+    private func copyToClipboard() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(item.text, forType: .string)
+    }
+
+    private func exportTranscription() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.plainText]
+        panel.nameFieldStringValue = "transcription-\(item.id.uuidString.prefix(8)).txt"
+        panel.begin { response in
+            if response == .OK, let url = panel.url {
+                try? item.text.write(to: url, atomically: true, encoding: .utf8)
+            }
+        }
+    }
+
+    static func formatTime(_ time: TimeInterval) -> String {
+        let minutes = Int(time) / 60
+        let seconds = Int(time) % 60
+        return String(format: "%d:%02d", minutes, seconds)
+    }
+}
+
+// MARK: - History View
+
 struct HistoryView: View {
     @StateObject private var historyManager = TranscriptionHistoryManager.shared
     @StateObject private var audioPlayerManager = AudioPlayerManager.shared
     @State private var searchText = ""
     @State private var retranscribingItemId: UUID?
+    @State private var expandedItemId: UUID?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -100,7 +462,20 @@ struct HistoryView: View {
                             TranscriptionHistoryRow(
                                 item: item,
                                 isRetranscribing: retranscribingItemId == item.id,
+                                isExpanded: expandedItemId == item.id,
+                                onToggleExpand: {
+                                    withAnimation(.easeInOut(duration: 0.25)) {
+                                        if expandedItemId == item.id {
+                                            expandedItemId = nil
+                                        } else {
+                                            expandedItemId = item.id
+                                        }
+                                    }
+                                },
                                 onDelete: {
+                                    if expandedItemId == item.id {
+                                        expandedItemId = nil
+                                    }
                                     historyManager.deleteTranscription(item)
                                 },
                                 onRetranscribe: {
@@ -108,6 +483,9 @@ struct HistoryView: View {
                                 },
                                 onDeleteAudio: {
                                     historyManager.deleteAudioFile(for: item)
+                                },
+                                onUpdateText: { newText in
+                                    historyManager.updateTranscriptionText(for: item, newText: newText)
                                 }
                             )
                         }
@@ -174,11 +552,27 @@ class AudioPlayerManager: ObservableObject {
     @Published var isPlaying = false
     @Published var currentlyPlayingId: UUID?
     @Published var playbackProgress: Double = 0.0
+    @Published var currentTime: TimeInterval = 0.0
+    @Published var duration: TimeInterval = 0.0
 
     private var audioPlayer: AVAudioPlayer?
     private var progressTimer: Timer?
 
     private init() {}
+
+    var currentTimeFormatted: String {
+        return formatTime(currentTime)
+    }
+
+    var durationFormatted: String {
+        return formatTime(duration)
+    }
+
+    private func formatTime(_ time: TimeInterval) -> String {
+        let minutes = Int(time) / 60
+        let seconds = Int(time) % 60
+        return String(format: "%d:%02d", minutes, seconds)
+    }
 
     func play(filePath: String, itemId: UUID) {
         // Stop any current playback
@@ -198,12 +592,16 @@ class AudioPlayerManager: ObservableObject {
             isPlaying = true
             currentlyPlayingId = itemId
             playbackProgress = 0.0
+            duration = audioPlayer?.duration ?? 0.0
+            currentTime = 0.0
 
             // Start progress timer
-            progressTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            progressTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
                 guard let self = self, let player = self.audioPlayer else { return }
                 if player.isPlaying {
-                    self.playbackProgress = player.currentTime / player.duration
+                    self.currentTime = player.currentTime
+                    self.duration = player.duration
+                    self.playbackProgress = player.duration > 0 ? player.currentTime / player.duration : 0
                 } else {
                     self.stop()
                 }
@@ -221,6 +619,8 @@ class AudioPlayerManager: ObservableObject {
         isPlaying = false
         currentlyPlayingId = nil
         playbackProgress = 0.0
+        currentTime = 0.0
+        duration = 0.0
         progressTimer?.invalidate()
         progressTimer = nil
     }
@@ -232,6 +632,14 @@ class AudioPlayerManager: ObservableObject {
             play(filePath: filePath, itemId: itemId)
         }
     }
+
+    func seek(to time: TimeInterval) {
+        guard let player = audioPlayer else { return }
+        let clampedTime = max(0, min(time, player.duration))
+        player.currentTime = clampedTime
+        currentTime = clampedTime
+        playbackProgress = player.duration > 0 ? clampedTime / player.duration : 0
+    }
 }
 
 // MARK: - History Row
@@ -239,11 +647,14 @@ class AudioPlayerManager: ObservableObject {
 struct TranscriptionHistoryRow: View {
     let item: TranscriptionHistoryItem
     let isRetranscribing: Bool
+    let isExpanded: Bool
+    let onToggleExpand: () -> Void
     let onDelete: () -> Void
     let onRetranscribe: () -> Void
     let onDeleteAudio: () -> Void
+    let onUpdateText: (String) -> Void
 
-    @StateObject private var audioPlayerManager = AudioPlayerManager.shared
+    @ObservedObject private var audioPlayerManager = AudioPlayerManager.shared
     @State private var isHovering = false
 
     private var hasAudioFile: Bool {
@@ -264,6 +675,7 @@ struct TranscriptionHistoryRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            // Summary row
             HStack(spacing: 16) {
                 // Icon / Play button
                 ZStack {
@@ -277,23 +689,23 @@ struct TranscriptionHistoryRow: View {
                                 audioPlayerManager.togglePlayback(filePath: path, itemId: item.id)
                             }
                         }) {
-                            Image(systemName: isCurrentlyPlaying ? "stop.fill" : "play.fill")
+                            Image(systemName: isCurrentlyPlaying ? "pause.fill" : "play.fill")
                                 .foregroundColor(.green)
                                 .font(.system(size: 14))
                         }
                         .buttonStyle(.plain)
-                        .help(isCurrentlyPlaying ? "Stop playback" : "Play recording")
+                        .help(isCurrentlyPlaying ? "Pause playback" : "Play recording")
                     } else {
                         Image(systemName: "text.quote")
                             .foregroundColor(.blue)
                     }
                 }
 
-                // Content
+                // Content (clickable to expand)
                 VStack(alignment: .leading, spacing: 6) {
                     Text(item.text)
                         .font(.body)
-                        .lineLimit(2)
+                        .lineLimit(isExpanded ? nil : 2)
 
                     HStack(spacing: 12) {
                         Label(item.formattedDate, systemImage: "calendar")
@@ -307,52 +719,70 @@ struct TranscriptionHistoryRow: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                 }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    onToggleExpand()
+                }
 
                 Spacer()
 
-                // Actions
-                if isRetranscribing {
-                    ProgressView()
-                        .controlSize(.small)
-                        .padding(.trailing, 8)
-                } else if isHovering {
-                    HStack(spacing: 8) {
-                        if hasAudioFile {
-                            Button(action: onRetranscribe) {
-                                Image(systemName: "arrow.clockwise")
-                                    .foregroundColor(.orange)
+                // Expand indicator
+                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                    .foregroundColor(.secondary)
+                    .font(.caption)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        onToggleExpand()
+                    }
+
+                // Hover actions (only when collapsed)
+                if !isExpanded {
+                    if isRetranscribing {
+                        ProgressView()
+                            .controlSize(.small)
+                            .padding(.trailing, 8)
+                    } else if isHovering {
+                        HStack(spacing: 8) {
+                            if hasAudioFile {
+                                Button(action: onRetranscribe) {
+                                    Image(systemName: "arrow.clockwise")
+                                        .foregroundColor(.orange)
+                                }
+                                .buttonStyle(.plain)
+                                .help("Re-transcribe with current model")
+
+                                Button(action: onDeleteAudio) {
+                                    Image(systemName: "waveform.badge.minus")
+                                        .foregroundColor(.orange)
+                                }
+                                .buttonStyle(.plain)
+                                .help("Delete audio file (keep transcript)")
+                            }
+
+                            Button(action: {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(item.text, forType: .string)
+                            }) {
+                                Image(systemName: "doc.on.doc")
+                                    .foregroundColor(.blue)
                             }
                             .buttonStyle(.plain)
-                            .help("Re-transcribe with current model")
+                            .help("Copy to clipboard")
 
-                            Button(action: onDeleteAudio) {
-                                Image(systemName: "waveform.badge.minus")
-                                    .foregroundColor(.orange)
+                            Button(action: onDelete) {
+                                Image(systemName: "trash")
+                                    .foregroundColor(.red)
                             }
                             .buttonStyle(.plain)
-                            .help("Delete audio file (keep transcript)")
+                            .help("Delete")
                         }
-
-                        Button(action: copyToClipboard) {
-                            Image(systemName: "doc.on.doc")
-                                .foregroundColor(.blue)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Copy to clipboard")
-
-                        Button(action: onDelete) {
-                            Image(systemName: "trash")
-                                .foregroundColor(.red)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Delete")
                     }
                 }
             }
             .padding(16)
 
-            // Playback progress bar
-            if isCurrentlyPlaying {
+            // Playback progress bar (when collapsed and playing)
+            if !isExpanded && isCurrentlyPlaying {
                 GeometryReader { geometry in
                     ZStack(alignment: .leading) {
                         Rectangle()
@@ -366,17 +796,28 @@ struct TranscriptionHistoryRow: View {
                 }
                 .frame(height: 3)
             }
+
+            // Expanded detail view
+            if isExpanded {
+                Divider()
+                    .padding(.horizontal, 16)
+
+                TranscriptionDetailView(
+                    item: item,
+                    isRetranscribing: isRetranscribing,
+                    onDelete: onDelete,
+                    onRetranscribe: onRetranscribe,
+                    onDeleteAudio: onDeleteAudio,
+                    onUpdateText: onUpdateText
+                )
+            }
         }
-        .background(Color(NSColor.controlBackgroundColor))
-        .cornerRadius(8)
+        .background(.ultraThinMaterial)
+        .cornerRadius(10)
+        .shadow(color: Color.black.opacity(isExpanded ? 0.08 : 0.04), radius: isExpanded ? 8 : 4, y: isExpanded ? 4 : 2)
         .onHover { hovering in
             isHovering = hovering
         }
-    }
-
-    private func copyToClipboard() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(item.text, forType: .string)
     }
 }
 

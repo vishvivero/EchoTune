@@ -128,35 +128,28 @@ class PermissionsManager: ObservableObject {
     // MARK: - Accessibility Permission
 
     func checkAccessibilityPermission() {
-        print("🔍 Checking accessibility permission status...")
+        // Use AXIsProcessTrustedWithOptions (prompt: false) for a non-prompting but fresh check.
+        // AXIsProcessTrusted() can be cached by macOS at process level, but
+        // AXIsProcessTrustedWithOptions re-queries the TCC database each call.
+        let options: NSDictionary = [
+            kAXTrustedCheckOptionPrompt.takeUnretainedValue(): false
+        ]
+        let trusted = AXIsProcessTrustedWithOptions(options)
 
-        // Primary check: Use AXIsProcessTrusted() which should be reliable now that
-        // we have NSAccessibilityUsageDescription in Info.plist
-        let trusted = AXIsProcessTrusted()
-        print("   AXIsProcessTrusted: \(trusted ? "Granted" : "Not granted")")
-
-        // Verification: Try to access a system app's UI elements as a sanity check
-        // This confirms that we actually have working accessibility permission
-        var apiVerified = false
+        // Secondary verification: actually try to use the accessibility API.
+        // This catches edge cases where TCC says granted but the API doesn't work yet
+        // (e.g., right after toggling, before macOS propagates the change).
+        var apiWorks = false
         if trusted {
-            // Only verify if the flag says we're trusted
-            if let dock = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "com.apple.dock" }) {
-                let pid = dock.processIdentifier
-                let appElement = AXUIElementCreateApplication(pid)
+            if let finder = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "com.apple.finder" }) {
+                let appElement = AXUIElementCreateApplication(finder.processIdentifier)
                 var role: CFTypeRef?
                 let result = AXUIElementCopyAttributeValue(appElement, kAXRoleAttribute as CFString, &role)
-
-                if result == .success {
-                    apiVerified = true
-                    print("   ✓ API verification successful - permission is working")
-                } else {
-                    print("   ⚠️ API verification failed (error: \(result.rawValue)) - permission may not be working properly")
-                }
+                apiWorks = (result == .success)
             }
         }
 
-        // Use the AXIsProcessTrusted() result as the authoritative answer
-        // With NSAccessibilityUsageDescription properly set, this should be accurate
+        // Trust the TCC check as primary. API verification is just extra confidence.
         let finalStatus = trusted
 
         // Update on main thread
@@ -168,89 +161,58 @@ class PermissionsManager: ObservableObject {
             self.accessibilityStatus = finalStatus ? .granted : .notDetermined
 
             if statusChanged {
-                print("   🔄 Status changed: \(wasGranted ? "granted" : "not granted") → \(finalStatus ? "granted" : "not granted")")
+                print("🔄 Accessibility status changed: \(wasGranted ? "granted" : "not granted") → \(finalStatus ? "granted" : "not granted")\(apiWorks ? " (API verified)" : "")")
                 self.objectWillChange.send()
 
                 // Automatically re-register keyboard shortcuts when permission is newly granted
                 if !wasGranted && finalStatus {
                     print("   🎹 Accessibility permission newly granted - re-registering keyboard shortcuts...")
-                    // Import needed - add notification post to trigger shortcut re-registration
                     NotificationCenter.default.post(name: NSNotification.Name("AccessibilityPermissionGranted"), object: nil)
                 }
-            }
-
-            if finalStatus {
-                print("✅ Accessibility: Granted\(apiVerified ? " (verified)" : "")")
-            } else {
-                print("❌ Accessibility: Not granted")
-                print("   ℹ️ Please enable accessibility permission in System Settings")
             }
         }
     }
 
     func requestAccessibilityPermission() {
         print("🔐 Requesting accessibility permission...")
-        print("   This will register EchoTune in System Settings...")
 
-        // Step 1: Request with prompt option - CRITICAL for registration
+        // Check current status first
         let options: NSDictionary = [
-            kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true
+            kAXTrustedCheckOptionPrompt.takeUnretainedValue(): false
         ]
-        let trusted = AXIsProcessTrustedWithOptions(options)
+        let alreadyTrusted = AXIsProcessTrustedWithOptions(options)
 
-        if trusted {
+        if alreadyTrusted {
             print("✅ Accessibility permission already granted!")
             self.hasAccessibilityPermission = true
             self.accessibilityStatus = .granted
             return
         }
 
-        // Step 2: Force registration by attempting to use accessibility APIs
-        // This is CRITICAL - macOS only registers the app when it actually tries to use the APIs
-        print("⏳ Attempting accessibility API calls to trigger registration...")
+        // Reset accessibility permission for our bundle to clear stale entries,
+        // then re-trigger the system prompt so macOS registers the app fresh.
+        // This handles the case where the user previously dismissed the prompt
+        // or where a different binary was registered.
+        if let bundleId = Bundle.main.bundleIdentifier {
+            let task = Process()
+            task.launchPath = "/usr/bin/tccutil"
+            task.arguments = ["reset", "Accessibility", bundleId]
+            try? task.run()
+            task.waitUntilExit()
+            print("   ✓ Reset TCC accessibility entry for \(bundleId)")
+        }
 
-        DispatchQueue.global(qos: .userInitiated).async {
-            // Attempt 1: Try to access Dock (always running)
-            if let dock = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "com.apple.dock" }) {
-                let pid = dock.processIdentifier
-                let element = AXUIElementCreateApplication(pid)
-                var role: CFTypeRef?
-                _ = AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role)
-                print("   ✓ Attempted to access Dock UI")
-            }
+        // Now show the system prompt — this will register the current binary fresh
+        let promptOptions: NSDictionary = [
+            kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true
+        ]
+        let _ = AXIsProcessTrustedWithOptions(promptOptions)
+        print("   ✓ System prompt triggered")
 
-            // Attempt 2: Try to access Finder
-            if let finder = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "com.apple.finder" }) {
-                let pid = finder.processIdentifier
-                let element = AXUIElementCreateApplication(pid)
-                var role: CFTypeRef?
-                _ = AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role)
-                print("   ✓ Attempted to access Finder UI")
-            }
-
-            // Attempt 3: Try to create a CGEvent tap (this registers the app)
-            let eventMask = CGEventMask(1 << CGEventType.keyDown.rawValue)
-            if let tap = CGEvent.tapCreate(
-                tap: .cgSessionEventTap,
-                place: .headInsertEventTap,
-                options: .defaultTap,
-                eventsOfInterest: eventMask,
-                callback: { (_, _, event, _) in Unmanaged.passRetained(event) },
-                userInfo: nil
-            ) {
-                // Disable the tap immediately - we just needed to attempt creation
-                CGEvent.tapEnable(tap: tap, enable: false)
-                print("   ✓ Created test event tap (registration triggered)")
-            } else {
-                print("   ⚠️ Could not create event tap (expected without permission - still triggers registration)")
-            }
-
-            // Step 3: Wait for macOS to process, then open System Settings
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                print("   Opening System Settings...")
-                print("   ℹ️  EchoTune should now appear in the Accessibility list")
-                self.showAccessibilityInstructions()
-            }
+        // Also open System Settings as a fallback — user can use the + button
+        // to manually add the app if the system prompt doesn't appear
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            self.openAccessibilitySettings()
         }
     }
 
@@ -343,88 +305,52 @@ class PermissionsManager: ObservableObject {
     // MARK: - Screen Recording Permission
 
     func checkScreenRecordingPermission() {
-        // Use the most reliable method: try to capture screen content
-        // Without permission, CGWindowListCreateImage returns nil or empty data
+        // Use CGPreflightScreenCaptureAccess (macOS 15+) to check without triggering a prompt.
+        // On older macOS, use CGWindowListCopyWindowInfo which doesn't trigger the prompt
+        // (only CGWindowListCreateImage / CGDisplayCreateImage trigger it).
 
-        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        print("🔍 Checking Screen Recording Permission")
-        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        print("🔍 Checking Screen Recording Permission (non-intrusive)")
 
-        // Method 1: Check if we can get detailed window information
-        let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+        if #available(macOS 15.0, *) {
+            // macOS 15+: preflight check — no prompt triggered
+            let hasPermission = CGPreflightScreenCaptureAccess()
+            print("   CGPreflightScreenCaptureAccess: \(hasPermission)")
 
-        // Get our bundle identifier
-        let ourBundleID = Bundle.main.bundleIdentifier ?? ""
-        print("📦 Our Bundle ID: \(ourBundleID)")
+            DispatchQueue.main.async {
+                self.hasScreenRecordingPermission = hasPermission
+                self.screenRecordingStatus = hasPermission ? .granted : .notDetermined
+            }
+        } else {
+            // macOS 14 and earlier: check window list info only (no capture attempt)
+            // CGWindowListCopyWindowInfo does NOT trigger the permission prompt.
+            // Without permission, window names/owner details for other apps are redacted.
+            let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
 
-        // Look for windows from well-known user applications (not system processes)
-        // Without Screen Recording permission, we typically can't see these details
-        let userAppBundles = [
-            "com.apple.finder",           // Finder
-            "com.google.Chrome",          // Chrome
-            "com.apple.Safari",           // Safari
-            "com.microsoft.VSCode",       // VS Code
-            "com.apple.mail",             // Mail
-            "org.mozilla.firefox",        // Firefox
-            "com.apple.Notes",            // Notes
-            "com.apple.TextEdit"          // TextEdit
-        ]
+            let ourBundleID = Bundle.main.bundleIdentifier ?? ""
+            let userAppBundles = [
+                "com.apple.finder", "com.google.Chrome", "com.apple.Safari",
+                "com.microsoft.VSCode", "com.apple.mail", "org.mozilla.firefox",
+                "com.apple.Notes", "com.apple.TextEdit"
+            ]
 
-        var foundUserAppWindows: [String] = []
-
-        for window in windows {
-            if let ownerPID = window[kCGWindowOwnerPID as String] as? Int32 {
-                let app = NSRunningApplication(processIdentifier: ownerPID)
-                if let bundleID = app?.bundleIdentifier,
-                   bundleID != ourBundleID,
-                   userAppBundles.contains(bundleID) {
-                    if let ownerName = window[kCGWindowOwnerName as String] as? String {
-                        if !foundUserAppWindows.contains(ownerName) {
-                            foundUserAppWindows.append(ownerName)
-                            print("   ✓ Can see: \(ownerName)")
-                        }
+            var foundUserAppWindows = 0
+            for window in windows {
+                if let ownerPID = window[kCGWindowOwnerPID as String] as? Int32 {
+                    let app = NSRunningApplication(processIdentifier: ownerPID)
+                    if let bundleID = app?.bundleIdentifier,
+                       bundleID != ourBundleID,
+                       userAppBundles.contains(bundleID) {
+                        foundUserAppWindows += 1
                     }
                 }
             }
-        }
 
-        // Method 2: Try to capture a tiny screen region
-        // This will fail silently without permission
-        var hasPermissionViaCapture = false
-        if let image = CGWindowListCreateImage(
-            CGRect(x: 0, y: 0, width: 1, height: 1),
-            .optionOnScreenOnly,
-            kCGNullWindowID,
-            [.boundsIgnoreFraming, .bestResolution]
-        ) {
-            // If we can create an image, we likely have permission
-            hasPermissionViaCapture = image.width > 0 && image.height > 0
-            print("   Screen capture test: \(hasPermissionViaCapture ? "✓ Success" : "✗ Failed")")
-        } else {
-            print("   Screen capture test: ✗ Failed (nil)")
-        }
+            let hasPermission = foundUserAppWindows >= 2
+            print("   Window info check: found \(foundUserAppWindows) user app windows → \(hasPermission ? "GRANTED" : "NOT GRANTED")")
 
-        // Combine both checks: either we found user app windows OR capture succeeded
-        // We need STRONG evidence of permission, not weak
-        let hasPermission = foundUserAppWindows.count >= 2 || hasPermissionViaCapture
-
-        print("")
-        print("📊 Results:")
-        print("   - User app windows found: \(foundUserAppWindows.count)")
-        print("   - Screen capture test: \(hasPermissionViaCapture ? "passed" : "failed")")
-        print("   - Final result: \(hasPermission ? "GRANTED" : "NOT GRANTED")")
-        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        print("")
-
-        DispatchQueue.main.async {
-            self.hasScreenRecordingPermission = hasPermission
-            self.screenRecordingStatus = hasPermission ? .granted : .notDetermined
-
-            if hasPermission {
-                print("✅ Screen Recording: Granted")
-            } else {
-                print("⚠️ Screen Recording: Not granted")
-                print("   ℹ️ Screen recording permission is needed for browser compatibility")
+            DispatchQueue.main.async {
+                self.hasScreenRecordingPermission = hasPermission
+                self.screenRecordingStatus = hasPermission ? .granted : .notDetermined
             }
         }
     }
@@ -432,36 +358,31 @@ class PermissionsManager: ObservableObject {
     func requestScreenRecordingPermission() {
         print("🔐 Requesting screen recording permission...")
 
-        // Attempt to access screen content - this triggers the permission dialog
-        _ = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID)
-
-        // Show instructions
-        let alert = NSAlert()
-        alert.messageText = "Screen Recording Permission Recommended"
-        alert.informativeText = """
-        EchoTune works better with Screen Recording permission enabled.
-
-        Benefits:
-        • Better compatibility with web browsers (Chrome, Safari, etc.)
-        • Improved text insertion in browser-based apps
-        • Enhanced context awareness
-
-        Steps:
-        1. Click "Open System Settings" below
-        2. Go to Privacy & Security → Screen Recording
-        3. Find "EchoTune" and toggle it ON
-        4. Restart EchoTune
-
-        Note: Your screen content is NEVER stored or transmitted.
-        """
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "Open System Settings")
-        alert.addButton(withTitle: "Later")
-
-        let response = alert.runModal()
-        if response == .alertFirstButtonReturn {
-            openScreenRecordingSettings()
+        // macOS 15+: Use CGRequestScreenCaptureAccess() which shows the native system prompt
+        // and registers the app in one step. On older macOS, use CGDisplayCreateImage
+        // (CGWindowListCopyWindowInfo does NOT trigger registration).
+        if #available(macOS 15.0, *) {
+            let granted = CGRequestScreenCaptureAccess()
+            print("   CGRequestScreenCaptureAccess: \(granted)")
+            if granted {
+                DispatchQueue.main.async {
+                    self.hasScreenRecordingPermission = true
+                    self.screenRecordingStatus = .granted
+                }
+                return
+            }
+        } else {
+            // macOS 14 and earlier: Attempt an actual screen capture to trigger registration
+            // This is what forces macOS to add EchoTune to the Screen Recording list
+            if let displayID = CGMainDisplayID() as CGDirectDisplayID? {
+                let _ = CGDisplayCreateImage(displayID)
+                print("   ✓ Triggered CGDisplayCreateImage to register for screen recording")
+            }
         }
+
+        // Open System Settings directly — the system prompt (macOS 15+) or the capture
+        // attempt (older) already registered the app, user just needs to toggle it on
+        openScreenRecordingSettings()
     }
 
     func openScreenRecordingSettings() {

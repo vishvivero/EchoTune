@@ -380,57 +380,121 @@
         </div>
     </section>
 
+    <!-- Coding Agents Section -->
+    <section class="coding-agents" id="coding-agents">
+        <div class="container">
+            <div class="coding-agents-content">
+                <div class="coding-agents-text">
+                    <span class="section-badge">For Developers</span>
+                    <h2 class="section-title">Ship code with<br>your voice</h2>
+                    <p>Use EchoTune with Cursor, Claude Code, VS Code, Copilot, or any agentic coding tool. Speak your intent, skip the typing, and let AI agents one-shot your next feature.</p>
+                    
+                    <div class="coding-agents-features">
+                        <div class="coding-agent-feature">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                            </svg>
+                            <span>Talk faster than you type</span>
+                        </div>
+                        <div class="coding-agent-feature">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                            </svg>
+                            <span>Give agents more context naturally</span>
+                        </div>
+                        <div class="coding-agent-feature">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="16 18 22 12 16 6"/>
+                                <polyline points="8 6 2 12 8 18"/>
+                            </svg>
+                            <span>Works in any terminal or IDE</span>
+                        </div>
+                    </div>
+
+                    <div class="coding-agents-logos">
+                        <span class="agent-logo">Cursor</span>
+                        <span class="agent-logo">Claude Code</span>
+                        <span class="agent-logo">VS Code</span>
+                        <span class="agent-logo">Copilot</span>
+                        <span class="agent-logo">Windsurf</span>
+                    </div>
+                </div>
+                <div class="coding-agents-visual">
+                    <div class="terminal-window">
+                        <div class="terminal-header">
+                            <div class="window-controls">
+                                <span class="control red"></span>
+                                <span class="control yellow"></span>
+                                <span class="control green"></span>
+                            </div>
+                            <span class="terminal-title">Terminal — cursor</span>
+                        </div>
+                        <div class="terminal-body">
+                            <div class="terminal-line voice-input">
+                                <span class="terminal-prompt voice-icon">🎙</span>
+                                <span class="terminal-text typing-voice" id="voice-cmd">"Add a dark mode toggle to the navbar with localStorage persistence"</span>
+                            </div>
+                            <div class="terminal-line agent-response" style="animation-delay: 3s">
+                                <span class="terminal-prompt agent-icon">⚡</span>
+                                <span class="terminal-text"><span class="t-muted">Cursor Agent</span> Analyzing codebase...</span>
+                            </div>
+                            <div class="terminal-line agent-step" style="animation-delay: 4.5s">
+                                <span class="terminal-prompt t-success">✓</span>
+                                <span class="terminal-text">Created <span class="t-file">ThemeToggle.tsx</span></span>
+                            </div>
+                            <div class="terminal-line agent-step" style="animation-delay: 5.5s">
+                                <span class="terminal-prompt t-success">✓</span>
+                                <span class="terminal-text">Updated <span class="t-file">Navbar.tsx</span> — added toggle button</span>
+                            </div>
+                            <div class="terminal-line agent-step" style="animation-delay: 6.5s">
+                                <span class="terminal-prompt t-success">✓</span>
+                                <span class="terminal-text">Added <span class="t-file">useTheme.ts</span> hook with localStorage</span>
+                            </div>
+                            <div class="terminal-line agent-step" style="animation-delay: 7.5s">
+                                <span class="terminal-prompt t-success">✓</span>
+                                <span class="terminal-text">Updated <span class="t-file">globals.css</span> — dark theme variables</span>
+                            </div>
+                            <div class="terminal-line voice-input second-voice" style="animation-delay: 9.5s">
+                                <span class="terminal-prompt voice-icon">🎙</span>
+                                <span class="terminal-text typing-voice">"Also add a smooth transition animation when switching themes"</span>
+                            </div>
+                            <div class="terminal-line agent-step" style="animation-delay: 12s">
+                                <span class="terminal-prompt t-success">✓</span>
+                                <span class="terminal-text">Updated transitions — <span class="t-highlight">4 files changed, 0 errors</span></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
     <!-- Pricing Section -->
     <section class="pricing" id="pricing">
         <div class="container">
             <div class="section-header">
                 <span class="section-badge">Pricing</span>
                 <h2 class="section-title">Simple, transparent pricing</h2>
-                <p class="section-subtitle">One-time purchase. No subscriptions. Free updates for life.</p>
+                <p class="section-subtitle">Start with a 7-day free trial. One-time purchase. No subscriptions ever.</p>
             </div>
             
             <div class="pricing-grid">
-                <div class="pricing-card">
-                    <div class="pricing-header">
-                        <h3>Free Trial</h3>
-                        <div class="price">
-                            <span class="price-amount">$0</span>
-                            <span class="price-period">7 days</span>
-                        </div>
-                    </div>
-                    <ul class="pricing-features">
-                        <li>
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <polyline points="20 6 9 17 4 12"/>
-                            </svg>
-                            All features unlocked
-                        </li>
-                        <li>
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <polyline points="20 6 9 17 4 12"/>
-                            </svg>
-                            All AI models
-                        </li>
-                        <li>
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <polyline points="20 6 9 17 4 12"/>
-                            </svg>
-                            No credit card required
-                        </li>
-                    </ul>
-                    <a href="#download" class="btn btn-secondary btn-block">Start Free Trial</a>
-                </div>
-                
                 <div class="pricing-card featured">
                     <div class="pricing-badge">Most Popular</div>
                     <div class="pricing-header">
-                        <h3>Individual</h3>
+                        <h3>Solo Mic</h3>
                         <div class="price">
-                            <span class="price-amount">$39</span>
+                            <span class="price-amount">$20</span>
                             <span class="price-period">one-time</span>
                         </div>
                     </div>
                     <ul class="pricing-features">
+                        <li>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="20 6 9 17 4 12"/>
+                            </svg>
+                            7-day free trial included
+                        </li>
                         <li>
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <polyline points="20 6 9 17 4 12"/>
@@ -462,15 +526,15 @@
                             Email support
                         </li>
                     </ul>
-                    <a href="#download" class="btn btn-primary btn-block">Buy Now</a>
+                    <a href="#download" class="btn btn-primary btn-block">Start Free Trial</a>
                 </div>
                 
                 <div class="pricing-card">
                     <div class="pricing-header">
-                        <h3>Team</h3>
+                        <h3>Duet</h3>
                         <div class="price">
-                            <span class="price-amount">$99</span>
-                            <span class="price-period">3 licenses</span>
+                            <span class="price-amount">$35</span>
+                            <span class="price-period">one-time</span>
                         </div>
                     </div>
                     <ul class="pricing-features">
@@ -478,7 +542,56 @@
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <polyline points="20 6 9 17 4 12"/>
                             </svg>
-                            Everything in Individual
+                            7-day free trial included
+                        </li>
+                        <li>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="20 6 9 17 4 12"/>
+                            </svg>
+                            Everything in Solo Mic
+                        </li>
+                        <li>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="20 6 9 17 4 12"/>
+                            </svg>
+                            2 Mac licenses
+                        </li>
+                        <li>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="20 6 9 17 4 12"/>
+                            </svg>
+                            Save $5
+                        </li>
+                        <li>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="20 6 9 17 4 12"/>
+                            </svg>
+                            Priority support
+                        </li>
+                    </ul>
+                    <a href="#download" class="btn btn-secondary btn-block">Start Free Trial</a>
+                </div>
+                
+                <div class="pricing-card">
+                    <div class="pricing-header">
+                        <h3>Chorus</h3>
+                        <div class="price">
+                            <span class="price-amount">$49</span>
+                            <span class="price-period">one-time</span>
+                        </div>
+                    </div>
+                    <ul class="pricing-features">
+                        <li>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="20 6 9 17 4 12"/>
+                            </svg>
+                            7-day free trial included
+                        </li>
+                        <li>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="20 6 9 17 4 12"/>
+                            </svg>
+                            Everything in Solo Mic
                         </li>
                         <li>
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -490,16 +603,16 @@
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <polyline points="20 6 9 17 4 12"/>
                             </svg>
-                            Priority support
+                            Save $11
                         </li>
                         <li>
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <polyline points="20 6 9 17 4 12"/>
                             </svg>
-                            License management
+                            Priority support
                         </li>
                     </ul>
-                    <a href="#download" class="btn btn-secondary btn-block">Buy Team</a>
+                    <a href="#download" class="btn btn-secondary btn-block">Start Free Trial</a>
                 </div>
             </div>
             

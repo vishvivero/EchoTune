@@ -15,20 +15,6 @@ struct TriggerWordsView: View {
 
     var body: some View {
         Form {
-            // Header
-            Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Trigger Words")
-                        .font(.title2)
-                        .fontWeight(.bold)
-
-                    Text("Define words or phrases that automatically activate specific AI prompts when detected in your transcription.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .padding(.vertical, 8)
-            }
-
             // Rules List
             Section {
                 if engine.triggerWordRules.isEmpty {

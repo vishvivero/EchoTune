@@ -40,13 +40,18 @@ class DictionaryManager: ObservableObject {
         saveReplacements()
     }
 
+    func toggleReplacement(_ replacement: WordReplacement) {
+        if let index = wordReplacements.firstIndex(where: { $0.id == replacement.id }) {
+            wordReplacements[index].isEnabled.toggle()
+            saveReplacements()
+        }
+    }
+
     // Apply replacements to transcribed text
     func applyReplacements(to text: String) -> String {
         var result = text
 
-        for replacement in wordReplacements {
-            let options: String.CompareOptions = replacement.caseSensitive ? [] : [.caseInsensitive]
-
+        for replacement in wordReplacements where replacement.isEnabled {
             // Replace whole words only (not parts of words)
             let pattern = "\\b\(NSRegularExpression.escapedPattern(for: replacement.spokenForm))\\b"
 
@@ -78,14 +83,18 @@ class DictionaryManager: ObservableObject {
         saveSpellings()
     }
 
+    func toggleSpelling(_ spelling: CorrectSpelling) {
+        if let index = correctSpellings.firstIndex(where: { $0.id == spelling.id }) {
+            correctSpellings[index].isEnabled.toggle()
+            saveSpellings()
+        }
+    }
+
     // Apply correct spellings to text
     func applySpellings(to text: String) -> String {
         var result = text
 
-        for spelling in correctSpellings {
-            // Replace the word and its variations with correct spelling
-            let allForms = [spelling.word] + spelling.variations
-
+        for spelling in correctSpellings where spelling.isEnabled {
             for variation in spelling.variations {
                 let pattern = "\\b\(NSRegularExpression.escapedPattern(for: variation))\\b"
 
@@ -208,6 +217,35 @@ class DictionaryManager: ObservableObject {
         print("✅ Import complete!")
         print("   Added \(addedReplacements) word replacements")
         print("   Added \(addedSpellings) correct spellings")
+    }
+
+    /// Import dictionary and return merge counts
+    func importDictionaryWithCounts(from data: Data) throws -> (replacements: Int, spellings: Int) {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        let imported = try decoder.decode(DictionaryExport.self, from: data)
+
+        var addedReplacements = 0
+        for replacement in imported.wordReplacements {
+            if !wordReplacements.contains(where: { $0.spokenForm.lowercased() == replacement.spokenForm.lowercased() }) {
+                wordReplacements.append(replacement)
+                addedReplacements += 1
+            }
+        }
+
+        var addedSpellings = 0
+        for spelling in imported.correctSpellings {
+            if !correctSpellings.contains(where: { $0.word.lowercased() == spelling.word.lowercased() }) {
+                correctSpellings.append(spelling)
+                addedSpellings += 1
+            }
+        }
+
+        saveReplacements()
+        saveSpellings()
+
+        return (addedReplacements, addedSpellings)
     }
 
     /// Save dictionary to file

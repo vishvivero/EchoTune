@@ -50,7 +50,10 @@ class TranscriptionEngine: NSObject, ObservableObject {
     override init() {
         super.init()
         setupSpeechRecognizer()
-        checkPermission()
+        // Don't request Speech Recognition authorization eagerly on init.
+        // EchoTune primarily uses WhisperKit/Groq — only request Apple Speech
+        // permission when the user actually selects an Apple Speech model.
+        checkPermissionStatus()
     }
     
     private func setupSpeechRecognizer() {
@@ -58,6 +61,15 @@ class TranscriptionEngine: NSObject, ObservableObject {
         isAvailable = speechRecognizer?.isAvailable ?? false
     }
     
+    /// Non-prompting check — reads the current authorization status without triggering a dialog
+    func checkPermissionStatus() {
+        let status = SFSpeechRecognizer.authorizationStatus()
+        DispatchQueue.main.async {
+            self.isPermissionGranted = (status == .authorized)
+        }
+    }
+    
+    /// Prompting check — only call this when Apple Speech transcription is actually needed
     func checkPermission() {
         SFSpeechRecognizer.requestAuthorization { [weak self] status in
             DispatchQueue.main.async {
@@ -89,26 +101,27 @@ class TranscriptionEngine: NSObject, ObservableObject {
             return
         }
 
-        // Route to the appropriate transcription service based on default model
+        // Route to the appropriate transcription service based on default model.
+        // This uses AppSettings.defaultTranscriptionModel which is kept in sync
+        // with ModelManager.currentModel via setCurrentModel().
         let selectedModel = AppSettings.shared.defaultTranscriptionModel
         print("🎯 Using transcription model: \(selectedModel)")
 
-        // Route to cloud services if selected
+        // Route to cloud services
         if selectedModel.hasPrefix("groq-") {
-            print("📡 Routing to Groq transcription service")
             routeToGroq(audioData, completion: completion)
             return
         } else if selectedModel.hasPrefix("deepgram-") {
-            print("📡 Routing to Deepgram transcription service")
             routeToDeepgram(audioData, completion: completion)
             return
-        } else if selectedModel.hasPrefix("whisper-") && selectedModel != "whisper-large-v3-turbo" {
+        } else if selectedModel != "apple-speech" {
+            // Any non-Apple-Speech, non-cloud model is a local Whisper model
             print("🎙️ Routing to local Whisper engine")
             routeToWhisper(audioData, selectedModel: selectedModel, completion: completion)
             return
         }
 
-        // Default to Apple Speech for "apple-speech" or any unrecognized model
+        // Default to Apple Speech for "apple-speech" or unrecognized models
         print("🍎 Using Apple Speech (default)")
 
         guard isAvailable else {
@@ -619,54 +632,76 @@ class TranscriptionEngine: NSObject, ObservableObject {
     // MARK: - Model Routing Helpers
 
     private func routeToGroq(_ audioData: Data, completion: @escaping (Result<String, TranscriptionError>) -> Void) {
-        // Save audio to temporary file
-        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("groq_audio.m4a")
-        do {
-            try audioData.write(to: tempURL)
-            print("📡 Groq: Saved audio to \(tempURL.path)")
+        let apiKey = AppSettings.shared.groqAPIKey
+        guard !apiKey.isEmpty else {
+            print("❌ Groq API key not configured")
+            completion(.failure(.unavailable))
+            return
+        }
 
-            // Use GroqTranscriptionService (needs to be accessed via shared instance if available)
-            // For now, fall back to Apple Speech
-            print("⚠️ Groq service integration pending - using Apple Speech as fallback")
-            transcribeWithAppleSpeech(audioData, completion: completion)
-        } catch {
-            print("❌ Failed to save audio for Groq: \(error)")
-            completion(.failure(.processingError))
+        print("📡 Routing to Groq transcription service")
+        Task {
+            do {
+                let language = AppSettings.shared.preferredLanguage.components(separatedBy: "-").first
+                let text = try await GroqTranscriptionService.shared.transcribe(
+                    audioData: audioData,
+                    language: language,
+                    apiKey: apiKey
+                )
+                await MainActor.run {
+                    let processed = self.processText(text)
+                    completion(.success(processed))
+                }
+            } catch {
+                await MainActor.run {
+                    print("❌ Groq transcription failed: \(error)")
+                    completion(.failure(.recognitionError(error)))
+                }
+            }
         }
     }
 
     private func routeToDeepgram(_ audioData: Data, completion: @escaping (Result<String, TranscriptionError>) -> Void) {
-        // Save audio to temporary file
-        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("deepgram_audio.m4a")
-        do {
-            try audioData.write(to: tempURL)
-            print("📡 Deepgram: Saved audio to \(tempURL.path)")
+        let apiKey = AppSettings.shared.deepgramAPIKey
+        guard !apiKey.isEmpty else {
+            print("❌ Deepgram API key not configured")
+            completion(.failure(.unavailable))
+            return
+        }
 
-            // Use DeepgramTranscriptionService (needs to be accessed via shared instance if available)
-            // For now, fall back to Apple Speech
-            print("⚠️ Deepgram service integration pending - using Apple Speech as fallback")
-            transcribeWithAppleSpeech(audioData, completion: completion)
-        } catch {
-            print("❌ Failed to save audio for Deepgram: \(error)")
-            completion(.failure(.processingError))
+        print("📡 Routing to Deepgram transcription service")
+        Task {
+            do {
+                let language = AppSettings.shared.preferredLanguage.components(separatedBy: "-").first
+                let text = try await DeepgramTranscriptionService.shared.transcribeToText(
+                    audioData: audioData,
+                    model: .nova,
+                    language: language,
+                    apiKey: apiKey
+                )
+                await MainActor.run {
+                    let processed = self.processText(text)
+                    completion(.success(processed))
+                }
+            } catch {
+                await MainActor.run {
+                    print("❌ Deepgram transcription failed: \(error)")
+                    completion(.failure(.recognitionError(error)))
+                }
+            }
         }
     }
 
     private func routeToWhisper(_ audioData: Data, selectedModel: String, completion: @escaping (Result<String, TranscriptionError>) -> Void) {
-        print("🎙️ Whisper: Using model \(selectedModel)")
-        // Save audio to temporary file
-        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("whisper_audio.m4a")
-        do {
-            try audioData.write(to: tempURL)
-            print("🎙️ Whisper: Saved audio to \(tempURL.path)")
-
-            // Use WhisperEngine (needs to be accessed via shared instance if available)
-            // For now, fall back to Apple Speech
-            print("⚠️ Whisper engine integration pending - using Apple Speech as fallback")
-            transcribeWithAppleSpeech(audioData, completion: completion)
-        } catch {
-            print("❌ Failed to save audio for Whisper: \(error)")
-            completion(.failure(.processingError))
+        print("🎙️ Routing to local Whisper engine: \(selectedModel)")
+        WhisperEngine.shared.transcribeAudio(audioData) { result in
+            switch result {
+            case .success(let text):
+                completion(.success(text))
+            case .failure(let error):
+                print("❌ Whisper transcription failed: \(error)")
+                completion(.failure(.processingError))
+            }
         }
     }
 

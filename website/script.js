@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initTypingAnimation();
     initMobileMenu();
     initSmoothScroll();
+    initTerminalAnimation();
 });
 
 // ========================================
@@ -316,6 +317,52 @@ document.addEventListener('keydown', (e) => {
         }, 3000);
     }
 });
+
+// ========================================
+// Terminal Animation (Coding Agents)
+// ========================================
+
+function initTerminalAnimation() {
+    const terminal = document.querySelector('.terminal-body');
+    if (!terminal) return;
+
+    const lines = terminal.querySelectorAll('.terminal-line');
+
+    function resetAndPlay() {
+        lines.forEach(line => {
+            line.style.animation = 'none';
+            line.style.opacity = '0';
+            line.style.transform = 'translateY(8px)';
+        });
+
+        // Force reflow
+        void terminal.offsetHeight;
+
+        lines.forEach(line => {
+            line.style.animation = '';
+        });
+    }
+
+    // Intersection observer: play when visible, replay on loop
+    let loopTimer = null;
+
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                resetAndPlay();
+                // Replay every 14s
+                loopTimer = setInterval(resetAndPlay, 14000);
+            } else {
+                if (loopTimer) {
+                    clearInterval(loopTimer);
+                    loopTimer = null;
+                }
+            }
+        });
+    }, { threshold: 0.3 });
+
+    observer.observe(terminal);
+}
 
 // Add animation keyframes
 const keyframes = document.createElement('style');

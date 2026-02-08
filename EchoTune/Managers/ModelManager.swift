@@ -36,6 +36,10 @@ class ModelManager: ObservableObject {
     private var observations: [NSKeyValueObservation] = []
     private let modelsDirectory: URL
     private let apiKeyPrefix = "apiKey:"
+
+    /// Fires once after `checkInstalledModels()` finishes on the background thread.
+    /// Observers (e.g. AppCoordinator.preloadDefaultModel) can wait on this.
+    @Published var isReady = false
     
     init() {
         // Create models directory in Application Support
@@ -50,11 +54,18 @@ class ModelManager: ObservableObject {
 
         // Defer expensive operations to background thread for faster startup
         DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self = self else { return }
             // Check installed models
-            self?.checkInstalledModels()
+            self.checkInstalledModels()
 
             // Update storage info
-            self?.updateStorageInfo()
+            self.updateStorageInfo()
+
+            // Signal readiness on main thread
+            DispatchQueue.main.async {
+                self.isReady = true
+                NotificationCenter.default.post(name: NSNotification.Name("ModelManagerReady"), object: nil)
+            }
         }
     }
     
@@ -222,6 +233,34 @@ class ModelManager: ObservableObject {
                 speedRating: 4,
                 accuracyRating: 4
             ),
+            // Cloud models (require API key)
+            AIModel(
+                id: "groq-whisper-large-v3-turbo",
+                name: "Groq Whisper",
+                size: 0,
+                description: "Lightning-fast cloud transcription via Groq (requires API key)",
+                language: "Multilingual",
+                url: URL(string: "https://console.groq.com")!,
+                type: .fast,
+                category: .cloud,
+                speedRating: 5,
+                accuracyRating: 5,
+                isBuiltIn: false
+            ),
+            AIModel(
+                id: "deepgram-nova",
+                name: "Deepgram Nova 2",
+                size: 0,
+                description: "High-accuracy cloud transcription via Deepgram (requires API key)",
+                language: "Multilingual",
+                url: URL(string: "https://console.deepgram.com")!,
+                type: .accurate,
+                category: .cloud,
+                speedRating: 4,
+                accuracyRating: 5,
+                isBuiltIn: false
+            ),
+
             // Coming soon list (not selectable, no download)
             AIModel(
                 id: "parakeet-v3",
@@ -269,6 +308,25 @@ class ModelManager: ObservableObject {
                 continue
             }
 
+            // Cloud models are "installed" when they have an API key configured
+            if model.category == .cloud {
+                let hasKey = isCloudEnabled(model)
+                if hasKey {
+                    var installedModel = model
+                    installedModel.isInstalled = true
+                    installedModels.append(installedModel)
+
+                    if let index = availableModels.firstIndex(where: { $0.id == model.id }) {
+                        availableModels[index].isInstalled = true
+                    }
+
+                    print("   ✅ Cloud model enabled: \(model.name)")
+                } else {
+                    print("   ⚠️ Cloud model (no API key): \(model.name)")
+                }
+                continue
+            }
+
             // Only check for Whisper variants supported by WhisperKit
             guard let whisperVariant = whisperVariant(for: model.id) else {
                 continue
@@ -305,13 +363,17 @@ class ModelManager: ObservableObject {
         print("📊 Total installed models: \(installedModels.count)")
 
         // Load saved default model preference
-        if let savedDefaultID = UserDefaults.standard.string(forKey: "defaultModelID"),
+        let savedDefaultID = UserDefaults.standard.string(forKey: "defaultModelID")
+        print("🔍 Saved default model ID: \(savedDefaultID ?? "none")")
+        print("   Installed model IDs: \(installedModels.map { $0.id })")
+        
+        if let savedDefaultID = savedDefaultID,
            let savedModel = installedModels.first(where: { $0.id == savedDefaultID }) {
             currentModel = savedModel
-            print("✅ Restored default model: \(savedModel.name)")
+            print("✅ Restored default model: \(savedModel.name) (id: \(savedModel.id))")
         } else if currentModel == nil, let firstInstalled = installedModels.first {
             currentModel = firstInstalled
-            print("✅ Set default model: \(firstInstalled.name)")
+            print("✅ Set default model (fallback): \(firstInstalled.name) (id: \(firstInstalled.id))")
         }
     }
 
@@ -344,10 +406,11 @@ class ModelManager: ObservableObject {
     }
 
     private func isCloudConnectorImplemented(for model: AIModel) -> Bool {
-        // Currently no cloud connectors are implemented; set to false for all
         switch model.id {
         case "groq-whisper-large-v3-turbo":
-            return false
+            return true  // GroqTranscriptionService is implemented
+        case "deepgram-nova":
+            return true  // DeepgramTranscriptionService is implemented
         default:
             return false
         }
@@ -499,7 +562,18 @@ class ModelManager: ObservableObject {
 
     func isCloudEnabled(_ model: AIModel) -> Bool {
         guard model.category == .cloud else { return false }
-        return !apiKey(for: model).isEmpty
+        // Check both the per-model key store AND the global AppSettings keys
+        let perModelKey = apiKey(for: model)
+        if !perModelKey.isEmpty { return true }
+        // Fall back to AppSettings global API keys
+        switch model.id {
+        case "groq-whisper-large-v3-turbo":
+            return !AppSettings.shared.groqAPIKey.isEmpty
+        case "deepgram-nova":
+            return !AppSettings.shared.deepgramAPIKey.isEmpty
+        default:
+            return false
+        }
     }
     
     func deleteModel(_ model: AIModel) -> Bool {
@@ -561,7 +635,10 @@ class ModelManager: ObservableObject {
 
         // Save to UserDefaults
         UserDefaults.standard.set(model.id, forKey: "defaultModelID")
-        print("💾 Saved default model: \(model.name)")
+
+        // Keep AppSettings.defaultTranscriptionModel in sync (used by TranscriptionEngine routing)
+        AppSettings.shared.defaultTranscriptionModel = model.id
+        print("💾 Saved default model: \(model.name) (synced to AppSettings)")
 
         return true
     }

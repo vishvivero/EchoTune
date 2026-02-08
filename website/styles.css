@@ -939,6 +939,199 @@ button {
 }
 
 /* ========================================
+   Coding Agents Section
+   ======================================== */
+
+.coding-agents {
+    padding: var(--space-24) 0;
+    background: var(--color-bg-secondary);
+    overflow: hidden;
+}
+
+.coding-agents-content {
+    display: grid;
+    grid-template-columns: 1fr 1.2fr;
+    gap: var(--space-16);
+    align-items: center;
+}
+
+.coding-agents-text .section-badge {
+    margin-bottom: var(--space-4);
+}
+
+.coding-agents-text .section-title {
+    text-align: left;
+    margin-bottom: var(--space-4);
+}
+
+.coding-agents-text p {
+    color: var(--color-text-secondary);
+    font-size: var(--text-lg);
+    line-height: 1.7;
+    margin-bottom: var(--space-8);
+}
+
+.coding-agents-features {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    margin-bottom: var(--space-8);
+}
+
+.coding-agent-feature {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    color: var(--color-text-secondary);
+}
+
+.coding-agent-feature svg {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    color: var(--color-primary);
+}
+
+.coding-agents-logos {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+}
+
+.agent-logo {
+    padding: var(--space-2) var(--space-4);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    transition: all var(--transition-base);
+}
+
+.agent-logo:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+    transform: translateY(-2px);
+}
+
+/* Terminal Animation */
+.terminal-window {
+    background: #1a1b26;
+    border-radius: var(--radius-2xl);
+    overflow: hidden;
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.terminal-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    padding: var(--space-4) var(--space-5);
+    background: #16171f;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.terminal-title {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: #565f89;
+}
+
+.terminal-body {
+    padding: var(--space-6);
+    min-height: 320px;
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    line-height: 1.8;
+}
+
+.terminal-line {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+    opacity: 0;
+    transform: translateY(8px);
+    animation: terminalFadeIn 0.4s ease forwards;
+}
+
+.terminal-line.voice-input {
+    animation-delay: 0.3s;
+    margin-bottom: var(--space-4);
+}
+
+.terminal-line.agent-response {
+    margin-bottom: var(--space-2);
+}
+
+.terminal-line.agent-step {
+    margin-bottom: var(--space-1);
+}
+
+.terminal-line.second-voice {
+    margin-top: var(--space-4);
+    margin-bottom: var(--space-4);
+}
+
+.terminal-prompt {
+    flex-shrink: 0;
+}
+
+.voice-icon {
+    font-size: var(--text-base);
+}
+
+.agent-icon {
+    font-size: var(--text-base);
+}
+
+.terminal-text {
+    color: #a9b1d6;
+}
+
+.typing-voice {
+    color: #9ece6a;
+    font-style: italic;
+}
+
+.t-muted {
+    color: #565f89;
+}
+
+.t-success {
+    color: #9ece6a;
+}
+
+.t-file {
+    color: #7aa2f7;
+    text-decoration: underline;
+    text-decoration-color: rgba(122, 162, 247, 0.3);
+}
+
+.t-highlight {
+    color: #e0af68;
+    font-weight: 600;
+}
+
+@keyframes terminalFadeIn {
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Terminal loop animation */
+.coding-agents-visual {
+    animation: terminalPulse 16s ease-in-out infinite;
+}
+
+@keyframes terminalPulse {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-4px); }
+}
+
+/* ========================================
    Pricing Section
    ======================================== */
 
@@ -1291,6 +1484,30 @@ button {
     
     .cloud-features {
         align-items: center;
+    }
+    
+    .coding-agents-content {
+        grid-template-columns: 1fr;
+    }
+    
+    .coding-agents-text {
+        text-align: center;
+    }
+    
+    .coding-agents-text .section-title {
+        text-align: center;
+    }
+    
+    .coding-agents-features {
+        align-items: center;
+    }
+    
+    .coding-agents-logos {
+        justify-content: center;
+    }
+    
+    .terminal-body {
+        font-size: 0.75rem;
     }
     
     .pricing-grid {

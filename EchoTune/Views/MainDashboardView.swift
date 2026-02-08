@@ -30,10 +30,9 @@ struct MainDashboardView: View {
 
 enum NavigationItem: String, CaseIterable, Identifiable {
     case home = "Home"
+    case history = "History"
     case dictionary = "Dictionary"
     case notes = "Notes"
-    case models = "AI Models"
-    case permissions = "Permissions"
     case settings = "Settings"
     case share = "Share"
     case helpFeedback = "Help & Feedback"
@@ -43,10 +42,9 @@ enum NavigationItem: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .home: return "house.fill"
+        case .history: return "clock.arrow.circlepath"
         case .dictionary: return "book.fill"
         case .notes: return "note.text"
-        case .models: return "cpu"
-        case .permissions: return "lock.shield.fill"
         case .settings: return "gearshape.fill"
         case .share: return "square.and.arrow.up.fill"
         case .helpFeedback: return "questionmark.circle"
@@ -305,6 +303,7 @@ struct ModernSidebarItem: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
+            .contentShape(Rectangle())
             .background(
                 RoundedRectangle(cornerRadius: 10)
                     .fill(isSelected ? Color.blue.opacity(0.1) : (isHovered ? Color.gray.opacity(0.05) : Color.clear))
@@ -327,14 +326,12 @@ struct DetailView: View {
             switch selectedView {
             case .home:
                 HomeContentView(selectedView: $selectedView)
+            case .history:
+                HistoryView()
             case .dictionary:
                 DictionaryContentView()
             case .notes:
                 NotesContentView()
-            case .models:
-                ModelsContentView()
-            case .permissions:
-                PermissionsContentView()
             case .settings:
                 SettingsContentView()
             case .share:
@@ -558,9 +555,21 @@ struct HomeContentView: View {
 
                             Spacer()
 
-                            Text("\(historyManager.transcriptions.count) total")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
+                            Button(action: {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                    selectedView = .history
+                                }
+                            }) {
+                                HStack(spacing: 4) {
+                                    Text("View All (\(historyManager.transcriptions.count))")
+                                        .font(.subheadline)
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption)
+                                }
+                                .foregroundColor(.blue)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Open full history")
                         }
 
                         // Group transcriptions by date
@@ -578,6 +587,10 @@ struct HomeContentView: View {
                                 ForEach(groupedTranscriptions[date] ?? []) { item in
                                     CompactTranscriptionRow(item: item, onDelete: {
                                         historyManager.deleteTranscription(item)
+                                    }, onTap: {
+                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                            selectedView = .history
+                                        }
                                     })
                                 }
                             }
@@ -603,9 +616,10 @@ struct HomeContentView: View {
         #endif
     }
 
-    // Group transcriptions by date
+    // Group transcriptions by date (limit to 10 most recent for home page)
     private var groupedTranscriptions: [Date: [TranscriptionHistoryItem]] {
-        Dictionary(grouping: historyManager.transcriptions) { item in
+        let recentItems = Array(historyManager.transcriptions.prefix(10))
+        return Dictionary(grouping: recentItems) { item in
             Calendar.current.startOfDay(for: item.date)
         }
     }
@@ -680,6 +694,7 @@ struct HomeContentView: View {
 struct CompactTranscriptionRow: View {
     let item: TranscriptionHistoryItem
     let onDelete: (() -> Void)?
+    var onTap: (() -> Void)? = nil
     @State private var isHovering = false
 
     var body: some View {
@@ -761,6 +776,10 @@ struct CompactTranscriptionRow: View {
         .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
         .onHover { hovering in
             isHovering = hovering
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onTap?()
         }
     }
 
@@ -886,12 +905,6 @@ struct QuickActionButton: View {
 }
 
 // MARK: - Placeholder Content Views
-
-struct ModelsContentView: View {
-    var body: some View {
-        AIModelsView()
-    }
-}
 
 struct SettingsContentView: View {
     var body: some View {

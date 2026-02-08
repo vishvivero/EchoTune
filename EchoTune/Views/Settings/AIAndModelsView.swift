@@ -24,21 +24,6 @@ struct AIAndModelsView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
-                // Header
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("AI & Models")
-                        .font(.title)
-                        .fontWeight(.bold)
-
-                    Text("Configure transcription models, API keys, and AI enhancement features")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal)
-
-                Divider()
-
                 // Section A: Active Transcription Model
                 modelSelectionSection
 

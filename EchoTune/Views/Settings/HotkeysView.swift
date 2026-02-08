@@ -15,21 +15,7 @@ struct HotkeysView: View {
 
     var body: some View {
         Form {
-            // Header
-            Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Keyboard Shortcuts")
-                        .font(.title2)
-                        .fontWeight(.bold)
-
-                    Text("Configure global keyboard shortcuts for quick access to EchoTune features.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .padding(.vertical, 8)
-            }
-
-            // Modifier Key Triggers (NEW)
+            // Modifier Key Triggers
             Section {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Use a single modifier key as a push-to-talk trigger — much faster than a key combo.")
@@ -94,24 +80,13 @@ struct HotkeysView: View {
             }
 
             // Help
-            Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Image(systemName: "info.circle")
-                        Text("Tips")
-                            .fontWeight(.semibold)
-                    }
-                    .font(.caption)
-
-                    Text("• Use a Modifier Key Trigger for the fastest push-to-talk experience")
-                    Text("• Right ⌘ (Command) is popular since it doesn't conflict with system shortcuts")
-                    Text("• fn (Globe) works great on MacBooks with the Globe key")
-                    Text("• Key Combo shortcuts use ⌘, ⌃, ⌥, ⇧ + a letter/number key")
-                    Text("• Avoid conflicts with system shortcuts")
-                }
-                .font(.caption2)
-                .foregroundColor(.secondary)
+            Section("Tips") {
+                Text("Use a Modifier Key Trigger for the fastest push-to-talk experience.")
+                Text("Right ⌘ (Command) is popular since it doesn't conflict with system shortcuts.")
+                Text("Key Combo shortcuts use ⌘, ⌃, ⌥, ⇧ + a letter/number key.")
             }
+            .font(.caption)
+            .foregroundColor(.secondary)
         }
         .formStyle(.grouped)
         .sheet(isPresented: $showingRecordSheet) {
