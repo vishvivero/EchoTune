@@ -389,11 +389,13 @@ class WhisperEngine: ObservableObject {
         let inputFormat = buffers[0].format
         let targetSampleRate: Double = 16000
 
-        os_log("🔄 convertBuffers: %d buffers, format=%.0fHz %dch",
-               log: wLog, type: .error, buffers.count, inputFormat.sampleRate, inputFormat.channelCount)
+        os_log("🔄 convertBuffers: %d buffers, format=%.0fHz %dch %{public}@",
+               log: wLog, type: .error, buffers.count, inputFormat.sampleRate, inputFormat.channelCount,
+               inputFormat.commonFormat == .pcmFormatFloat32 ? "Float32" : inputFormat.commonFormat == .pcmFormatInt16 ? "Int16" : "other")
 
-        // If already 16kHz mono, just extract float data directly
-        if inputFormat.sampleRate == targetSampleRate && inputFormat.channelCount == 1 {
+        // If already 16kHz mono Float32, just extract float data directly
+        if inputFormat.sampleRate == targetSampleRate && inputFormat.channelCount == 1
+            && inputFormat.commonFormat == .pcmFormatFloat32 {
             var result: [Float] = []
             for buffer in buffers {
                 guard let channelData = buffer.floatChannelData else {
@@ -402,13 +404,9 @@ class WhisperEngine: ObservableObject {
                 let frameCount = Int(buffer.frameLength)
                 result.append(contentsOf: UnsafeBufferPointer(start: channelData[0], count: frameCount))
             }
-            os_log("✅ Already 16kHz mono, %d samples", log: wLog, type: .error, result.count)
+            os_log("✅ Already 16kHz mono Float32, %d samples", log: wLog, type: .error, result.count)
             return result
         }
-
-        // STRATEGY: Merge all small buffers into one large buffer first,
-        // then write to a temp file using AVAudioFile (which handles resampling).
-        // This is more reliable than per-buffer AVAudioConverter which can produce 0 frames.
 
         // Step 1: Merge all input buffers into one contiguous buffer
         let totalInputFrames = buffers.reduce(AVAudioFrameCount(0)) { $0 + $1.frameLength }
@@ -432,24 +430,11 @@ class WhisperEngine: ObservableObject {
         }
         mergedInput.frameLength = totalInputFrames
 
-        os_log("📦 Merged %d buffers → %d frames (%.1fs at %.0fHz)",
-               log: wLog, type: .error, buffers.count, totalInputFrames,
-               Double(totalInputFrames) / inputFormat.sampleRate, inputFormat.sampleRate)
+        let inputDuration = Double(totalInputFrames) / inputFormat.sampleRate
+        os_log("📦 Merged: %d frames (%.1fs at %.0fHz)",
+               log: wLog, type: .error, totalInputFrames, inputDuration, inputFormat.sampleRate)
 
-        // Step 2: Write merged buffer to temp WAV at source sample rate
-        let tempInputURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("whisper_input_\(UUID().uuidString).wav")
-        defer { try? FileManager.default.removeItem(at: tempInputURL) }
-
-        let inputFile = try AVAudioFile(
-            forWriting: tempInputURL,
-            settings: inputFormat.settings,
-            commonFormat: inputFormat.commonFormat,
-            interleaved: inputFormat.isInterleaved
-        )
-        try inputFile.write(from: mergedInput)
-
-        // Step 3: Read it back at 16kHz mono using AVAudioFile's automatic conversion
+        // Step 2: Convert directly with AVAudioConverter (no temp file — avoids format issues)
         let targetFormat = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
             sampleRate: targetSampleRate,
@@ -457,31 +442,17 @@ class WhisperEngine: ObservableObject {
             interleaved: false
         )!
 
-        let readFile = try AVAudioFile(forReading: tempInputURL, commonFormat: .pcmFormatFloat32, interleaved: false)
-        let outputFrameCount = AVAudioFrameCount(ceil(Double(readFile.length) * targetSampleRate / readFile.fileFormat.sampleRate))
-
-        os_log("📖 Read file: %lld frames, output estimate: %d frames at 16kHz",
-               log: wLog, type: .error, readFile.length, outputFrameCount)
-
-        // AVAudioFile reads with processing format — set to 16kHz mono
-        // We need to use AVAudioConverter for the actual resampling
-        guard let converter = AVAudioConverter(from: readFile.processingFormat, to: targetFormat) else {
+        guard let converter = AVAudioConverter(from: inputFormat, to: targetFormat) else {
+            os_log("❌ Failed to create converter from %{public}@ to 16kHz", log: wLog, type: .error, "\(inputFormat)")
             throw WhisperError.audioFormatError
         }
 
-        guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: outputFrameCount + 1000) else {
-            throw WhisperError.audioFormatError
-        }
+        // Calculate output capacity generously
+        let outputFrameCapacity = AVAudioFrameCount(ceil(inputDuration * targetSampleRate)) + 1000
 
-        // Read all source audio into a single large buffer for conversion
-        guard let sourceBuffer = AVAudioPCMBuffer(
-            pcmFormat: readFile.processingFormat,
-            frameCapacity: AVAudioFrameCount(readFile.length)
-        ) else {
+        guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: outputFrameCapacity) else {
             throw WhisperError.audioFormatError
         }
-        try readFile.read(into: sourceBuffer)
-        sourceBuffer.frameLength = AVAudioFrameCount(readFile.length)
 
         var inputConsumed = false
         let inputBlock: AVAudioConverterInputBlock = { _, outStatus in
@@ -491,24 +462,29 @@ class WhisperEngine: ObservableObject {
             }
             inputConsumed = true
             outStatus.pointee = .haveData
-            return sourceBuffer
+            return mergedInput
         }
 
         var convError: NSError?
         let status = converter.convert(to: outputBuffer, error: &convError, withInputFrom: inputBlock)
 
-        os_log("🔧 Converter status=%d outFrames=%d err=%{public}@",
-               log: wLog, type: .error, status.rawValue, outputBuffer.frameLength,
+        os_log("🔧 Convert: status=%d outFrames=%d capacity=%d err=%{public}@",
+               log: wLog, type: .error, status.rawValue, outputBuffer.frameLength, outputFrameCapacity,
                convError?.localizedDescription ?? "none")
 
-        // Fallback: if frameLength is 0 but status is haveData, estimate it
-        if outputBuffer.frameLength == 0 && (status == .haveData || status == .inputRanDry) {
-            outputBuffer.frameLength = outputFrameCount
-            os_log("⚠️ frameLength was 0, set to estimated %d", log: wLog, type: .error, outputFrameCount)
+        // AVAudioConverter sometimes returns .inputRanDry with valid data in the buffer
+        if outputBuffer.frameLength == 0 {
+            os_log("⚠️ frameLength=0, checking if data exists...", log: wLog, type: .error)
+            // Try estimating the output size
+            let estimated = AVAudioFrameCount(ceil(inputDuration * targetSampleRate))
+            if estimated > 0 && (status == .haveData || status == .inputRanDry) {
+                outputBuffer.frameLength = estimated
+                os_log("⚠️ Set frameLength to estimated %d", log: wLog, type: .error, estimated)
+            }
         }
 
         guard outputBuffer.frameLength > 0, let channelData = outputBuffer.floatChannelData else {
-            os_log("❌ Conversion produced 0 frames", log: wLog, type: .error)
+            os_log("❌ Conversion produced 0 frames, status=%d", log: wLog, type: .error, status.rawValue)
             throw WhisperError.noAudioData
         }
 
@@ -516,7 +492,8 @@ class WhisperEngine: ObservableObject {
 
         // Verify audio content
         let rms = sqrt(floatArray.map { $0 * $0 }.reduce(0, +) / Float(max(floatArray.count, 1)))
-        os_log("✅ Converted: %d samples, RMS=%.6f", log: wLog, type: .error, floatArray.count, rms)
+        os_log("✅ Output: %d samples (%.1fs), RMS=%.6f", log: wLog, type: .error,
+               floatArray.count, Double(floatArray.count) / targetSampleRate, rms)
 
         return floatArray
     }
