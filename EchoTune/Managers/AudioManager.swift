@@ -59,6 +59,10 @@ class AudioManager: NSObject, ObservableObject {
     private var currentChunkFrameOffset: AVAudioFrameCount = 0
     private static let chunkDurationSeconds: Double = 30 // Each chunk holds 30s of audio
 
+    // Format normalization — ensures all downstream code gets Float32 non-interleaved
+    private var tapConverter: AVAudioConverter?
+    private var normalizedFormat: AVAudioFormat?
+
     // Callback for live audio streaming
     var onAudioBuffer: ((AVAudioPCMBuffer) -> Void)?
 
@@ -132,7 +136,6 @@ class AudioManager: NSObject, ObservableObject {
 
         // Use the hardware's native input format instead of forcing a specific sample rate
         let hardwareFormat = inputNode.inputFormat(forBus: 0)
-        recordingFormat = hardwareFormat
 
         print("🎤 Recording with hardware format: \(hardwareFormat)")
         print("   Sample rate: \(hardwareFormat.sampleRate) Hz")
@@ -140,19 +143,63 @@ class AudioManager: NSObject, ObservableObject {
         print("🎙️ VAD enabled: \(VADManager.shared.config.enabled)")
         print("📏 Max recording duration: \(AudioManager.maxRecordingDuration > 0 ? "\(Int(AudioManager.maxRecordingDuration))s" : "unlimited")")
 
+        // Normalize to Float32 non-interleaved if hardware format isn't already
+        if hardwareFormat.commonFormat != .pcmFormatFloat32 || hardwareFormat.isInterleaved {
+            let normalized = AVAudioFormat(
+                commonFormat: .pcmFormatFloat32,
+                sampleRate: hardwareFormat.sampleRate,
+                channels: hardwareFormat.channelCount,
+                interleaved: false
+            )!
+            tapConverter = AVAudioConverter(from: hardwareFormat, to: normalized)
+            normalizedFormat = normalized
+            recordingFormat = normalized
+            print("🔄 Tap format normalization: \(hardwareFormat) → Float32 non-interleaved")
+        } else {
+            tapConverter = nil
+            normalizedFormat = nil
+            recordingFormat = hardwareFormat
+            print("✅ Hardware format is already Float32 non-interleaved")
+        }
+
+        let activeFormat = normalizedFormat ?? hardwareFormat
+
         // Allocate first chunk (30 seconds of audio per chunk)
-        let chunkFrameCapacity = AVAudioFrameCount(hardwareFormat.sampleRate * AudioManager.chunkDurationSeconds)
-        currentChunk = AVAudioPCMBuffer(pcmFormat: hardwareFormat, frameCapacity: chunkFrameCapacity)
+        let chunkFrameCapacity = AVAudioFrameCount(activeFormat.sampleRate * AudioManager.chunkDurationSeconds)
+        currentChunk = AVAudioPCMBuffer(pcmFormat: activeFormat, frameCapacity: chunkFrameCapacity)
 
         // Also maintain the legacy audioBuffer for backward compat (sized for first 30s, will grow via chunks)
-        audioBuffer = AVAudioPCMBuffer(pcmFormat: hardwareFormat, frameCapacity: chunkFrameCapacity)
+        audioBuffer = AVAudioPCMBuffer(pcmFormat: activeFormat, frameCapacity: chunkFrameCapacity)
 
         // Set up tap on input node using the hardware's native format
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: hardwareFormat) { [weak self] (buffer, time) in
             guard let self = self, self.isRecording else { return }
 
+            // Normalize format if needed (e.g., Int16 → Float32)
+            let normalizedBuffer: AVAudioPCMBuffer
+            if let converter = self.tapConverter, let normFmt = self.normalizedFormat {
+                guard let converted = AVAudioPCMBuffer(pcmFormat: normFmt, frameCapacity: buffer.frameLength) else { return }
+                var error: NSError?
+                var inputConsumed = false
+                let inputBlock: AVAudioConverterInputBlock = { _, outStatus in
+                    if inputConsumed { outStatus.pointee = .noDataNow; return nil }
+                    inputConsumed = true
+                    outStatus.pointee = .haveData
+                    return buffer
+                }
+                let status = converter.convert(to: converted, error: &error, withInputFrom: inputBlock)
+                guard status != .error else { return }
+                converted.frameLength = buffer.frameLength
+                normalizedBuffer = converted
+            } else {
+                normalizedBuffer = buffer
+            }
+
+            // CRITICAL: Copy buffer before any async use — tap buffers are reused by the audio engine
+            guard let safeCopy = self.copyBuffer(normalizedBuffer) else { return }
+
             // VAD: Detect speech in this buffer
-            let vadResult = VADManager.shared.detectSpeech(in: buffer)
+            let vadResult = VADManager.shared.detectSpeech(in: safeCopy)
 
             // Update published properties on main thread
             DispatchQueue.main.async {
@@ -164,18 +211,16 @@ class AudioManager: NSObject, ObservableObject {
             self.onSpeechDetected?(vadResult)
 
             // Store buffer for later VAD analysis
-            if let bufferCopy = self.copyBuffer(buffer) {
-                self.recordedBuffers.append(bufferCopy)
-            }
+            self.recordedBuffers.append(safeCopy)
 
             // Send buffer to live transcription if callback is set
-            self.onAudioBuffer?(buffer)
+            self.onAudioBuffer?(safeCopy)
 
-            // Append to growing chunk-based storage (no cap!)
-            self.appendToChunkedStorage(buffer)
+            // Append to growing chunk-based storage
+            self.appendToChunkedStorage(safeCopy)
 
             // Calculate audio level (RMS)
-            self.calculateAudioLevel(buffer)
+            self.calculateAudioLevel(safeCopy)
         }
         
         // Start audio engine
@@ -202,19 +247,26 @@ class AudioManager: NSObject, ObservableObject {
     /// Appends audio to the growing chunk-based buffer system.
     /// When the current chunk fills up, it's stored and a new chunk is allocated.
     private func appendToChunkedStorage(_ buffer: AVAudioPCMBuffer) {
-        guard let chunk = currentChunk else { return }
+        guard var chunk = currentChunk else { return }
 
-        let framesAvailable = Int(chunk.frameCapacity - currentChunkFrameOffset)
-        var framesToCopy = Int(buffer.frameLength)
+        let totalFrames = Int(buffer.frameLength)
         var sourceOffset = 0
+        var remaining = totalFrames
 
-        while framesToCopy > 0 {
-            let copyCount = min(framesToCopy, framesAvailable > 0 ? framesAvailable : Int(chunk.frameCapacity))
+        while remaining > 0 {
+            let framesAvailable = Int(chunk.frameCapacity - currentChunkFrameOffset)
 
-            if currentChunkFrameOffset + AVAudioFrameCount(copyCount) > chunk.frameCapacity {
+            if framesAvailable == 0 {
                 // Current chunk is full — save it and allocate a new one
                 chunk.frameLength = currentChunkFrameOffset
                 audioChunks.append(chunk)
+
+                // Memory cap: limit to ~600 chunks (~10 min at 30s/chunk = 300 chunks, but be generous)
+                let maxChunks = 600
+                if audioChunks.count > maxChunks {
+                    audioChunks.removeFirst()
+                    print("⚠️ Audio buffer memory cap reached — dropped oldest chunk")
+                }
 
                 let newCapacity = AVAudioFrameCount(buffer.format.sampleRate * AudioManager.chunkDurationSeconds)
                 guard let newChunk = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: newCapacity) else {
@@ -222,6 +274,7 @@ class AudioManager: NSObject, ObservableObject {
                     return
                 }
                 currentChunk = newChunk
+                chunk = newChunk
                 currentChunkFrameOffset = 0
 
                 let totalSeconds = Double(audioChunks.count) * AudioManager.chunkDurationSeconds
@@ -229,40 +282,38 @@ class AudioManager: NSObject, ObservableObject {
                 continue
             }
 
+            let copyCount = min(remaining, framesAvailable)
+
             // Copy audio data into current chunk
             for channel in 0..<Int(buffer.format.channelCount) {
                 guard let inputData = buffer.floatChannelData?[channel],
-                      let outputData = currentChunk?.floatChannelData?[channel] else { break }
-                for frame in 0..<copyCount {
-                    outputData[Int(currentChunkFrameOffset) + frame] = inputData[sourceOffset + frame]
-                }
+                      let outputData = chunk.floatChannelData?[channel] else { break }
+                memcpy(outputData.advanced(by: Int(currentChunkFrameOffset)),
+                       inputData.advanced(by: sourceOffset),
+                       copyCount * MemoryLayout<Float>.size)
             }
 
             currentChunkFrameOffset += AVAudioFrameCount(copyCount)
-            currentChunk?.frameLength = currentChunkFrameOffset
+            chunk.frameLength = currentChunkFrameOffset
             sourceOffset += copyCount
-            framesToCopy -= copyCount
-            break // We either fit everything or need a new chunk (handled above)
+            remaining -= copyCount
         }
 
         // Also update the legacy audioBuffer for backward compatibility
         if let audioBuffer = self.audioBuffer {
             let offset = Int(audioBuffer.frameLength)
             let legacyAvailable = Int(audioBuffer.frameCapacity - audioBuffer.frameLength)
-            let legacyCopy = min(Int(buffer.frameLength), legacyAvailable)
+            let legacyCopy = min(totalFrames, legacyAvailable)
 
             if legacyCopy > 0 {
                 for channel in 0..<Int(buffer.format.channelCount) {
                     if let inputData = buffer.floatChannelData?[channel],
                        let outputData = audioBuffer.floatChannelData?[channel] {
-                        for frame in 0..<legacyCopy {
-                            outputData[offset + frame] = inputData[frame]
-                        }
+                        memcpy(outputData.advanced(by: offset), inputData, legacyCopy * MemoryLayout<Float>.size)
                     }
                 }
                 audioBuffer.frameLength += AVAudioFrameCount(legacyCopy)
             }
-            // No warning when legacy buffer fills — it's just a fallback for short recordings
         }
     }
     
@@ -360,6 +411,8 @@ class AudioManager: NSObject, ObservableObject {
         self.audioChunks.removeAll()
         self.currentChunk = nil
         self.currentChunkFrameOffset = 0
+        self.tapConverter = nil
+        self.normalizedFormat = nil
     }
 
     func getRecordingDuration() -> TimeInterval {
