@@ -255,6 +255,47 @@ struct AIModelsSettingsView: View {
                 }
             }
 
+            // MARK: - Language
+            Section {
+                Toggle("Auto-detect language", isOn: $settings.autoDetectLanguage)
+                    .toggleStyle(.switch)
+
+                if !settings.autoDetectLanguage {
+                    Picker("Language", selection: $settings.preferredLanguage) {
+                        Text("English").tag("en-US")
+                        Text("Hindi — हिन्दी").tag("hi")
+                        Text("Malayalam — മലയാളം").tag("ml")
+                        Text("Tamil — தமிழ்").tag("ta")
+                        Text("Telugu — తెలుగు").tag("te")
+                        Text("Bengali — বাংলা").tag("bn")
+                        Text("Spanish — Español").tag("es")
+                        Text("French — Français").tag("fr")
+                        Text("German — Deutsch").tag("de")
+                        Text("Japanese — 日本語").tag("ja")
+                        Text("Chinese — 中文").tag("zh")
+                        Text("Korean — 한국어").tag("ko")
+                        Text("Arabic — العربية").tag("ar")
+                        Text("Portuguese — Português").tag("pt")
+                        Text("Russian — Русский").tag("ru")
+                        Text("Italian — Italiano").tag("it")
+                    }
+                    .pickerStyle(.menu)
+                }
+
+                Toggle("Translate to English", isOn: $settings.translateToEnglish)
+                    .toggleStyle(.switch)
+            } header: {
+                Text("Language")
+            } footer: {
+                if settings.translateToEnglish {
+                    Text("Speech in any language will be translated to English. Uses Whisper's built-in translation — no extra API calls.")
+                } else if settings.autoDetectLanguage {
+                    Text("Whisper will automatically detect the spoken language and transcribe in that language.")
+                } else {
+                    Text("Transcription will be in the selected language.")
+                }
+            }
+
             // MARK: - Text Processing
             Section("Text Processing") {
                 Toggle("Auto-Punctuation", isOn: $settings.autoPunctuation)
