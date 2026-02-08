@@ -116,7 +116,10 @@ class AppSettings: ObservableObject {
 
     // Phase 6A: API Keys (stored securely in Keychain in production)
     @Published var groqAPIKey: String {
-        didSet { UserDefaults.standard.set(groqAPIKey, forKey: "groqAPIKey") }
+        didSet {
+            UserDefaults.standard.set(groqAPIKey, forKey: "groqAPIKey")
+            NotificationCenter.default.post(name: NSNotification.Name("APIKeyChanged"), object: nil)
+        }
     }
 
     @Published var openaiAPIKey: String {
@@ -128,7 +131,10 @@ class AppSettings: ObservableObject {
     }
 
     @Published var deepgramAPIKey: String {
-        didSet { UserDefaults.standard.set(deepgramAPIKey, forKey: "deepgramAPIKey") }
+        didSet {
+            UserDefaults.standard.set(deepgramAPIKey, forKey: "deepgramAPIKey")
+            NotificationCenter.default.post(name: NSNotification.Name("APIKeyChanged"), object: nil)
+        }
     }
 
     @Published var anthropicAPIKey: String {

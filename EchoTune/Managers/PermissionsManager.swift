@@ -181,6 +181,7 @@ class PermissionsManager: ObservableObject {
 
     func requestAccessibilityPermission() {
         print("🔐 Requesting accessibility permission...")
+        UserDefaults.standard.set(true, forKey: "hasRequestedAccessibilityPermission")
 
         // Check current status first
         let options: NSDictionary = [
