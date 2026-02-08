@@ -318,8 +318,9 @@ class AudioManager: NSObject, ObservableObject {
     }
     
     enum AudioEngine {
-        case whisper    // Needs Float32 format
-        case appleSpeech // Needs Int16 format
+        case whisper    // Needs Float32 format (CAF)
+        case appleSpeech // Needs Int16 format (CAF)
+        case cloud      // Needs WAV (RIFF) format for Groq/Deepgram
     }
 
     func stopRecording(forEngine engine: AudioEngine = .appleSpeech) -> Data? {
@@ -585,14 +586,78 @@ class AudioManager: NSObject, ObservableObject {
                 print("✓ CAF file written (Int16 PCM)")
 
                 data = try Data(contentsOf: tempFileURL)
+
+            case .cloud:
+                // Cloud services (Groq/Deepgram) need proper WAV (RIFF) format
+                // Convert to 16kHz mono Int16 WAV — universally accepted
+                print("☁️ Converting to WAV (RIFF) for cloud upload")
+
+                let cloudSampleRate: Double = 16000
+                guard let targetFormat = AVAudioFormat(
+                    commonFormat: .pcmFormatInt16,
+                    sampleRate: cloudSampleRate,
+                    channels: 1,
+                    interleaved: true
+                ) else {
+                    print("❌ Failed to create cloud target format")
+                    PerformanceMonitor.shared.endAudioConversion()
+                    return Data()
+                }
+
+                guard let converter = AVAudioConverter(from: sourceFormat, to: targetFormat) else {
+                    print("❌ Failed to create audio converter for cloud")
+                    PerformanceMonitor.shared.endAudioConversion()
+                    return Data()
+                }
+
+                let outputFrameCapacity = AVAudioFrameCount(ceil(Double(buffer.frameLength) * cloudSampleRate / sourceFormat.sampleRate)) + 100
+                guard let targetBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: outputFrameCapacity) else {
+                    print("❌ Failed to create cloud output buffer")
+                    PerformanceMonitor.shared.endAudioConversion()
+                    return Data()
+                }
+
+                var inputConsumed = false
+                let inputBlock: AVAudioConverterInputBlock = { _, outStatus in
+                    if inputConsumed { outStatus.pointee = .endOfStream; return nil }
+                    inputConsumed = true
+                    outStatus.pointee = .haveData
+                    return buffer
+                }
+
+                var convError: NSError?
+                let convStatus = converter.convert(to: targetBuffer, error: &convError, withInputFrom: inputBlock)
+                if convStatus == .error {
+                    print("❌ Cloud audio conversion failed: \(convError?.localizedDescription ?? "unknown")")
+                    PerformanceMonitor.shared.endAudioConversion()
+                    return Data()
+                }
+
+                print("✓ Converted to 16kHz mono Int16 (\(targetBuffer.frameLength) frames)")
+
+                // Write as proper WAV (RIFF) file
+                let wavURL = FileManager.default.temporaryDirectory.appendingPathComponent("cloud_upload.wav")
+                try? FileManager.default.removeItem(at: wavURL)
+
+                let wavFile = try AVAudioFile(
+                    forWriting: wavURL,
+                    settings: targetFormat.settings,
+                    commonFormat: .pcmFormatInt16,
+                    interleaved: true
+                )
+                try wavFile.write(from: targetBuffer)
+
+                data = try Data(contentsOf: wavURL)
+                try? FileManager.default.removeItem(at: wavURL)
+                print("✓ WAV file created: \(data.count) bytes")
             }
 
             PerformanceMonitor.shared.endAudioConversion()
 
-            print("✓ CAF data size: \(data.count) bytes")
+            print("✓ Audio data size: \(data.count) bytes")
             return data
         } catch {
-            print("❌ Failed to convert buffer to CAF: \(error.localizedDescription)")
+            print("❌ Failed to convert buffer: \(error.localizedDescription)")
             PerformanceMonitor.shared.endAudioConversion()
             return Data()
         }

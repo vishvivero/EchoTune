@@ -368,6 +368,7 @@ class AppCoordinator: ObservableObject {
     // MARK: - Cloud Recording (Groq/Deepgram)
 
     private func beginCloudRecording(model: AIModel) {
+        os_log("☁️ beginCloudRecording: %{public}@ (id=%{public}@)", log: debugLog, type: .error, model.name, model.id)
         // Start performance monitoring
         PerformanceMonitor.shared.startRecording()
 
@@ -399,7 +400,7 @@ class AppCoordinator: ObservableObject {
     }
 
     private func stopCloudRecording() {
-        print("🛑 Stop cloud recording")
+        os_log("🛑 stopCloudRecording called", log: debugLog, type: .error)
 
         // Play stop sound (if enabled)
         SoundManager.shared.playStopSound()
@@ -410,9 +411,10 @@ class AppCoordinator: ObservableObject {
         // Hide recording indicator (all styles)
         hideRecorderUI()
 
-        // Stop audio recording and get audio data for cloud transcription
-        let engineType: AudioManager.AudioEngine = .whisper // Use Whisper-compatible format (Float32)
+        // Stop audio recording and get audio data as proper WAV for cloud services
+        let engineType: AudioManager.AudioEngine = .cloud
         guard let audioData = audioManager.stopRecording(forEngine: engineType) else {
+            os_log("❌ stopRecording returned nil", log: debugLog, type: .error)
             handleTranscriptionError("Failed to capture audio data")
             return
         }
@@ -420,7 +422,7 @@ class AppCoordinator: ObservableObject {
         // Store audio data for retention
         self.lastRecordedAudioData = audioData
         
-        print("📊 Captured \(audioData.count) bytes for cloud transcription")
+        os_log("📊 Captured %d bytes for cloud transcription", log: debugLog, type: .error, audioData.count)
 
         let recordingDuration = audioManager.lastRecordingDuration
 
@@ -470,13 +472,14 @@ class AppCoordinator: ObservableObject {
                         return
                     }
 
-                    print("☁️ Transcribing with Groq...")
+                    os_log("☁️ Transcribing with Groq... audioSize=%d apiKeyLen=%d", log: debugLog, type: .error, audioData.count, apiKey.count)
                     PerformanceMonitor.shared.startTranscription(engine: "Groq", model: "whisper-large-v3-turbo")
                     transcribedText = try await GroqTranscriptionService.shared.transcribe(
                         audioData: audioData,
                         language: settings.preferredLanguage.components(separatedBy: "-").first,
                         apiKey: apiKey
                     )
+                    os_log("✅ Groq returned: '%{public}@'", log: debugLog, type: .error, transcribedText)
 
                 } else if currentModel.id.contains("deepgram") || currentModel.name.lowercased().contains("deepgram") {
                     // Use Deepgram
@@ -520,7 +523,7 @@ class AppCoordinator: ObservableObject {
 
             } catch {
                 await MainActor.run {
-                    print("❌ Cloud transcription failed: \(error)")
+                    os_log("❌ Cloud transcription FAILED: %{public}@", log: debugLog, type: .error, "\(error)")
                     self.errorLogger.logError(error, category: "Transcription", context: [
                         "model": currentModel.name
                     ])

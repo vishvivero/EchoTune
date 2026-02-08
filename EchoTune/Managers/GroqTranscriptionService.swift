@@ -176,8 +176,8 @@ class GroqTranscriptionService: ObservableObject {
 
         // Add file field
         body.append("--\(boundary)\r\n")
-        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"audio.caf\"\r\n")
-        body.append("Content-Type: audio/x-caf\r\n\r\n")
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\n")
+        body.append("Content-Type: audio/wav\r\n\r\n")
         body.append(audioData)
         body.append("\r\n")
 
