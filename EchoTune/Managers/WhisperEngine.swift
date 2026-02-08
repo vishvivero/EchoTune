@@ -67,6 +67,12 @@ class WhisperEngine: ObservableObject {
             return
         }
 
+        // Guard against concurrent loads
+        guard !isLoading else {
+            print("⚠️ Model is already loading, skipping duplicate request for \(model.name)")
+            return
+        }
+
         isLoading = true
         loadedModelName = nil
 

@@ -43,8 +43,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             showOnboarding()
         }
 
-        // ✅ PHASE 3: Preload Whisper model for instant first transcription
-        preloadDefaultModel()
+        // Model preloading is handled by AppCoordinator.initializeAfterOnboarding()
+        // (waits for ModelManagerReady notification to avoid race conditions)
 
         print("✓ EchoTune ready")
     }
