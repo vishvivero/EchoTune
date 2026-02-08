@@ -158,7 +158,13 @@ class PermissionsManager: ObservableObject {
             let statusChanged = (wasGranted != finalStatus)
 
             self.hasAccessibilityPermission = finalStatus
-            self.accessibilityStatus = finalStatus ? .granted : .notDetermined
+            if finalStatus {
+                self.accessibilityStatus = .granted
+            } else {
+                // When not trusted — check if we've previously prompted
+                let hasRequestedBefore = UserDefaults.standard.bool(forKey: "hasRequestedAccessibilityPermission")
+                self.accessibilityStatus = hasRequestedBefore ? .denied : .notDetermined
+            }
 
             if statusChanged {
                 print("🔄 Accessibility status changed: \(wasGranted ? "granted" : "not granted") → \(finalStatus ? "granted" : "not granted")\(apiWorks ? " (API verified)" : "")")
