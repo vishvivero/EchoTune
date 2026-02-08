@@ -181,10 +181,9 @@ class TextInsertionManager {
     // MARK: - Direct Insertion via Paste
 
     private func insertViaPaste(_ text: String) -> Bool {
-        // Save current clipboard
+        // Save current clipboard (string only — NSPasteboardItem refs become invalid after clearContents)
         let pasteboard = NSPasteboard.general
         let previousContents = pasteboard.string(forType: .string)
-        let previousItems = pasteboard.pasteboardItems
 
         // Set our text to clipboard
         pasteboard.clearContents()
@@ -201,9 +200,9 @@ class TextInsertionManager {
             pasteboard.clearContents()
             if let previous = previousContents {
                 pasteboard.setString(previous, forType: .string)
-            } else if let items = previousItems {
-                pasteboard.writeObjects(items)
             }
+            // Note: We only restore string content. Non-string clipboard items (images, files)
+            // cannot be safely restored because NSPasteboardItem refs are invalidated by clearContents().
         }
 
         return success
