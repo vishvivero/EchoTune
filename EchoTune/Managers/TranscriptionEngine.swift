@@ -227,36 +227,37 @@ class TranscriptionEngine: NSObject, ObservableObject {
         return processedText
     }
 
-    /// Cleans up in-speech corrections, e.g., 'Sorry, it should be 8am', so the transcript only contains the intended/corrected value.
+    /// Cleans up explicit in-speech corrections, e.g., 'Sorry, I meant 8am'.
+    /// Only matches deliberate correction phrases — NOT the bare word "actually"
+    /// which is common filler and would destroy most transcriptions.
     private func cleanTranscript(_ transcript: String) -> String {
         var result = transcript
 
-        // Pattern 1: "oldValue sorry I meant newValue"
-        let pattern1 = #"(\b\w+\b)[^\n.]*?\s+(sorry\s+i\s+meant|actually|no,?\s*i\s+meant|oops,?\s*i\s+meant|correction:?|it should be)\s+(\w+)"#
+        // Pattern: "oldValue <correction phrase> newValue"
+        // Correction phrases must be unambiguous self-correction signals.
+        // "actually" removed — it's normal filler, not a correction trigger.
+        let pattern1 = #"(\b\w+\b)[^\n.]{0,30}\s+(sorry\s+i\s+meant|no,?\s+i\s+meant|oops,?\s+i\s+meant|correction:?\s*|it\s+should\s+be)\s+(\w+)"#
         if let regex = try? NSRegularExpression(pattern: pattern1, options: [.caseInsensitive]) {
             let range = NSRange(result.startIndex..., in: result)
             if let match = regex.firstMatch(in: result, options: [], range: range) {
-                // Group 1: oldValue, Group 3: newValue
                 if let oldRange = Range(match.range(at: 1), in: result),
-                   let newRange = Range(match.range(at: 3), in: result) {
+                   let newRange = Range(match.range(at: 3), in: result),
+                   let fullMatchRange = Range(match.range, in: result) {
                     let oldValue = String(result[oldRange])
                     let newValue = String(result[newRange])
-                    // Replace only the last occurrence of oldValue prior to correction
+                    // Replace the old value with the new one
                     if let lastOldRange = result.range(of: oldValue, options: .backwards, range: result.startIndex..<oldRange.upperBound) {
                         result.replaceSubrange(lastOldRange, with: newValue)
                     }
-                    // Remove the correction phrase and everything after
-                    if let phraseSwiftRange = Range(match.range, in: result) {
-                        result = String(result[..<phraseSwiftRange.lowerBound])
-                    }
-                    // Remove trailing spaces and punctuation, add period if not present
+                    // Remove only the correction phrase itself, keep everything after
+                    // Find the end of the match and preserve the rest of the text
+                    let afterMatch = String(result[fullMatchRange.upperBound...])
+                    let beforeMatch = String(result[..<fullMatchRange.lowerBound])
+                    result = beforeMatch + newValue + afterMatch
                     result = result.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !result.hasSuffix(".") && !result.isEmpty { result += "." }
                 }
             }
         }
-
-        // (Pattern 2 and more: add as needed for more complex/future corrections)
 
         return result
     }
