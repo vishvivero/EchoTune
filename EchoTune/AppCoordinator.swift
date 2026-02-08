@@ -947,6 +947,8 @@ class AppCoordinator: ObservableObject {
                 apiKey = settings.openaiAPIKey
             case .anthropic:
                 apiKey = settings.claudeAPIKey
+            case .groq:
+                apiKey = settings.groqAPIKey
             }
 
             guard !apiKey.isEmpty else {

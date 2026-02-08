@@ -90,6 +90,21 @@ struct AIEnhancementView: View {
                                             .font(.caption2)
                                             .foregroundColor(.green)
                                     }
+
+                                case .groq:
+                                    Text("Requires: Groq API Key (same as Transcription)")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+
+                                    if settings.groqAPIKey.isEmpty {
+                                        Text("⚠️ Not configured")
+                                            .font(.caption2)
+                                            .foregroundColor(.orange)
+                                    } else {
+                                        Text("✅ Configured (shared with transcription)")
+                                            .font(.caption2)
+                                            .foregroundColor(.green)
+                                    }
                                 }
                             }
 
@@ -112,7 +127,7 @@ struct AIEnhancementView: View {
                 } header: {
                     Text("Model Selection")
                 } footer: {
-                    Text("GPT-4o Mini is recommended for speed and cost. GPT-4o and Claude models provide higher quality for complex text.")
+                    Text("Groq Llama is recommended for speed (uses same API key as transcription). GPT-4o and Claude models provide higher quality for complex text.")
                         .font(.caption)
                 }
 
@@ -288,6 +303,8 @@ struct AIEnhancementView: View {
             return !settings.openaiAPIKey.isEmpty
         case .anthropic:
             return !settings.claudeAPIKey.isEmpty
+        case .groq:
+            return !settings.groqAPIKey.isEmpty
         }
     }
 
@@ -314,6 +331,8 @@ struct AIEnhancementView: View {
                     apiKey = settings.openaiAPIKey
                 case .anthropic:
                     apiKey = settings.claudeAPIKey
+                case .groq:
+                    apiKey = settings.groqAPIKey
                 }
 
                 let customPrompt = settings.customEnhancementPrompt.isEmpty ? nil : settings.customEnhancementPrompt

@@ -56,6 +56,8 @@ class AIEnhancementEngine: ObservableObject {
         case gpt4o = "gpt-4o"
         case claude35Sonnet = "claude-3-5-sonnet-20241022"
         case claudeOpus = "claude-3-opus-20240229"
+        case groqLlama = "llama-3.3-70b-versatile"
+        case groqMixtral = "mixtral-8x7b-32768"
 
         var id: String { rawValue }
 
@@ -65,6 +67,8 @@ class AIEnhancementEngine: ObservableObject {
             case .gpt4o: return "GPT-4o (Best Quality)"
             case .claude35Sonnet: return "Claude 3.5 Sonnet (Excellent)"
             case .claudeOpus: return "Claude Opus (Premium)"
+            case .groqLlama: return "Groq Llama 3.3 70B (Lightning Fast)"
+            case .groqMixtral: return "Groq Mixtral 8x7B (Fast, Free Tier)"
             }
         }
 
@@ -74,6 +78,8 @@ class AIEnhancementEngine: ObservableObject {
                 return .openai
             case .claude35Sonnet, .claudeOpus:
                 return .anthropic
+            case .groqLlama, .groqMixtral:
+                return .groq
             }
         }
     }
@@ -81,6 +87,7 @@ class AIEnhancementEngine: ObservableObject {
     enum EnhancementProvider {
         case openai
         case anthropic
+        case groq
     }
 
     enum EnhancementError: Error, LocalizedError {
@@ -240,6 +247,8 @@ class AIEnhancementEngine: ObservableObject {
                 enhanced = try await enhanceWithOpenAI(transcript, model: model, apiKey: apiKey, customPrompt: customPrompt, dictionaryContext: dictionaryContext, screenContext: screenContext)
             case .anthropic:
                 enhanced = try await enhanceWithClaude(transcript, model: model, apiKey: apiKey, customPrompt: customPrompt, dictionaryContext: dictionaryContext, screenContext: screenContext)
+            case .groq:
+                enhanced = try await enhanceWithGroq(transcript, model: model, apiKey: apiKey, customPrompt: customPrompt, dictionaryContext: dictionaryContext, screenContext: screenContext)
             }
 
             print("✅ Enhancement successful")
@@ -369,6 +378,63 @@ class AIEnhancementEngine: ObservableObject {
         }
 
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    // MARK: - Groq Enhancement (OpenAI-compatible API)
+
+    private func enhanceWithGroq(_ transcript: String,
+                                   model: EnhancementModel,
+                                   apiKey: String,
+                                   customPrompt: String?,
+                                   dictionaryContext: String?,
+                                   screenContext: ScreenContext?) async throws -> String {
+        // Groq uses an OpenAI-compatible chat completions API
+        let endpoint = "https://api.groq.com/openai/v1/chat/completions"
+
+        let systemPrompt = buildEnhancementPrompt(customPrompt: customPrompt, dictionaryContext: dictionaryContext, screenContext: screenContext)
+
+        let requestBody: [String: Any] = [
+            "model": model.rawValue,
+            "messages": [
+                ["role": "system", "content": systemPrompt],
+                ["role": "user", "content": "<TRANSCRIPT>\n\(transcript)\n</TRANSCRIPT>"]
+            ],
+            "temperature": 0.3,
+            "max_tokens": 4000
+        ]
+
+        var request = URLRequest(url: URL(string: endpoint)!)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+        request.timeoutInterval = 60
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw EnhancementError.invalidResponse
+        }
+
+        if httpResponse.statusCode != 200 {
+            if let errorResponse = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let error = errorResponse["error"] as? [String: Any],
+               let message = error["message"] as? String {
+                throw EnhancementError.apiError(message)
+            }
+            throw EnhancementError.apiError("HTTP \(httpResponse.statusCode)")
+        }
+
+        // Same response format as OpenAI
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let choices = json["choices"] as? [[String: Any]],
+              let firstChoice = choices.first,
+              let message = firstChoice["message"] as? [String: Any],
+              let content = message["content"] as? String else {
+            throw EnhancementError.invalidResponse
+        }
+
+        return content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     // MARK: - Enhancement Prompt Builder
