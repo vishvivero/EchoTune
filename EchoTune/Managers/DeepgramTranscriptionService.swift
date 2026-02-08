@@ -122,7 +122,7 @@ class DeepgramTranscriptionService: ObservableObject {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Token \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("audio/wav", forHTTPHeaderField: "Content-Type")
+        request.setValue("audio/x-caf", forHTTPHeaderField: "Content-Type")
         request.httpBody = audioData
         request.timeoutInterval = 300 // 300 seconds timeout (increased for large audio files)
 

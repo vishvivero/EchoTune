@@ -130,29 +130,12 @@ class GroqTranscriptionService: ObservableObject {
 
     /// Transcribe long audio by splitting into chunks and merging results
     private func transcribeWithChunking(audioData: Data, language: String?, apiKey: String) async throws -> String {
-        // Estimate audio properties (assume 16-bit PCM, 16kHz mono — common for speech)
-        // Adjust if actual format is known
-        let chunkResult = AudioChunker.chunkAudioData(
-            audioData,
-            sampleRate: 16000,
-            channelCount: 1,
-            bytesPerSample: 2,
-            config: .groq
-        )
-
-        print("📦 Split into \(chunkResult.chunks.count) chunks for Groq transcription")
-
-        var transcriptions: [String] = []
-
-        for (index, chunk) in chunkResult.chunks.enumerated() {
-            print("   Transcribing chunk \(index + 1)/\(chunkResult.chunks.count) (\(chunk.count) bytes)...")
-            let text = try await transcribeSingleChunk(audioData: chunk, language: language, apiKey: apiKey)
-            transcriptions.append(text)
-        }
-
-        let merged = AudioChunker.mergeTranscriptions(transcriptions)
-        print("✅ Merged \(transcriptions.count) chunks into final transcription (\(merged.count) chars)")
-        return merged
+        // CAF container data cannot be naively split at byte boundaries.
+        // For now, warn and attempt single-chunk transcription.
+        // The 25MB Groq limit accommodates ~10+ minutes of Float32 48kHz audio in CAF format.
+        print("⚠️ Audio data exceeds preferred size (\(audioData.count) bytes) — attempting single upload anyway")
+        print("   Note: CAF container chunking not yet implemented")
+        return try await transcribeSingleChunk(audioData: audioData, language: language, apiKey: apiKey)
     }
 
     // MARK: - Helper Methods
@@ -193,8 +176,8 @@ class GroqTranscriptionService: ObservableObject {
 
         // Add file field
         body.append("--\(boundary)\r\n")
-        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\n")
-        body.append("Content-Type: audio/wav\r\n\r\n")
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"audio.caf\"\r\n")
+        body.append("Content-Type: audio/x-caf\r\n\r\n")
         body.append(audioData)
         body.append("\r\n")
 

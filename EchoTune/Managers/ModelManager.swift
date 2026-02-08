@@ -278,9 +278,6 @@ class ModelManager: ObservableObject {
     }
     
     private func checkInstalledModels() {
-        // Clear current list
-        installedModels = []
-
         // WhisperKit stores models in: ~/Documents/huggingface/models/argmaxinc/whisperkit-coreml/
         let whisperKitModelsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
             .appendingPathComponent("huggingface")
@@ -291,35 +288,25 @@ class ModelManager: ObservableObject {
         print("🔍 Checking for installed models at:")
         print("   WhisperKit path: \(whisperKitModelsPath.path)")
 
-        // Check for each model if it exists
+        // Accumulate results on background thread
+        var foundInstalled: [AIModel] = []
+        var installFlags: [(id: String, isInstalled: Bool, localPath: URL?)] = []
+
         for model in availableModels {
-            // Only Apple Speech is considered built-in
             if model.id == "apple-speech" {
-                var installedModel = model
-                installedModel.isInstalled = true
-                installedModels.append(installedModel)
-
-                // IMPORTANT: Update the availableModels array too (used by UI)
-                if let index = availableModels.firstIndex(where: { $0.id == model.id }) {
-                    availableModels[index].isInstalled = true
-                }
-
+                var m = model; m.isInstalled = true
+                foundInstalled.append(m)
+                installFlags.append((id: model.id, isInstalled: true, localPath: nil))
                 print("   ✅ Built-in model: \(model.name)")
                 continue
             }
 
-            // Cloud models are "installed" when they have an API key configured
             if model.category == .cloud {
                 let hasKey = isCloudEnabled(model)
                 if hasKey {
-                    var installedModel = model
-                    installedModel.isInstalled = true
-                    installedModels.append(installedModel)
-
-                    if let index = availableModels.firstIndex(where: { $0.id == model.id }) {
-                        availableModels[index].isInstalled = true
-                    }
-
+                    var m = model; m.isInstalled = true
+                    foundInstalled.append(m)
+                    installFlags.append((id: model.id, isInstalled: true, localPath: nil))
                     print("   ✅ Cloud model enabled: \(model.name)")
                 } else {
                     print("   ⚠️ Cloud model (no API key): \(model.name)")
@@ -327,53 +314,67 @@ class ModelManager: ObservableObject {
                 continue
             }
 
-            // Only check for Whisper variants supported by WhisperKit
-            guard let whisperVariant = whisperVariant(for: model.id) else {
-                continue
-            }
-            // WhisperKit downloads models with "openai_whisper-" prefix for standard models
-            // But special models like distil-whisper and openai_whisper-large-v3_turbo use their full ID
+            guard let whisperVariant = whisperVariant(for: model.id) else { continue }
+
             let whisperKitModelName: String
             if whisperVariant.hasPrefix("distil-") || whisperVariant.hasPrefix("openai_whisper-") {
-                // Special models use their ID as-is (no prefix)
                 whisperKitModelName = whisperVariant
             } else {
-                // Standard models get the openai_whisper- prefix
                 whisperKitModelName = "openai_whisper-\(whisperVariant)"
             }
             let whisperKitModelPath = whisperKitModelsPath.appendingPathComponent(whisperKitModelName)
 
             if FileManager.default.fileExists(atPath: whisperKitModelPath.path) {
-                var installedModel = model
-                installedModel.isInstalled = true
-                installedModel.localPath = whisperKitModelPath
-                installedModels.append(installedModel)
-
-                // Update the available models array
-                if let index = availableModels.firstIndex(where: { $0.id == model.id }) {
-                    availableModels[index].isInstalled = true
-                }
-
+                var m = model; m.isInstalled = true; m.localPath = whisperKitModelPath
+                foundInstalled.append(m)
+                installFlags.append((id: model.id, isInstalled: true, localPath: whisperKitModelPath))
                 print("   ✅ Found installed model: \(model.name) at \(whisperKitModelPath.lastPathComponent)")
             } else {
                 print("   ❌ Model not found: \(model.name) (looking for \(whisperKitModelName))")
             }
         }
 
-        print("📊 Total installed models: \(installedModels.count)")
+        print("📊 Total installed models: \(foundInstalled.count)")
 
-        // Load saved default model preference
         let savedDefaultID = UserDefaults.standard.string(forKey: "defaultModelID")
         print("🔍 Saved default model ID: \(savedDefaultID ?? "none")")
-        print("   Installed model IDs: \(installedModels.map { $0.id })")
-        
+        print("   Installed model IDs: \(foundInstalled.map { $0.id })")
+
+        let resolvedCurrent: AIModel?
         if let savedDefaultID = savedDefaultID,
-           let savedModel = installedModels.first(where: { $0.id == savedDefaultID }) {
-            currentModel = savedModel
+           let savedModel = foundInstalled.first(where: { $0.id == savedDefaultID }) {
+            resolvedCurrent = savedModel
             print("✅ Restored default model: \(savedModel.name) (id: \(savedModel.id))")
-        } else if currentModel == nil, let firstInstalled = installedModels.first {
-            currentModel = firstInstalled
+        } else if let firstInstalled = foundInstalled.first {
+            resolvedCurrent = firstInstalled
             print("✅ Set default model (fallback): \(firstInstalled.name) (id: \(firstInstalled.id))")
+        } else {
+            resolvedCurrent = nil
+        }
+
+        // Marshal ALL @Published mutations to main thread
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.installedModels = foundInstalled
+
+            // Update availableModels install flags
+            for flag in installFlags {
+                if let index = self.availableModels.firstIndex(where: { $0.id == flag.id }) {
+                    self.availableModels[index].isInstalled = flag.isInstalled
+                    if let path = flag.localPath {
+                        self.availableModels[index].localPath = path
+                    }
+                }
+            }
+
+            if let resolved = resolvedCurrent, self.currentModel == nil || self.currentModel?.id != resolved.id {
+                self.currentModel = resolved
+            }
+
+            // Sync AppSettings for routing consistency
+            if let resolved = resolvedCurrent {
+                AppSettings.shared.defaultTranscriptionModel = resolved.id
+            }
         }
     }
 

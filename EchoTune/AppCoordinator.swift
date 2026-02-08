@@ -733,11 +733,12 @@ class AppCoordinator: ObservableObject {
         // The transcription result will come through the completion handler
         print("⏳ Waiting for transcription to complete...")
 
-        // Safety timeout: if state is still .processing after 10 seconds, force reset
-        DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) { [weak self] in
+        // Safety timeout: scale with recording duration (min 15s, max 60s)
+        let safetyTimeout = max(15.0, min(60.0, recordingDuration * 2.0))
+        DispatchQueue.main.asyncAfter(deadline: .now() + safetyTimeout) { [weak self] in
             guard let self = self else { return }
             if case .processing = self.appState.recordingState {
-                print("⚠️ Safety timeout: state still .processing after 10s — forcing reset to .idle")
+                print("⚠️ Safety timeout: state still .processing after \(safetyTimeout)s — forcing reset to .idle")
                 self.appState.recordingState = .idle
                 self.transcriptionEngine.cancelTranscription()
                 if let appDelegate = NSApp.delegate as? AppDelegate,

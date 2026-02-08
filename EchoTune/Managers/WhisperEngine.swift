@@ -40,6 +40,7 @@ class WhisperEngine: ObservableObject {
     private var currentModelID: String?
 
     private let audioProcessingQueue = DispatchQueue(label: "com.echotune.whisperProcessing", qos: .userInitiated)
+    private var pendingLoadCompletions: [(Result<Void, WhisperError>) -> Void] = []
 
     private init() {
         print("🎙️ WhisperEngine initialized")
@@ -70,9 +71,10 @@ class WhisperEngine: ObservableObject {
             return
         }
 
-        // Guard against concurrent loads
+        // Guard against concurrent loads — enqueue completion for when current load finishes
         guard !isLoading else {
-            print("⚠️ Model is already loading, skipping duplicate request for \(model.name)")
+            print("⚠️ Model is already loading, enqueueing completion for \(model.name)")
+            pendingLoadCompletions.append(completion)
             return
         }
 
@@ -147,6 +149,11 @@ class WhisperEngine: ObservableObject {
                     print("✅ Whisper model loaded with Metal acceleration: \(model.name)")
                     print("🚀 Expected performance: 2-3x faster on Apple Silicon")
                     completion(.success(()))
+
+                    // Drain pending completions
+                    let pending = self.pendingLoadCompletions
+                    self.pendingLoadCompletions.removeAll()
+                    for cb in pending { cb(.success(())) }
                 }
             } catch {
                 await MainActor.run {
@@ -155,6 +162,11 @@ class WhisperEngine: ObservableObject {
 
                     print("❌ Failed to load Whisper model: \(error)")
                     completion(.failure(.modelLoadFailed(error)))
+
+                    // Drain pending completions
+                    let pending = self.pendingLoadCompletions
+                    self.pendingLoadCompletions.removeAll()
+                    for cb in pending { cb(.failure(.modelLoadFailed(error))) }
                 }
             }
         }
@@ -283,8 +295,12 @@ class WhisperEngine: ObservableObject {
             return
         }
 
-        // Capture buffers locally — they get cleared by appendAudioBuffer on background queue
-        let buffersSnapshot = audioBuffers
+        // Synchronize with audioProcessingQueue to safely snapshot buffers
+        let buffersSnapshot: [AVAudioPCMBuffer] = audioProcessingQueue.sync {
+            let snapshot = self.audioBuffers
+            self.audioBuffers = []
+            return snapshot
+        }
 
         Task {
             do {
@@ -332,7 +348,6 @@ class WhisperEngine: ObservableObject {
                     let cleaned = TranscriptionEngine.shared.processText(transcription)
                     self.currentText = cleaned
                     self.isProcessing = false
-                    self.audioBuffers = []
                     os_log("✅ Final cleaned: '%{public}@'", log: wLog, type: .error, cleaned)
                     completion(.success(cleaned))
                 }
@@ -340,7 +355,6 @@ class WhisperEngine: ObservableObject {
                 os_log("❌ Transcription Task FAILED: %{public}@", log: wLog, type: .error, "\(error)")
                 await MainActor.run {
                     self.isProcessing = false
-                    self.audioBuffers = []
 
                     print("❌ Streaming transcription failed: \(error)")
                     completion(.failure(.transcriptionFailed(error)))

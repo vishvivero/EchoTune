@@ -181,9 +181,26 @@ class TextInsertionManager {
     // MARK: - Direct Insertion via Paste
 
     private func insertViaPaste(_ text: String) -> Bool {
-        // Save current clipboard (string only — NSPasteboardItem refs become invalid after clearContents)
         let pasteboard = NSPasteboard.general
-        let previousContents = pasteboard.string(forType: .string)
+
+        // Save all pasteboard items with their data for each type
+        struct PasteboardBackup {
+            let types: [NSPasteboard.PasteboardType]
+            let dataByType: [NSPasteboard.PasteboardType: Data]
+        }
+        var backup: PasteboardBackup? = nil
+        if let items = pasteboard.pasteboardItems, let firstItem = items.first {
+            let types = firstItem.types
+            var dataByType: [NSPasteboard.PasteboardType: Data] = [:]
+            for type in types {
+                if let data = firstItem.data(forType: type) {
+                    dataByType[type] = data
+                }
+            }
+            if !dataByType.isEmpty {
+                backup = PasteboardBackup(types: types, dataByType: dataByType)
+            }
+        }
 
         // Set our text to clipboard
         pasteboard.clearContents()
@@ -198,11 +215,15 @@ class TextInsertionManager {
         // Restore clipboard after a delay
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             pasteboard.clearContents()
-            if let previous = previousContents {
-                pasteboard.setString(previous, forType: .string)
+            if let backup = backup {
+                let item = NSPasteboardItem()
+                for type in backup.types {
+                    if let data = backup.dataByType[type] {
+                        item.setData(data, forType: type)
+                    }
+                }
+                pasteboard.writeObjects([item])
             }
-            // Note: We only restore string content. Non-string clipboard items (images, files)
-            // cannot be safely restored because NSPasteboardItem refs are invalidated by clearContents().
         }
 
         return success

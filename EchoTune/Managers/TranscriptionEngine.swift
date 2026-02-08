@@ -695,13 +695,48 @@ class TranscriptionEngine: NSObject, ObservableObject {
 
     private func routeToWhisper(_ audioData: Data, selectedModel: String, completion: @escaping (Result<String, TranscriptionError>) -> Void) {
         print("🎙️ Routing to local Whisper engine: \(selectedModel)")
-        WhisperEngine.shared.transcribeAudio(audioData) { result in
-            switch result {
-            case .success(let text):
-                completion(.success(text))
-            case .failure(let error):
-                print("❌ Whisper transcription failed: \(error)")
-                completion(.failure(.processingError))
+        
+        let whisperEngine = WhisperEngine.shared
+        let modelManager = ModelManager.shared
+        
+        // Find the AIModel for the selected model ID
+        guard let aiModel = modelManager.availableModels.first(where: { $0.id == selectedModel }) else {
+            print("❌ Model not found in available models: \(selectedModel)")
+            completion(.failure(.processingError))
+            return
+        }
+        
+        // Check if the correct model is already loaded
+        if whisperEngine.isAvailable && whisperEngine.loadedModelName == aiModel.name {
+            // Model is loaded, transcribe directly
+            whisperEngine.transcribeAudio(audioData) { result in
+                switch result {
+                case .success(let text):
+                    completion(.success(text))
+                case .failure(let error):
+                    print("❌ Whisper transcription failed: \(error)")
+                    completion(.failure(.processingError))
+                }
+            }
+        } else {
+            // Need to load the model first
+            print("📦 Loading Whisper model before transcription: \(aiModel.name)")
+            whisperEngine.loadModel(aiModel) { [weak self] loadResult in
+                switch loadResult {
+                case .success:
+                    whisperEngine.transcribeAudio(audioData) { result in
+                        switch result {
+                        case .success(let text):
+                            completion(.success(text))
+                        case .failure(let error):
+                            print("❌ Whisper transcription failed after model load: \(error)")
+                            completion(.failure(.processingError))
+                        }
+                    }
+                case .failure(let error):
+                    print("❌ Failed to load Whisper model: \(error)")
+                    completion(.failure(.processingError))
+                }
             }
         }
     }
