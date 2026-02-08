@@ -10,6 +10,9 @@ import Combine
 import AppKit
 import Speech
 import ApplicationServices
+import os.log
+
+private let debugLog = OSLog(subsystem: "com.echotune.EchoTune", category: "debug")
 
 class AppCoordinator: ObservableObject {
     @Published var showAbout = false
@@ -251,10 +254,12 @@ class AppCoordinator: ObservableObject {
 
     func startDictation() {
         print("🎤 Start dictation")
+        os_log("🎤 startDictation called", log: debugLog, type: .error)
 
         // Check if we can start
         guard canStartDictation() else {
             print("❌ Cannot start dictation - requirements not met")
+            os_log("❌ canStartDictation returned false", log: debugLog, type: .error)
             return
         }
 
@@ -281,11 +286,13 @@ class AppCoordinator: ObservableObject {
         // Get current model
         guard let currentModel = modelManager.currentModel else {
             print("❌ No model selected")
+            os_log("❌ No model selected", log: debugLog, type: .error)
             showErrorAlert(message: "Please select a transcription model in AI Models settings")
             return
         }
 
         print("📍 Using model: \(currentModel.name) (Whisper: \(useWhisper))")
+        os_log("📍 Model: %{public}@ category=%{public}@ isBuiltIn=%d useWhisper=%d", log: debugLog, type: .error, currentModel.name, currentModel.category.rawValue, currentModel.isBuiltIn ? 1 : 0, useWhisper ? 1 : 0)
 
         // Load Whisper model if needed
         if useWhisper {
@@ -555,6 +562,8 @@ class AppCoordinator: ObservableObject {
     }
 
     private func beginRecording() {
+        os_log("🔴 beginRecording called, useWhisper=%d", log: debugLog, type: .error, useWhisper ? 1 : 0)
+
         // Start performance monitoring
         PerformanceMonitor.shared.startRecording()
 
@@ -620,6 +629,7 @@ class AppCoordinator: ObservableObject {
 
     func stopDictation() {
         print("🛑 Stop dictation")
+        os_log("🛑 stopDictation called, useWhisper=%d", log: debugLog, type: .error, useWhisper ? 1 : 0)
 
         // Play stop sound (if enabled)
         SoundManager.shared.playStopSound()
@@ -816,6 +826,12 @@ class AppCoordinator: ObservableObject {
     // MARK: - Transcription
 
     private func handleWhisperResult(_ result: Result<String, WhisperEngine.WhisperError>) {
+        switch result {
+        case .success(let text):
+            os_log("📝 handleWhisperResult SUCCESS text='%{public}@' len=%d", log: debugLog, type: .error, text, text.count)
+        case .failure(let error):
+            os_log("📝 handleWhisperResult FAILURE error=%{public}@", log: debugLog, type: .error, "\(error)")
+        }
         let recordingDuration = audioManager.getRecordingDuration()
 
         // Dismiss processing notification
@@ -823,7 +839,7 @@ class AppCoordinator: ObservableObject {
 
         switch result {
         case .success(let transcribedText):
-            print("✅ Whisper transcription successful: \(transcribedText)")
+            os_log("✅ Whisper success: '%{public}@' words=%d dur=%.1f", log: debugLog, type: .error, transcribedText, transcribedText.split(separator: " ").count, recordingDuration)
 
             self.errorLogger.logInfo("Whisper transcription successful", category: "Transcription", context: [
                 "wordCount": "\(transcribedText.split(separator: " ").count)",
@@ -835,7 +851,7 @@ class AppCoordinator: ObservableObject {
             processAndInsertText(transcribedText, recordingDuration: recordingDuration)
 
         case .failure(let error):
-            print("❌ Whisper transcription failed: \(error)")
+            os_log("❌ Whisper FAILURE: %{public}@", log: debugLog, type: .error, "\(error)")
 
             self.errorLogger.logError(error, category: "Transcription", context: [
                 "recordingDuration": "\(String(format: "%.2f", recordingDuration))s",
