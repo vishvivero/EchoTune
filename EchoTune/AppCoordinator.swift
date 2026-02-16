@@ -36,6 +36,7 @@ class AppCoordinator: ObservableObject {
     let modelManager = ModelManager.shared  // Safe — no permission triggers
     lazy var textInsertionManager = TextInsertionManager.shared
     let licenseManager = LicenseManager.shared  // Safe — no permission triggers
+    let referralManager = ReferralManager.shared  // Safe — no permission triggers
 
     // Phase 5: Polish & Monitoring
     let notificationManager = NotificationManager.shared
@@ -944,15 +945,7 @@ class AppCoordinator: ObservableObject {
                 return
             }
 
-            let apiKey: String
-            switch model.provider {
-            case .openai:
-                apiKey = settings.openaiAPIKey
-            case .anthropic:
-                apiKey = settings.claudeAPIKey
-            case .groq:
-                apiKey = settings.groqAPIKey
-            }
+            let apiKey = settings.groqAPIKey
 
             guard !apiKey.isEmpty else {
                 debugLog("⚠️ No API key configured for AI enhancement")
@@ -1109,35 +1102,30 @@ class AppCoordinator: ObservableObject {
             return true
         }
 
-        // Check 3: Common hallucination phrases that AI models generate for silence
-        let commonHallucinations = [
-            "thank you",
-            "thanks",
-            "thank you.",
-            "thanks.",
-            "bye",
-            "bye.",
-            "goodbye",
-            "goodbye.",
-            "you",
-            "thank",
-            "thanks for watching",
-            "thanks for watching.",
-            "see you next time",
-            "see you next time.",
-            "...",
-            ".",
-            ". ."
-        ]
-
-        // Check if text matches any hallucination pattern
-        if commonHallucinations.contains(trimmed) {
+        // Check 3: Punctuation-only or ellipsis
+        let punctuationOnly = ["...", ".", ". ."]
+        if punctuationOnly.contains(trimmed) {
             return true
         }
 
-        // Check 4: Very short recordings with generic single words
+        // Check 4: For very short recordings (< 1.5s), filter common Whisper hallucination phrases
+        // These appear when Whisper processes near-silence. Longer recordings with the same
+        // words are legitimate dictation (e.g., someone actually saying "thank you").
+        if recordingDuration < 1.5 {
+            let shortRecordingHallucinations = [
+                "thank you", "thanks", "thank you.", "thanks.",
+                "bye", "bye.", "goodbye", "goodbye.",
+                "you", "thank",
+                "thanks for watching", "thanks for watching.",
+                "see you next time", "see you next time."
+            ]
+            if shortRecordingHallucinations.contains(trimmed) {
+                return true
+            }
+        }
+
+        // Check 5: Very short recordings with generic single words
         if recordingDuration < 1.0 && trimmed.split(separator: " ").count == 1 {
-            // Single word in very short recording is suspicious
             let shortWords = ["the", "a", "an", "i", "you", "ok", "okay", "um", "uh", "ah"]
             if shortWords.contains(trimmed) {
                 return true
@@ -1203,7 +1191,7 @@ class AppCoordinator: ObservableObject {
                 }
             } else if response == .alertSecondButtonReturn {
                 // Open website purchase page
-                if let url = URL(string: "https://echotune.app/purchase") {
+                if let url = URL(string: "https://buy.polar.sh/polar_cl_WceepXgXX84woZwlMk3QyIZw79tHTl3PcpXGh0KA2Xo") {
                     NSWorkspace.shared.open(url)
                 }
             }

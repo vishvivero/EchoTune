@@ -2,7 +2,7 @@
 //  ReferralView.swift
 //  EchoTune
 //
-//  Referral Program View
+//  Referral Program View — Supabase-backed
 //
 
 import SwiftUI
@@ -10,73 +10,33 @@ import AppKit
 
 struct ReferralView: View {
     @Environment(\.dismiss) var dismiss
+    @State private var referralManager = ReferralManager.shared
     @State private var friendEmail: String = ""
     @State private var showCopiedAlert = false
+    @State private var copiedText = "Link copied!"
     @State private var selectedTab = 0
-
-    private var isProUser: Bool {
-        // Check if user has a Pro license
-        AppState.shared.isLicensed
-    }
-
-    private var referralCode: String {
-        // Generate unique referral code based on user
-        let username = NSFullUserName().replacingOccurrences(of: " ", with: "")
-        let hash = abs(username.hashValue) % 10000
-        return "ET-\(username.prefix(3).uppercased())\(hash)"
-    }
-
-    private var referralLink: String {
-        "https://echotune.app/refer?code=\(referralCode)"
-    }
-
-    private var headerTitle: String {
-        isProUser ? "Share EchoTune, earn rewards" : "Give a month, get a month"
-    }
-
-    private var headerSubtitle: String {
-        isProUser ? "Earn $5 for every friend who subscribes!" : "Invite friends and you both get a free month!"
-    }
 
     var body: some View {
         VStack(spacing: 0) {
             // Header
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(headerTitle)
-                        .font(.title2)
-                        .fontWeight(.bold)
-
-                    Text(headerSubtitle)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-
-                Spacer()
-
-                Button(action: { dismiss() }) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(.secondary)
-                        .padding(8)
-                        .background(Color(NSColor.controlBackgroundColor))
-                        .clipShape(Circle())
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(24)
-            .background(Color(NSColor.windowBackgroundColor))
-
+            header
             Divider()
+
+            // Progress bar to free year
+            if referralManager.isRegistered {
+                freeYearProgress
+                    .padding(.horizontal, 24)
+                    .padding(.top, 16)
+            }
 
             // Tabs
             Picker("", selection: $selectedTab) {
                 Text("Share").tag(0)
-                Text("Past Referrals (0)").tag(1)
+                Text("Referrals (\(referralManager.totalReferrals))").tag(1)
             }
             .pickerStyle(.segmented)
             .padding(.horizontal, 24)
-            .padding(.vertical, 16)
+            .padding(.vertical, 12)
 
             // Content
             ScrollView {
@@ -89,135 +49,310 @@ struct ReferralView: View {
                 }
                 .padding(24)
             }
+
+            // Copied toast
+            if showCopiedAlert {
+                HStack {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.green)
+                    Text(copiedText)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(Color(NSColor.controlBackgroundColor))
+                .cornerRadius(8)
+                .shadow(radius: 4)
+                .padding(.bottom, 12)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
-        .frame(width: 500, height: 600)
+        .frame(width: 520, height: 640)
         .background(Color(NSColor.windowBackgroundColor))
+        .task {
+            if referralManager.isRegistered {
+                await referralManager.refreshStats()
+            }
+        }
+    }
+
+    // MARK: - Header
+
+    private var header: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Refer Friends, Earn Free Months")
+                    .font(.title2)
+                    .fontWeight(.bold)
+
+                if referralManager.isRegistered {
+                    Text("Your code: **\(referralManager.referralCode)**")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                } else {
+                    Text("Activate your license to get your referral code")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            Spacer()
+
+            Button(action: { dismiss() }) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.secondary)
+                    .padding(8)
+                    .background(Color(NSColor.controlBackgroundColor))
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(24)
+    }
+
+    // MARK: - Free Year Progress
+
+    private var freeYearProgress: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("🎯 Free Year Progress")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                Spacer()
+                Text("\(referralManager.totalReferrals)/12 referrals")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color(NSColor.separatorColor))
+                        .frame(height: 8)
+
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(
+                            referralManager.hasFreeYear
+                                ? Color.green
+                                : LinearGradient(
+                                    colors: [.blue, .purple],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                        )
+                        .frame(
+                            width: geo.size.width * referralManager.progressToFreeYear,
+                            height: 8
+                        )
+                        .animation(.easeInOut(duration: 0.5), value: referralManager.progressToFreeYear)
+                }
+            }
+            .frame(height: 8)
+
+            if referralManager.hasFreeYear {
+                Text("🎉 You've earned a free year!")
+                    .font(.caption)
+                    .foregroundColor(.green)
+                    .fontWeight(.medium)
+            } else if referralManager.bonusDaysEarned > 0 {
+                Text("+\(referralManager.bonusDaysEarned) bonus days earned • \(referralManager.referralsToFreeYear) more for free year")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(16)
+        .background(Color(NSColor.controlBackgroundColor))
+        .cornerRadius(12)
     }
 
     // MARK: - Share Content
 
     private var shareContent: some View {
         VStack(spacing: 24) {
-            // How it works
-            VStack(alignment: .leading, spacing: 16) {
-                Text("How it works")
-                    .font(.headline)
+            if !referralManager.isRegistered {
+                notRegisteredView
+            } else {
+                // How it works
+                howItWorks
 
-                VStack(alignment: .leading, spacing: 12) {
-                    HowItWorksRow(
-                        icon: "paperplane.fill",
-                        text: "Send an invite or share your link"
-                    )
+                // Referral link
+                referralLinkSection
 
-                    HowItWorksRow(
-                        icon: "person.badge.plus.fill",
-                        text: isProUser ? "Your friend signs up and gets a free month" : "They sign up and get a free month of Pro"
-                    )
+                Divider()
 
-                    HowItWorksRow(
-                        icon: isProUser ? "dollarsign.circle.fill" : "gift.fill",
-                        text: isProUser ? "You earn $5 when they subscribe to Pro" : "You get a free month when they use their credit or 1000 words"
-                    )
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+                // Email invite
+                emailInviteSection
 
-            // Referral Link
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Your Referral Link")
-                    .font(.headline)
-
-                HStack {
-                    Text(referralLink)
-                        .font(.system(.body, design: .monospaced))
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
-                        .background(Color(NSColor.controlBackgroundColor))
-                        .cornerRadius(8)
-
-                    Button(action: copyLink) {
-                        HStack {
-                            Image(systemName: "doc.on.doc")
-                            Text("Copy")
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(Color.blue)
-                        .foregroundColor(.white)
-                        .cornerRadius(8)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-
-            Text("or")
-                .foregroundColor(.secondary)
-                .padding(.vertical, 8)
-
-            // Email Invite
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Send via Email")
-                    .font(.headline)
-
-                HStack {
-                    TextField("friend@example.com", text: $friendEmail)
-                        .textFieldStyle(.plain)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
-                        .background(Color(NSColor.controlBackgroundColor))
-                        .cornerRadius(8)
-
-                    Button(action: sendEmail) {
-                        Text("Send")
-                            .fontWeight(.medium)
-                            .padding(.horizontal, 24)
-                            .padding(.vertical, 10)
-                            .background(friendEmail.isEmpty ? Color.gray : Color(red: 0.2, green: 0.2, blue: 0.2))
-                            .foregroundColor(.white)
-                            .cornerRadius(8)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(friendEmail.isEmpty)
-                }
-            }
-
-            // Social Share Buttons
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Share on Social Media")
-                    .font(.headline)
-
-                HStack(spacing: 12) {
-                    SocialShareButton(
-                        platform: "X",
-                        icon: "xmark",
-                        color: .black,
-                        action: shareToX
-                    )
-
-                    SocialShareButton(
-                        platform: "LinkedIn",
-                        icon: "link",
-                        color: Color(red: 0.0, green: 0.47, blue: 0.71),
-                        action: shareToLinkedIn
-                    )
-
-                    SocialShareButton(
-                        platform: "Facebook",
-                        icon: "f.square.fill",
-                        color: Color(red: 0.23, green: 0.35, blue: 0.6),
-                        action: shareToFacebook
-                    )
-                }
+                // Social share
+                socialShareSection
             }
         }
     }
 
-    // MARK: - Past Referrals Content
+    private var notRegisteredView: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "person.crop.circle.badge.questionmark")
+                .font(.system(size: 48))
+                .foregroundColor(.secondary)
+                .padding(.top, 20)
+
+            Text("Activate Your License First")
+                .font(.headline)
+
+            Text("You need an active EchoTune license to get your referral code. Activate your beta key in Settings → License.")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 20)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 40)
+    }
+
+    private var howItWorks: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("How it works")
+                .font(.headline)
+
+            HowItWorksRow(icon: "paperplane.fill", text: "Share your unique link with friends")
+            HowItWorksRow(icon: "person.badge.plus.fill", text: "They sign up and get 3 free months")
+            HowItWorksRow(icon: "gift.fill", text: "You earn +1 month per referral (12 = free year!)")
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var referralLinkSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Your Referral Checkout Link")
+                .font(.headline)
+
+            HStack(spacing: 8) {
+                Text(referralManager.betaCheckoutWithReferral)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(NSColor.controlBackgroundColor))
+                    .cornerRadius(8)
+
+                Button(action: {
+                    referralManager.copyCheckoutLink()
+                    showCopied("Checkout link copied!")
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "doc.on.doc")
+                        Text("Copy")
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(Color.blue)
+                    .foregroundColor(.white)
+                    .cornerRadius(8)
+                }
+                .buttonStyle(.plain)
+            }
+
+            // Also show plain referral code
+            HStack {
+                Text("Code:")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Text(referralManager.referralCode)
+                    .font(.system(.caption, design: .monospaced))
+                    .fontWeight(.bold)
+                    .textSelection(.enabled)
+
+                Button(action: {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(referralManager.referralCode, forType: .string)
+                    showCopied("Code copied!")
+                }) {
+                    Image(systemName: "doc.on.doc")
+                        .font(.caption)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private var emailInviteSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Invite via Email")
+                .font(.headline)
+
+            HStack {
+                TextField("friend@example.com", text: $friendEmail)
+                    .textFieldStyle(.plain)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(Color(NSColor.controlBackgroundColor))
+                    .cornerRadius(8)
+
+                Button(action: {
+                    referralManager.shareViaEmail(to: friendEmail)
+                    friendEmail = ""
+                }) {
+                    Text("Send")
+                        .fontWeight(.medium)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 10)
+                        .background(friendEmail.isEmpty ? Color.gray.opacity(0.5) : Color.accentColor)
+                        .foregroundColor(.white)
+                        .cornerRadius(8)
+                }
+                .buttonStyle(.plain)
+                .disabled(friendEmail.isEmpty)
+            }
+        }
+    }
+
+    private var socialShareSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Share on Social")
+                .font(.headline)
+
+            HStack(spacing: 12) {
+                SocialShareButton(
+                    platform: "X / Twitter",
+                    icon: "xmark",
+                    color: .black,
+                    action: { referralManager.shareToX() }
+                )
+
+                SocialShareButton(
+                    platform: "Copy Link",
+                    icon: "link",
+                    color: .blue,
+                    action: {
+                        referralManager.copyReferralLink()
+                        showCopied("Referral link copied!")
+                    }
+                )
+            }
+        }
+    }
+
+    // MARK: - Past Referrals
 
     private var pastReferralsContent: some View {
+        VStack(spacing: 16) {
+            if referralManager.isLoading {
+                ProgressView()
+                    .padding(.top, 40)
+            } else if referralManager.referrals.isEmpty {
+                emptyReferrals
+            } else {
+                referralsList
+            }
+        }
+    }
+
+    private var emptyReferrals: some View {
         VStack(spacing: 16) {
             Image(systemName: "person.2.badge.gearshape")
                 .font(.system(size: 48))
@@ -233,99 +368,58 @@ struct ReferralView: View {
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 60)
+        .padding(.vertical, 40)
     }
 
-    // MARK: - Actions
+    private var referralsList: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(referralManager.referrals) { referral in
+                HStack {
+                    Text(referral.statusEmoji)
 
-    private func copyLink() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(referralLink, forType: .string)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(referral.maskedEmail)
+                            .font(.subheadline)
+                        if let date = referral.createdDate {
+                            Text(date, style: .date)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
 
-        showCopiedAlert = true
+                    Spacer()
+
+                    Text("+\(referral.bonus_days ?? 30) days")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundColor(.green)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.green.opacity(0.1))
+                        .cornerRadius(6)
+                }
+                .padding(.vertical, 6)
+                .padding(.horizontal, 12)
+                .background(Color(NSColor.controlBackgroundColor))
+                .cornerRadius(8)
+            }
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func showCopied(_ text: String) {
+        copiedText = text
+        withAnimation(.easeInOut(duration: 0.2)) {
+            showCopiedAlert = true
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            showCopiedAlert = false
-        }
-
-        // Show success feedback
-        NSSound.beep()
-    }
-
-    private func sendEmail() {
-        let subject = "Try EchoTune - Get a Free Month!"
-        let body = """
-        Hi!
-
-        I've been using EchoTune for voice dictation and it's amazing! 🎙️
-
-        Use my referral link to sign up and you'll get a FREE month of Pro access:
-        \(referralLink)
-
-        Once you use 1000 words, we both get an extra free month!
-
-        Hope you enjoy it as much as I do!
-        """
-
-        let encodedSubject = subject.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        let encodedBody = body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        let mailtoString = "mailto:\(friendEmail)?subject=\(encodedSubject)&body=\(encodedBody)"
-
-        if let url = URL(string: mailtoString) {
-            NSWorkspace.shared.open(url)
-        }
-
-        friendEmail = ""
-    }
-
-    private func shareToX() {
-        let text = """
-        I've been using EchoTune for voice dictation and loving it! 🎙️
-
-        Use my link to get a FREE month: \(referralLink)
-
-        #productivity #AI #voicetyping
-        """
-
-        let encodedText = text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        let urlString = "https://twitter.com/intent/tweet?text=\(encodedText)"
-
-        if let url = URL(string: urlString) {
-            NSWorkspace.shared.open(url)
-        }
-    }
-
-    private func shareToLinkedIn() {
-        let urlString = "https://www.linkedin.com/feed/"
-
-        if let url = URL(string: urlString) {
-            NSWorkspace.shared.open(url)
-        }
-
-        // Copy referral message
-        let message = """
-        I've been using EchoTune for voice dictation and it's been a game-changer for my productivity! 🎙️
-
-        If you're interested in trying it out, use my referral link to get a FREE month of Pro access:
-        \(referralLink)
-
-        #productivity #AI #voicetyping #EchoTune
-        """
-
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(message, forType: .string)
-    }
-
-    private func shareToFacebook() {
-        let encodedUrl = referralLink.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        let urlString = "https://www.facebook.com/sharer/sharer.php?u=\(encodedUrl)"
-
-        if let url = URL(string: urlString) {
-            NSWorkspace.shared.open(url)
+            withAnimation { showCopiedAlert = false }
         }
     }
 }
 
-// MARK: - How It Works Row
+// MARK: - Subviews
 
 struct HowItWorksRow: View {
     let icon: String
@@ -334,18 +428,15 @@ struct HowItWorksRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
-                .font(.system(size: 18))
+                .font(.system(size: 16))
                 .foregroundColor(.blue)
                 .frame(width: 24)
 
             Text(text)
                 .font(.subheadline)
-                .foregroundColor(.primary)
         }
     }
 }
-
-// MARK: - Social Share Button
 
 struct SocialShareButton: View {
     let platform: String
@@ -357,9 +448,10 @@ struct SocialShareButton: View {
         Button(action: action) {
             HStack {
                 Image(systemName: icon)
-                    .font(.system(size: 16))
+                    .font(.system(size: 14))
                 Text(platform)
                     .fontWeight(.medium)
+                    .font(.subheadline)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 10)
