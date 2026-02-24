@@ -135,6 +135,51 @@ struct AdvancedSettingsView: View {
                 }
             }
 
+            Section("Transcription Languages") {
+                Toggle("Auto-Detect Language", isOn: $settings.autoDetectLanguage)
+                
+                Text("Automatically detect the language being spoken. Disable to use a fixed language.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.leading, 20)
+                
+                if !settings.autoDetectLanguage {
+                    Picker("Transcription Language", selection: $settings.preferredLanguage) {
+                        ForEach(LanguageManager.shared.supportedLanguages.filter { $0.id != "auto" }) { lang in
+                            Text(lang.displayName).tag(lang.code)
+                        }
+                    }
+                    
+                    Text("Select the language used in your audio when auto-detection is disabled.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.leading, 20)
+                }
+                
+                Divider()
+                    .padding(.vertical, 8)
+                
+                Toggle("Translate to English", isOn: $settings.translateToEnglish)
+                
+                Text("Automatically translate transcribed text to English. Works with any source language.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.leading, 20)
+                
+                if settings.translateToEnglish {
+                    HStack {
+                        Image(systemName: "info.circle.fill")
+                            .foregroundColor(.blue)
+                            .font(.caption)
+                        
+                        Text("Translation is performed by AI models after transcription. This uses additional processing resources.")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.leading, 20)
+                }
+            }
+
         }
         .formStyle(.grouped)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
