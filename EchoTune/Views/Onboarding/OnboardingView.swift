@@ -2,16 +2,54 @@
 //  OnboardingView.swift
 //  EchoTune
 //
-//  Comprehensive 7-Step Onboarding Flow
+//  Comprehensive Onboarding Flow
+//  Fixes applied:
+//    1. Trial timing — trial starts AFTER onboarding completes
+//    2. Accessibility is soft-required (skip with clipboard fallback)
+//    3. Cloud transcription (Groq) shown as default; Whisper optional
+//    4. Live demo routes to correct engine (Groq vs Whisper)
+//    5. Launch-at-login toggle in Setup step
+//    6. Language picker in Setup step
+//    7. Trial terms clarity in TrialCTAStep
+//    8. Progress persistence via UserDefaults
+//    9. Skip button on non-critical steps (Features, PowerFeatures)
 //
 
 import SwiftUI
 import AVFoundation
 import AppKit
 import Combine
+import ServiceManagement
+
+// MARK: - Onboarding Step Enum
+
+enum OnboardingStepID: Int, CaseIterable {
+    case welcome = 0
+    case microphonePermission
+    case microphoneSelection
+    case accessibilityPermission
+    case shortcutSetup
+    case setupPreferences    // NEW: Launch-at-login + Language
+    case modelSelection      // CHANGED: Cloud-first model selection
+    case features            // Skippable
+    case powerFeatures       // Skippable
+    case tryItOut
+    case trialCTA            // NEW: Clear trial terms
+    
+    var isSkippable: Bool {
+        switch self {
+        case .features, .powerFeatures:
+            return true
+        default:
+            return false
+        }
+    }
+}
+
+// MARK: - Main Onboarding View
 
 struct OnboardingView: View {
-    @State private var currentStep = 0
+    @State private var currentStep: Int = 0
     @State private var isCompleted = false
     let onComplete: () -> Void
     
@@ -21,8 +59,14 @@ struct OnboardingView: View {
     @State private var selectedModel: AIModel?
     @State private var dictatedText: String = ""
     @State private var isDictationComplete = false
+    @State private var skippedAccessibility = false
+    @State private var launchAtLoginEnabled = true
+    @State private var selectedLanguage = "en"
     
-    private let totalSteps = 7
+    private let steps = OnboardingStepID.allCases
+    private var totalSteps: Int { steps.count }
+    
+    private let persistenceKey = "onboarding_currentStep"
     
     var body: some View {
         ZStack {
@@ -30,121 +74,132 @@ struct OnboardingView: View {
             AnimatedBackgroundView()
             
             VStack(spacing: 0) {
-            // Progress indicator
-            HStack(spacing: 8) {
-                ForEach(0..<7) { index in
-                    Circle()
-                        .fill(index <= currentStep ? Color.blue : Color.gray.opacity(0.3))
-                        .frame(width: 8, height: 8)
-                        .animation(.easeInOut(duration: 0.3), value: currentStep)
+                // Progress indicator
+                HStack(spacing: 6) {
+                    ForEach(0..<totalSteps, id: \.self) { index in
+                        Capsule()
+                            .fill(index <= currentStep ? Color.blue : Color.gray.opacity(0.3))
+                            .frame(width: index == currentStep ? 20 : 8, height: 8)
+                            .animation(.easeInOut(duration: 0.3), value: currentStep)
+                    }
                 }
-            }
                 .padding(.top, 20)
                 .padding(.bottom, 10)
                 
                 // Content
                 TabView(selection: $currentStep) {
-                    WelcomeStepView(onNext: { 
-                        withAnimation(.easeInOut(duration: 0.3)) {
-                            currentStep = 1
-                        }
-                    })
-                    .tag(0)
+                    WelcomeStepView(onNext: { goToStep(1) })
+                        .tag(0)
                     
                     MicrophonePermissionStepView(
-                        onNext: { 
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                currentStep = 2
-                            }
-                        },
-                        onBack: { 
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                currentStep = 0
-                            }
-                        }
+                        onNext: { goToStep(2) },
+                        onBack: { goToStep(0) }
                     )
                     .tag(1)
                     
                     MicrophoneSelectionStepView(
                         selectedDeviceID: $selectedMicrophoneID,
-                        onNext: { 
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                currentStep = 3
-                            }
-                        },
-                        onBack: { 
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                currentStep = 1
-                            }
-                        }
+                        onNext: { goToStep(3) },
+                        onBack: { goToStep(1) }
                     )
                     .tag(2)
                     
+                    // Fix #2: Accessibility is soft-required
                     AccessibilityPermissionStepView(
-                        onNext: { 
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                currentStep = 4
-                            }
-                        },
-                        onBack: { 
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                currentStep = 2
-                            }
+                        onNext: { goToStep(4) },
+                        onBack: { goToStep(2) },
+                        onSkip: {
+                            skippedAccessibility = true
+                            UserDefaults.standard.set(true, forKey: "accessibilitySkipped_useClipboard")
+                            goToStep(4)
                         }
                     )
                     .tag(3)
                     
                     KeyboardShortcutStepView(
                         selectedKey: $selectedShortcutKey,
-                        onNext: { 
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                currentStep = 5
-                            }
-                        },
-                        onBack: { 
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                currentStep = 3
-                            }
-                        }
+                        onNext: { goToStep(5) },
+                        onBack: { goToStep(3) }
                     )
                     .tag(4)
                     
-                    ModelDownloadStepView(
-                        selectedModel: $selectedModel,
-                        onNext: { 
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                currentStep = 6
-                            }
-                        },
-                        onBack: { 
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                currentStep = 4
-                            }
-                        }
+                    // Fix #5 & #6: Setup step with Launch-at-Login + Language
+                    SetupPreferencesStepView(
+                        launchAtLoginEnabled: $launchAtLoginEnabled,
+                        selectedLanguage: $selectedLanguage,
+                        onNext: { goToStep(6) },
+                        onBack: { goToStep(4) }
                     )
                     .tag(5)
                     
+                    // Fix #3: Cloud-first model selection
+                    CloudFirstModelStepView(
+                        selectedModel: $selectedModel,
+                        onNext: { goToStep(7) },
+                        onBack: { goToStep(5) }
+                    )
+                    .tag(6)
+                    
+                    // Fix #9: Skippable Features step
+                    FeaturesStepView(
+                        onNext: { goToStep(8) },
+                        onBack: { goToStep(6) },
+                        onSkip: { goToStep(8) }
+                    )
+                    .tag(7)
+                    
+                    // Fix #9: Skippable PowerFeatures step
+                    PowerFeaturesStepView(
+                        onNext: { goToStep(9) },
+                        onBack: { goToStep(7) },
+                        onSkip: { goToStep(9) }
+                    )
+                    .tag(8)
+                    
+                    // Fix #4: Live demo routes to correct engine
                     TryItOutStepView(
                         dictatedText: $dictatedText,
                         isComplete: $isDictationComplete,
-                        onComplete: complete,
-                        onBack: { 
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                currentStep = 5
-                            }
-                        }
+                        onComplete: { goToStep(10) },
+                        onBack: { goToStep(8) }
                     )
-                    .tag(6)
+                    .tag(9)
+                    
+                    // Fix #7: Trial terms clarity
+                    TrialCTAStepView(
+                        onComplete: complete,
+                        onBack: { goToStep(9) }
+                    )
+                    .tag(10)
                 }
                 .tabViewStyle(.automatic)
             }
             .frame(width: 700, height: 600)
         }
+        .onAppear {
+            // Fix #8: Restore progress
+            let savedStep = UserDefaults.standard.integer(forKey: persistenceKey)
+            if savedStep > 0 && savedStep < totalSteps {
+                currentStep = savedStep
+            }
+        }
+    }
+    
+    // Fix #8: Persist step on navigation
+    private func goToStep(_ step: Int) {
+        withAnimation(.easeInOut(duration: 0.3)) {
+            currentStep = step
+        }
+        UserDefaults.standard.set(step, forKey: persistenceKey)
     }
     
     private func complete() {
         isCompleted = true
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
+        // Fix #1: Start trial AFTER onboarding completes
+        LicenseManager.shared.startTrialIfNeeded()
+        // Clean up persisted step
+        UserDefaults.standard.removeObject(forKey: persistenceKey)
         onComplete()
     }
 }
@@ -158,7 +213,6 @@ struct AnimatedBackgroundView: View {
         ZStack {
             Color.black
             
-            // Animated particles
             ForEach(particles) { particle in
                 Circle()
                     .fill(Color.white.opacity(0.1))
@@ -212,7 +266,6 @@ struct WelcomeStepView: View {
         VStack(spacing: 32) {
             Spacer()
             
-            // Animated text
             VStack(spacing: 16) {
                 if currentTextIndex == 0 {
                     Text(displayedText)
@@ -238,7 +291,6 @@ struct WelcomeStepView: View {
             
             Spacer()
             
-            // Get Started Button
             Button(action: onNext) {
                 HStack {
                     Text("Get Started")
@@ -252,7 +304,6 @@ struct WelcomeStepView: View {
             .controlSize(.large)
             .padding(.horizontal, 60)
             
-            // Skip Tour
             Button("Skip Tour") {
                 onNext()
             }
@@ -289,7 +340,6 @@ struct WelcomeStepView: View {
                 timer.invalidate()
                 isTyping = false
                 
-                // Wait then delete
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                     deleteText(at: index)
                 }
@@ -299,12 +349,10 @@ struct WelcomeStepView: View {
     
     private func deleteText(at index: Int) {
         guard !displayedText.isEmpty else {
-            // Move to next text
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 if index + 1 < texts.count {
                     typeText(at: index + 1)
                 } else {
-                    // All texts done, restart or stay on last
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                         startTextAnimation()
                     }
@@ -334,7 +382,6 @@ struct MicrophonePermissionStepView: View {
         VStack(spacing: 32) {
             Spacer()
             
-            // Icon
             ZStack {
                 Circle()
                     .fill(Color.blue.opacity(0.2))
@@ -345,12 +392,10 @@ struct MicrophonePermissionStepView: View {
                     .foregroundColor(permissionsManager.hasMicrophonePermission ? .green : .blue)
             }
             
-            // Title
             Text("Microphone Access")
                 .font(.system(size: 32, weight: .bold))
                 .foregroundColor(.white)
             
-            // Description
             Text("Enable your microphone to start speaking and converting your voice to text instantly.")
                 .font(.body)
                 .foregroundColor(.white.opacity(0.8))
@@ -359,13 +404,11 @@ struct MicrophonePermissionStepView: View {
             
             Spacer()
             
-            // Action Button
             Button(action: {
                 if !permissionsManager.hasMicrophonePermission {
                     hasRequested = true
                     permissionsManager.requestMicrophonePermission { granted in
                         if granted {
-                            // Auto-advance after short delay
                             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                                 onNext()
                             }
@@ -375,7 +418,7 @@ struct MicrophonePermissionStepView: View {
                     onNext()
                 }
             }) {
-                Text(permissionsManager.hasMicrophonePermission ? "Continue" : "Continue")
+                Text("Continue")
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
             }
@@ -413,7 +456,6 @@ struct MicrophoneSelectionStepView: View {
         VStack(spacing: 32) {
             Spacer()
             
-            // Icon
             ZStack {
                 Circle()
                     .fill(Color.blue.opacity(0.2))
@@ -424,19 +466,16 @@ struct MicrophoneSelectionStepView: View {
                     .foregroundColor(.blue)
             }
             
-            // Title
             Text("Microphone Selection")
                 .font(.system(size: 32, weight: .bold))
                 .foregroundColor(.white)
             
-            // Description
             Text("Select the audio input device you want to use with EchoTune.")
                 .font(.body)
                 .foregroundColor(.white.opacity(0.8))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 60)
             
-            // Microphone Picker
             VStack(alignment: .leading, spacing: 12) {
                 Text("Microphone:")
                     .font(.headline)
@@ -469,7 +508,6 @@ struct MicrophoneSelectionStepView: View {
             
             Spacer()
             
-            // Action Button
             Button(action: onNext) {
                 Text("Continue")
                     .frame(maxWidth: .infinity)
@@ -499,7 +537,7 @@ struct MicrophoneSelectionStepView: View {
     }
 }
 
-// MARK: - Step 4: Accessibility Permission
+// MARK: - Step 4: Accessibility Permission (Fix #2: Soft-required with skip)
 
 struct AccessibilityPermissionStepView: View {
     @StateObject private var permissionsManager = PermissionsManager.shared
@@ -507,12 +545,12 @@ struct AccessibilityPermissionStepView: View {
     
     let onNext: () -> Void
     let onBack: () -> Void
+    let onSkip: () -> Void
     
     var body: some View {
         VStack(spacing: 32) {
             Spacer()
             
-            // Icon
             ZStack {
                 Circle()
                     .fill(Color.blue.opacity(0.2))
@@ -523,13 +561,11 @@ struct AccessibilityPermissionStepView: View {
                     .foregroundColor(permissionsManager.hasAccessibilityPermission ? .green : .blue)
             }
             
-            // Title
             Text("Accessibility Access")
                 .font(.system(size: 32, weight: .bold))
                 .foregroundColor(.white)
             
-            // Description
-            Text("Allow EchoTune to help you type anywhere in your Mac.")
+            Text("Allow EchoTune to type directly into any app.\nWithout this, text will be copied to your clipboard instead.")
                 .font(.body)
                 .foregroundColor(.white.opacity(0.8))
                 .multilineTextAlignment(.center)
@@ -537,25 +573,37 @@ struct AccessibilityPermissionStepView: View {
             
             Spacer()
             
-            // Action Button
+            // Main action
             Button(action: {
                 if !permissionsManager.hasAccessibilityPermission {
                     hasRequested = true
                     permissionsManager.requestAccessibilityPermission()
-                    
-                    // Poll for permission change
                     startPermissionPolling()
                 } else {
                     onNext()
                 }
             }) {
-                Text(permissionsManager.hasAccessibilityPermission ? "Continue" : "Continue")
+                Text(permissionsManager.hasAccessibilityPermission ? "Continue" : "Grant Access")
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
             .padding(.horizontal, 60)
+            
+            // Fix #2: Skip option — falls back to clipboard
+            if !permissionsManager.hasAccessibilityPermission {
+                Button(action: onSkip) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "doc.on.clipboard")
+                            .font(.caption)
+                        Text("Skip — use clipboard instead")
+                    }
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(.gray)
+                .font(.caption)
+            }
             
             Spacer()
         }
@@ -601,7 +649,6 @@ struct KeyboardShortcutStepView: View {
         VStack(spacing: 32) {
             Spacer()
             
-            // Icon
             ZStack {
                 Circle()
                     .fill(Color.blue.opacity(0.2))
@@ -612,19 +659,16 @@ struct KeyboardShortcutStepView: View {
                     .foregroundColor(.blue)
             }
             
-            // Title
             Text("Keyboard Shortcut")
                 .font(.system(size: 32, weight: .bold))
                 .foregroundColor(.white)
             
-            // Description
             Text("Set up a keyboard shortcut to quickly access EchoTune from anywhere.")
                 .font(.body)
                 .foregroundColor(.white.opacity(0.8))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 60)
             
-            // Shortcut Selection
             VStack(alignment: .leading, spacing: 12) {
                 Text("Shortcut:")
                     .font(.headline)
@@ -651,10 +695,8 @@ struct KeyboardShortcutStepView: View {
             
             Spacer()
             
-            // Action Button
             Button(action: {
                 if let keyCode = selectedKey ?? functionKeys.first(where: { $0.name == "F10" })?.keyCode {
-                    // Set shortcut (function keys don't need modifiers)
                     shortcutManager.updateShortcut(keyCode: keyCode, modifiers: 0)
                     shortcutManager.unregisterGlobalShortcut()
                     shortcutManager.registerGlobalShortcut()
@@ -672,109 +714,242 @@ struct KeyboardShortcutStepView: View {
             Spacer()
         }
         .onAppear {
-            // Default to F10
             selectedKey = functionKeys.first(where: { $0.name == "F10" })?.keyCode
         }
     }
 }
 
-// MARK: - Step 6: Model Download
+// MARK: - Step 6: Setup Preferences (Fix #5 & #6: Launch-at-Login + Language)
 
-struct ModelDownloadStepView: View {
-    @StateObject private var modelManager = ModelManager.shared
-    @Binding var selectedModel: AIModel?
-    @State private var isDownloading = false
-    @State private var downloadProgress: Double = 0
-    @State private var downloadComplete = false
+struct SetupPreferencesStepView: View {
+    @Binding var launchAtLoginEnabled: Bool
+    @Binding var selectedLanguage: String
     
     let onNext: () -> Void
     let onBack: () -> Void
+    
+    private let supportedLanguages: [(code: String, name: String, flag: String)] = [
+        ("en", "English", "🇬🇧"),
+        ("es", "Español", "🇪🇸"),
+        ("fr", "Français", "🇫🇷"),
+        ("de", "Deutsch", "🇩🇪"),
+        ("ja", "日本語", "🇯🇵"),
+        ("zh", "中文", "🇨🇳"),
+    ]
     
     var body: some View {
         VStack(spacing: 32) {
             Spacer()
             
-            // Icon
-            Image(systemName: "brain.head.profile")
-                .font(.system(size: 60))
-                .foregroundColor(.blue)
+            ZStack {
+                Circle()
+                    .fill(Color.blue.opacity(0.2))
+                    .frame(width: 120, height: 120)
+                
+                Image(systemName: "gearshape.fill")
+                    .font(.system(size: 60))
+                    .foregroundColor(.blue)
+            }
             
-            // Title
-            Text("Download AI Model")
+            Text("Setup Preferences")
                 .font(.system(size: 32, weight: .bold))
                 .foregroundColor(.white)
             
-            // Description
-            Text("We'll download the optimized model to get you started.")
+            Text("Customize how EchoTune works for you.")
                 .font(.body)
                 .foregroundColor(.white.opacity(0.8))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 60)
             
-            // Model Card
-            if let model = recommendedModel {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text(model.name)
+            VStack(alignment: .leading, spacing: 20) {
+                // Fix #5: Launch at Login
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle(isOn: $launchAtLoginEnabled) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Launch at Login")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                            Text("Start EchoTune automatically when you log in")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                        }
+                    }
+                    .toggleStyle(.switch)
+                    .tint(.blue)
+                }
+                .padding()
+                .background(Color.gray.opacity(0.15))
+                .cornerRadius(10)
+                
+                // Fix #6: Language Picker
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Transcription Language")
                         .font(.headline)
                         .foregroundColor(.white)
                     
-                    Text("\(formatSize(model.size)) • \(model.language)")
+                    Text("Primary language for speech recognition")
                         .font(.caption)
                         .foregroundColor(.gray)
                     
-                    Divider()
-                        .background(Color.gray.opacity(0.3))
-                    
-                    HStack(spacing: 20) {
-                        VStack(alignment: .leading) {
-                            Text("Speed")
-                                .font(.caption)
-                                .foregroundColor(.gray)
-                            HStack(spacing: 4) {
-                                ForEach(0..<5) { index in
-                                    Circle()
-                                        .fill(index < model.speedRating ? Color.blue : Color.gray.opacity(0.3))
-                                        .frame(width: 8, height: 8)
-                                }
-                            }
-                        }
-                        
-                        VStack(alignment: .leading) {
-                            Text("Accuracy")
-                                .font(.caption)
-                                .foregroundColor(.gray)
-                            HStack(spacing: 4) {
-                                ForEach(0..<5) { index in
-                                    Circle()
-                                        .fill(index < model.accuracyRating ? Color.blue : Color.gray.opacity(0.3))
-                                        .frame(width: 8, height: 8)
-                                }
-                            }
-                        }
-                        
-                        VStack(alignment: .leading) {
-                            Text("RAM")
-                                .font(.caption)
-                                .foregroundColor(.gray)
-                            Text("\(Int(model.size / 1024 / 1024)) MB")
-                                .font(.headline)
-                                .foregroundColor(.white)
+                    Picker("Language", selection: $selectedLanguage) {
+                        ForEach(supportedLanguages, id: \.code) { lang in
+                            Text("\(lang.flag) \(lang.name)")
+                                .tag(lang.code)
                         }
                     }
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.gray.opacity(0.2))
+                    .cornerRadius(8)
                 }
                 .padding()
-                .frame(maxWidth: .infinity)
-                .background(Color.gray.opacity(0.2))
-                .cornerRadius(12)
-                .padding(.horizontal, 60)
+                .background(Color.gray.opacity(0.15))
+                .cornerRadius(10)
             }
+            .padding(.horizontal, 60)
             
-            // Download Progress
-            if isDownloading {
-                VStack(spacing: 12) {
+            Spacer()
+            
+            Button(action: {
+                // Persist preferences
+                UserDefaults.standard.set(launchAtLoginEnabled, forKey: "launchAtLogin")
+                UserDefaults.standard.set(selectedLanguage, forKey: "transcriptionLanguage")
+                
+                // Apply launch-at-login
+                LaunchAtLoginManager.shared.isEnabled = launchAtLoginEnabled
+                
+                onNext()
+            }) {
+                Text("Continue")
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .padding(.horizontal, 60)
+            
+            Spacer()
+        }
+    }
+}
+
+// MARK: - Step 7: Cloud-First Model Selection (Fix #3)
+
+struct CloudFirstModelStepView: View {
+    @StateObject private var modelManager = ModelManager.shared
+    @Binding var selectedModel: AIModel?
+    @State private var isDownloading = false
+    @State private var downloadProgress: Double = 0
+    @State private var downloadComplete = false
+    @State private var useCloudTranscription = true
+    
+    let onNext: () -> Void
+    let onBack: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 24) {
+            Spacer()
+            
+            Image(systemName: "brain.head.profile")
+                .font(.system(size: 60))
+                .foregroundColor(.blue)
+            
+            Text("Transcription Engine")
+                .font(.system(size: 32, weight: .bold))
+                .foregroundColor(.white)
+            
+            Text("Choose how EchoTune transcribes your voice.")
+                .font(.body)
+                .foregroundColor(.white.opacity(0.8))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 60)
+            
+            // Fix #3: Cloud (Groq) shown as default/recommended
+            VStack(spacing: 12) {
+                // Cloud option (recommended)
+                Button(action: { useCloudTranscription = true }) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text("☁️ Cloud Transcription")
+                                    .font(.headline)
+                                    .foregroundColor(.white)
+                                Text("RECOMMENDED")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundColor(.blue)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.blue.opacity(0.2))
+                                    .cornerRadius(4)
+                            }
+                            Text("Powered by Groq • Ready instantly • No download needed")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                            HStack(spacing: 16) {
+                                Label("Fast", systemImage: "bolt.fill")
+                                Label("Accurate", systemImage: "checkmark.seal.fill")
+                                Label("0 MB", systemImage: "internaldrive")
+                            }
+                            .font(.caption2)
+                            .foregroundColor(.white.opacity(0.6))
+                        }
+                        Spacer()
+                        Image(systemName: useCloudTranscription ? "checkmark.circle.fill" : "circle")
+                            .foregroundColor(useCloudTranscription ? .blue : .gray)
+                            .font(.title2)
+                    }
+                    .padding()
+                    .background(useCloudTranscription ? Color.blue.opacity(0.15) : Color.gray.opacity(0.1))
+                    .cornerRadius(12)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(useCloudTranscription ? Color.blue.opacity(0.5) : Color.clear, lineWidth: 2)
+                    )
+                }
+                .buttonStyle(.plain)
+                
+                // Local Whisper option (optional)
+                Button(action: { useCloudTranscription = false }) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("💻 Local Whisper Model")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                            Text("Runs on-device • Private • Requires download")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                            if let model = recommendedWhisperModel {
+                                HStack(spacing: 16) {
+                                    Label(model.formattedSize, systemImage: "arrow.down.circle")
+                                    Label("On-device", systemImage: "lock.shield")
+                                }
+                                .font(.caption2)
+                                .foregroundColor(.white.opacity(0.6))
+                            }
+                        }
+                        Spacer()
+                        Image(systemName: useCloudTranscription ? "circle" : "checkmark.circle.fill")
+                            .foregroundColor(useCloudTranscription ? .gray : .blue)
+                            .font(.title2)
+                    }
+                    .padding()
+                    .background(useCloudTranscription ? Color.gray.opacity(0.1) : Color.blue.opacity(0.15))
+                    .cornerRadius(12)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(useCloudTranscription ? Color.clear : Color.blue.opacity(0.5), lineWidth: 2)
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 60)
+            
+            // Download progress for local model
+            if !useCloudTranscription && isDownloading {
+                VStack(spacing: 8) {
                     ProgressView(value: downloadProgress)
                         .progressViewStyle(.linear)
-                    
                     Text("Downloading... \(Int(downloadProgress * 100))%")
                         .font(.caption)
                         .foregroundColor(.gray)
@@ -784,52 +959,55 @@ struct ModelDownloadStepView: View {
             
             Spacer()
             
-            // Action Buttons
-            if downloadComplete {
-                Button(action: onNext) {
-                    Text("Continue")
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .padding(.horizontal, 60)
-            } else if !isDownloading {
-                HStack(spacing: 12) {
-                    Button("Skip for now") {
+            Button(action: {
+                if useCloudTranscription {
+                    // Set Groq as the active model
+                    if let groqModel = modelManager.availableModels.first(where: { $0.id == "groq-whisper-large-v3-turbo" }) {
+                        selectedModel = groqModel
+                        // Cloud models may not pass isInstalled guard, set directly
+                        modelManager.currentModel = groqModel
+                        UserDefaults.standard.set(groqModel.id, forKey: "defaultModelID")
+                    }
+                    onNext()
+                } else if let model = recommendedWhisperModel {
+                    if model.isInstalled || downloadComplete {
+                        selectedModel = model
+                        let _ = modelManager.setCurrentModel(model)
                         onNext()
+                    } else {
+                        downloadModel(model)
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
-                    
-                    Button("Download Model") {
-                        downloadModel()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
+                } else {
+                    onNext()
                 }
-                .padding(.horizontal, 60)
+            }) {
+                Text(actionButtonText)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
             }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .padding(.horizontal, 60)
+            .disabled(isDownloading)
             
             Spacer()
         }
-        .onAppear {
-            selectedModel = recommendedModel
-        }
     }
     
-    private var recommendedModel: AIModel? {
-        // Recommend base model as a good balance
+    private var actionButtonText: String {
+        if useCloudTranscription { return "Continue" }
+        if isDownloading { return "Downloading..." }
+        if downloadComplete { return "Continue" }
+        if let model = recommendedWhisperModel, model.isInstalled { return "Continue" }
+        return "Download & Continue"
+    }
+    
+    private var recommendedWhisperModel: AIModel? {
         modelManager.availableModels.first { $0.id == "base" } ??
-        modelManager.availableModels.first { !$0.isBuiltIn }
+        modelManager.availableModels.first { !$0.isBuiltIn && $0.category == .local }
     }
     
-    private func downloadModel() {
-        guard let model = selectedModel, !model.isInstalled else {
-            onNext()
-            return
-        }
-        
+    private func downloadModel(_ model: AIModel) {
         isDownloading = true
         downloadProgress = 0
         
@@ -844,27 +1022,166 @@ struct ModelDownloadStepView: View {
                 case .success:
                     self.downloadComplete = true
                 case .failure:
-                    // Still allow continue
                     self.downloadComplete = false
                 }
             }
         }
     }
+}
+
+// MARK: - Step 8: Features (Fix #9: Skippable)
+
+struct FeaturesStepView: View {
+    let onNext: () -> Void
+    let onBack: () -> Void
+    let onSkip: () -> Void
     
-    private func formatSize(_ bytes: Int64) -> String {
-        let mb = Double(bytes) / 1024 / 1024
-        return String(format: "%.0f MB", mb)
+    private let features: [(icon: String, title: String, desc: String)] = [
+        ("mic.fill", "Voice-to-Text", "Speak naturally and watch your words appear instantly"),
+        ("globe", "Works Everywhere", "Type into any app — browsers, editors, messaging"),
+        ("keyboard", "One Shortcut", "Press your key, speak, press again — done"),
+        ("bolt.fill", "Lightning Fast", "Real-time transcription with cloud or local AI"),
+    ]
+    
+    var body: some View {
+        VStack(spacing: 24) {
+            Spacer()
+            
+            Text("What You Can Do")
+                .font(.system(size: 32, weight: .bold))
+                .foregroundColor(.white)
+            
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
+                ForEach(features, id: \.title) { feature in
+                    VStack(spacing: 12) {
+                        Image(systemName: feature.icon)
+                            .font(.system(size: 28))
+                            .foregroundColor(.blue)
+                        Text(feature.title)
+                            .font(.headline)
+                            .foregroundColor(.white)
+                        Text(feature.desc)
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .background(Color.gray.opacity(0.15))
+                    .cornerRadius(12)
+                }
+            }
+            .padding(.horizontal, 40)
+            
+            Spacer()
+            
+            Button(action: onNext) {
+                Text("Continue")
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .padding(.horizontal, 60)
+            
+            // Fix #9: Skip button
+            Button("Skip") {
+                onSkip()
+            }
+            .buttonStyle(.plain)
+            .foregroundColor(.gray)
+            .font(.caption)
+            
+            Spacer()
+        }
     }
 }
 
-// MARK: - Step 7: Try It Out
+// MARK: - Step 9: Power Features (Fix #9: Skippable)
+
+struct PowerFeaturesStepView: View {
+    let onNext: () -> Void
+    let onBack: () -> Void
+    let onSkip: () -> Void
+    
+    private let powerFeatures: [(icon: String, title: String, desc: String)] = [
+        ("wand.and.stars", "AI Enhancement", "Auto-correct grammar, punctuation, and formatting"),
+        ("text.badge.checkmark", "Smart Prompts", "Transform voice into emails, code, or summaries"),
+        ("clock.arrow.circlepath", "History", "Review and reuse past transcriptions"),
+    ]
+    
+    var body: some View {
+        VStack(spacing: 24) {
+            Spacer()
+            
+            Text("Power Features")
+                .font(.system(size: 32, weight: .bold))
+                .foregroundColor(.white)
+            
+            Text("Unlock the full potential of voice typing")
+                .font(.body)
+                .foregroundColor(.white.opacity(0.8))
+            
+            VStack(spacing: 12) {
+                ForEach(powerFeatures, id: \.title) { feature in
+                    HStack(spacing: 16) {
+                        Image(systemName: feature.icon)
+                            .font(.system(size: 24))
+                            .foregroundColor(.blue)
+                            .frame(width: 40)
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(feature.title)
+                                .font(.headline)
+                                .foregroundColor(.white)
+                            Text(feature.desc)
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                        }
+                        
+                        Spacer()
+                    }
+                    .padding()
+                    .background(Color.gray.opacity(0.15))
+                    .cornerRadius(12)
+                }
+            }
+            .padding(.horizontal, 60)
+            
+            Spacer()
+            
+            Button(action: onNext) {
+                Text("Continue")
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .padding(.horizontal, 60)
+            
+            // Fix #9: Skip button
+            Button("Skip") {
+                onSkip()
+            }
+            .buttonStyle(.plain)
+            .foregroundColor(.gray)
+            .font(.caption)
+            
+            Spacer()
+        }
+    }
+}
+
+// MARK: - Step 10: Try It Out (Fix #4: Routes to correct engine)
 
 struct TryItOutStepView: View {
     @StateObject private var appCoordinator = AppCoordinator.shared
+    @StateObject private var modelManager = ModelManager.shared
     @Binding var dictatedText: String
     @Binding var isComplete: Bool
     @State private var isRecording = false
     @State private var cancellables = Set<AnyCancellable>()
+    @State private var activeEngine: String = "Cloud (Groq)"
     
     let onComplete: () -> Void
     let onBack: () -> Void
@@ -880,6 +1197,20 @@ struct TryItOutStepView: View {
                 Text("Let's test your EchoTune setup.")
                     .font(.title3)
                     .foregroundColor(.white.opacity(0.8))
+                
+                // Engine indicator (Fix #4)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Active Engine")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                    Text(activeEngine)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.blue)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Color.blue.opacity(0.15))
+                        .cornerRadius(6)
+                }
                 
                 // Shortcut display
                 VStack(alignment: .leading, spacing: 8) {
@@ -898,7 +1229,6 @@ struct TryItOutStepView: View {
                     }
                 }
                 
-                // Instructions
                 VStack(alignment: .leading, spacing: 16) {
                     InstructionStep(number: 1, text: "Click the text area on the right")
                     InstructionStep(number: 2, text: "Press your shortcut key")
@@ -908,10 +1238,9 @@ struct TryItOutStepView: View {
                 
                 Spacer()
                 
-                // Complete button (only shows when text is entered)
                 if isComplete {
                     Button(action: onComplete) {
-                        Text("Complete Setup")
+                        Text("Continue")
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
                     }
@@ -951,7 +1280,6 @@ struct TryItOutStepView: View {
                             .allowsHitTesting(false)
                     }
                     
-                    // Recording indicator
                     if isRecording {
                         VStack {
                             HStack {
@@ -982,24 +1310,35 @@ struct TryItOutStepView: View {
         }
         .onAppear {
             setupDictationListener()
+            detectActiveEngine()
         }
         .onDisappear {
-            // Clean up listeners
             cancellables.removeAll()
         }
     }
     
+    // Fix #4: Detect and display which engine is active
+    private func detectActiveEngine() {
+        if let current = modelManager.currentModel {
+            if current.category == .cloud {
+                activeEngine = "Cloud (Groq)"
+            } else if current.isBuiltIn {
+                activeEngine = "Apple Speech"
+            } else {
+                activeEngine = "Local Whisper (\(current.name))"
+            }
+        } else {
+            activeEngine = "Cloud (Groq)"
+        }
+    }
+    
     private func setupDictationListener() {
-        // Listen for recording state to show indicator
         appCoordinator.audioManager.$isRecording
             .receive(on: DispatchQueue.main)
             .sink { isRecording in
                 self.isRecording = isRecording
             }
             .store(in: &cancellables)
-        
-        // Note: For the "Try It Out" step, users can manually type or use the shortcut
-        // The dictated text will be updated when they actually use the dictation feature
     }
 }
 
@@ -1021,6 +1360,97 @@ struct InstructionStep: View {
             
             Text(text)
                 .foregroundColor(.white)
+        }
+    }
+}
+
+// MARK: - Step 11: Trial CTA (Fix #7: Clear trial terms)
+
+struct TrialCTAStepView: View {
+    let onComplete: () -> Void
+    let onBack: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 28) {
+            Spacer()
+            
+            ZStack {
+                Circle()
+                    .fill(Color.green.opacity(0.2))
+                    .frame(width: 120, height: 120)
+                
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 60))
+                    .foregroundColor(.green)
+            }
+            
+            Text("You're All Set! 🎉")
+                .font(.system(size: 32, weight: .bold))
+                .foregroundColor(.white)
+            
+            Text("EchoTune is ready to use.")
+                .font(.title3)
+                .foregroundColor(.white.opacity(0.8))
+            
+            // Fix #7: Clear trial terms
+            VStack(spacing: 12) {
+                HStack(spacing: 8) {
+                    Image(systemName: "clock.fill")
+                        .foregroundColor(.blue)
+                    Text("Your 7-Day Free Trial")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                }
+                
+                VStack(alignment: .leading, spacing: 8) {
+                    trialTermRow(icon: "calendar", text: "Starts now, when you click \"Start Using EchoTune\"")
+                    trialTermRow(icon: "calendar.badge.clock", text: "Ends exactly 7 days from now (\(formattedTrialEndDate))")
+                    trialTermRow(icon: "infinity", text: "Full access to all features during trial")
+                    trialTermRow(icon: "creditcard.trianglebadge.exclamationmark", text: "No credit card required")
+                    trialTermRow(icon: "bell", text: "We'll remind you before it expires")
+                }
+            }
+            .padding()
+            .background(Color.gray.opacity(0.15))
+            .cornerRadius(12)
+            .padding(.horizontal, 60)
+            
+            Spacer()
+            
+            Button(action: onComplete) {
+                HStack {
+                    Text("Start Using EchoTune")
+                        .fontWeight(.semibold)
+                    Image(systemName: "arrow.right")
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .padding(.horizontal, 60)
+            
+            Spacer()
+        }
+    }
+    
+    private var formattedTrialEndDate: String {
+        let endDate = Date().addingTimeInterval(7 * 24 * 60 * 60)
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return formatter.string(from: endDate)
+    }
+    
+    @ViewBuilder
+    private func trialTermRow(icon: String, text: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon)
+                .foregroundColor(.blue)
+                .frame(width: 20)
+            Text(text)
+                .font(.callout)
+                .foregroundColor(.white.opacity(0.9))
         }
     }
 }

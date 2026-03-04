@@ -35,14 +35,22 @@ class LicenseManager {
     private let trialDuration: TimeInterval = 7 * 24 * 60 * 60 // 7 days
 
     private init() {
-        // Initialize trial period
+        // Initialize trial period ONLY after onboarding is complete.
+        // This prevents the trial clock from ticking during first-launch setup.
+        let hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
+
         if let savedTrialStart = UserDefaults.standard.object(forKey: "trialStartDate") as? Date {
-            let startDate = savedTrialStart
-            trialExpiryDate = startDate.addingTimeInterval(trialDuration)
-        } else {
+            // Trial was already started (user completed onboarding previously)
+            trialExpiryDate = savedTrialStart.addingTimeInterval(trialDuration)
+        } else if hasCompletedOnboarding {
+            // Edge case: onboarding done but no trial date (shouldn't happen, but be safe)
             let startDate = Date()
             UserDefaults.standard.set(startDate, forKey: "trialStartDate")
             trialExpiryDate = startDate.addingTimeInterval(trialDuration)
+        } else {
+            // Onboarding not complete yet — don't start the trial.
+            // Set a far-future expiry so trial checks pass during onboarding.
+            trialExpiryDate = Date().addingTimeInterval(365 * 24 * 60 * 60)
         }
 
         // Check for existing license
@@ -50,6 +58,16 @@ class LicenseManager {
 
         print("✓ LicenseManager initialized")
         print("📅 Trial days remaining: \(trialDaysRemaining)")
+    }
+
+    /// Called when onboarding completes to actually start the trial clock.
+    /// If the trial was already started, this is a no-op.
+    func startTrialIfNeeded() {
+        guard UserDefaults.standard.object(forKey: "trialStartDate") == nil else { return }
+        let startDate = Date()
+        UserDefaults.standard.set(startDate, forKey: "trialStartDate")
+        trialExpiryDate = startDate.addingTimeInterval(trialDuration)
+        print("🎯 Trial started after onboarding: \(trialDaysRemaining) days remaining")
     }
 
     // MARK: - License Validation
