@@ -204,13 +204,11 @@ struct MenuBarContentView: View {
                     }
 
                     Button(action: {
-                        if let appDelegate = NSApp.delegate as? AppDelegate {
-                            appDelegate.showSettings()
-                        }
+                        AppCoordinator.shared.presentPurchaseFlow()
                     }) {
                         HStack {
-                            Image(systemName: "key.fill")
-                            Text(appState.isTrialExpired ? "Enter License to Continue" : "Enter License Key")
+                            Image(systemName: "cart.fill")
+                            Text(appState.isTrialExpired ? "Purchase Now" : "Upgrade to Pro")
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)

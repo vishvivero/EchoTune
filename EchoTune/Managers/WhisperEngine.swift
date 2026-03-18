@@ -14,6 +14,17 @@ import os.log
 
 private let wLog = OSLog(subsystem: "com.echotune.EchoTune", category: "whisper")
 
+struct WhisperTranscriptionResult {
+    let outputText: String
+    let originalText: String
+    let translatedText: String?
+    let detectedLanguage: String?
+
+    var wasTranslated: Bool {
+        translatedText != nil
+    }
+}
+
 class WhisperEngine: ObservableObject {
     static let shared = WhisperEngine()
 
@@ -174,7 +185,7 @@ class WhisperEngine: ObservableObject {
 
     // MARK: - Audio Transcription
 
-    func transcribeAudio(_ audioData: Data, completion: @escaping (Result<String, WhisperError>) -> Void) {
+    func transcribeAudio(_ audioData: Data, completion: @escaping (Result<WhisperTranscriptionResult, WhisperError>) -> Void) {
         guard !audioData.isEmpty else {
             completion(.failure(.noAudioData))
             return
@@ -214,29 +225,18 @@ class WhisperEngine: ObservableObject {
                 )
 
                 // Transcribe directly from audio array (no file I/O!)
-                let decodeOptions = DecodingOptions(
-                    task: AppSettings.shared.translateToEnglish ? .translate : .transcribe,
-                    language: AppSettings.shared.autoDetectLanguage ? nil : AppSettings.shared.preferredLanguage.components(separatedBy: "-").first,
-                    detectLanguage: AppSettings.shared.autoDetectLanguage
-                )
-                let results = try await whisperKit.transcribe(audioArray: audioArray, decodeOptions: decodeOptions)
-
-                // Extract text from ALL result segments (WhisperKit returns multiple for long audio)
-                let allSegments = results.map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) }
-                    .filter { !$0.isEmpty }
-                let transcription = allSegments.joined(separator: " ")
-                debugLog("📝 WhisperKit returned \(results.count) segments")
+                let transcriptionResult = try await self.transcribeWithCurrentSettings(audioArray: audioArray, whisperKit: whisperKit)
+                debugLog("📝 WhisperKit detected language: \(transcriptionResult.detectedLanguage ?? "unknown") translated: \(transcriptionResult.wasTranslated)")
 
                 await MainActor.run {
                     PerformanceMonitor.shared.endTranscription(
-                        wordCount: transcription.split(separator: " ").count
+                        wordCount: transcriptionResult.outputText.split(separator: " ").count
                     )
 
-                    let cleaned = TranscriptionEngine.shared.processText(transcription)
-                    self.currentText = cleaned
+                    self.currentText = transcriptionResult.outputText
                     self.isProcessing = false
-                    debugLog("✅ Whisper transcription: \(cleaned)")
-                    completion(.success(cleaned))
+                    debugLog("✅ Whisper transcription: \(transcriptionResult.outputText)")
+                    completion(.success(transcriptionResult))
                 }
             } catch {
                 await MainActor.run {
@@ -254,7 +254,7 @@ class WhisperEngine: ObservableObject {
     private var audioBuffers: [AVAudioPCMBuffer] = []
     private var streamingTask: Task<Void, Never>?
 
-    func startStreamingTranscription(completion: @escaping (Result<String, WhisperError>) -> Void) {
+    func startStreamingTranscription(completion: @escaping (Result<WhisperTranscriptionResult, WhisperError>) -> Void) {
         os_log("🎤 startStreamingTranscription, whisperKit=%{public}@, isAvailable=%d", log: wLog, type: .info, whisperKit == nil ? "nil" : "loaded", isAvailable ? 1 : 0)
         guard whisperKit != nil else {
             os_log("❌ whisperKit is nil — modelNotLoaded", log: wLog, type: .error)
@@ -281,7 +281,7 @@ class WhisperEngine: ObservableObject {
         }
     }
 
-    func endStreamingTranscription(completion: @escaping (Result<String, WhisperError>) -> Void) {
+    func endStreamingTranscription(completion: @escaping (Result<WhisperTranscriptionResult, WhisperError>) -> Void) {
         debugLog("🛑 Ending streaming transcription")
         debugLog("📊 Total buffers accumulated: \(audioBuffers.count)")
         os_log("🛑 endStreamingTranscription: buffers=%d whisperKit=%{public}@", log: wLog, type: .info, audioBuffers.count, whisperKit == nil ? "nil" : "loaded")
@@ -335,31 +335,19 @@ class WhisperEngine: ObservableObject {
 
                 // Transcribe directly from audio array
                 os_log("🎙️ Calling whisperKit.transcribe(audioArray:)...", log: wLog, type: .info)
-                let decodeOptions = DecodingOptions(
-                    task: AppSettings.shared.translateToEnglish ? .translate : .transcribe,
-                    language: AppSettings.shared.autoDetectLanguage ? nil : AppSettings.shared.preferredLanguage.components(separatedBy: "-").first,
-                    detectLanguage: AppSettings.shared.autoDetectLanguage
-                )
-                let results = try await whisperKit.transcribe(audioArray: audioArray, decodeOptions: decodeOptions)
-                os_log("✅ WhisperKit returned %d segments", log: wLog, type: .info, results.count)
-
-                // Extract text from ALL result segments
-                let allSegments = results.map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) }
-                    .filter { !$0.isEmpty }
-                let transcription = allSegments.joined(separator: " ")
-                os_log("📝 Transcription: '%{public}@' (%d words)", log: wLog, type: .info, transcription, transcription.split(separator: " ").count)
+                let transcriptionResult = try await self.transcribeWithCurrentSettings(audioArray: audioArray, whisperKit: whisperKit)
+                os_log("📝 Transcription: '%{public}@' (%d words)", log: wLog, type: .info, transcriptionResult.outputText, transcriptionResult.outputText.split(separator: " ").count)
 
                 await MainActor.run {
                     // End performance monitoring with word count
                     PerformanceMonitor.shared.endTranscription(
-                        wordCount: transcription.split(separator: " ").count
+                        wordCount: transcriptionResult.outputText.split(separator: " ").count
                     )
 
-                    let cleaned = TranscriptionEngine.shared.processText(transcription)
-                    self.currentText = cleaned
+                    self.currentText = transcriptionResult.outputText
                     self.isProcessing = false
-                    os_log("✅ Final cleaned: '%{public}@'", log: wLog, type: .info, cleaned)
-                    completion(.success(cleaned))
+                    os_log("✅ Final cleaned: '%{public}@'", log: wLog, type: .info, transcriptionResult.outputText)
+                    completion(.success(transcriptionResult))
                 }
             } catch {
                 os_log("❌ Transcription Task FAILED: %{public}@", log: wLog, type: .error, "\(error)")
@@ -397,6 +385,54 @@ class WhisperEngine: ObservableObject {
         buffer.frameLength = AVAudioFrameCount(audioFile.length)
 
         return buffer
+    }
+
+    private func transcribeWithCurrentSettings(audioArray: [Float], whisperKit: WhisperKit) async throws -> WhisperTranscriptionResult {
+        let settings = AppSettings.shared
+        let preferredLanguage = settings.preferredLanguage.components(separatedBy: "-").first
+
+        let transcriptionOptions = DecodingOptions(
+            task: .transcribe,
+            language: settings.autoDetectLanguage ? nil : preferredLanguage,
+            detectLanguage: settings.autoDetectLanguage || settings.translateToEnglish
+        )
+        let transcriptionPass = try await whisperKit.transcribe(audioArray: audioArray, decodeOptions: transcriptionOptions)
+        let originalText = TranscriptionEngine.shared.processText(
+            transcriptionPass
+                .map { $0.text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .joined(separator: " ")
+        )
+        let detectedLanguage = transcriptionPass.first?.language
+
+        if settings.translateToEnglish, let detectedLanguage, !detectedLanguage.hasPrefix("en") {
+            let translationOptions = DecodingOptions(
+                task: .translate,
+                language: settings.autoDetectLanguage ? nil : preferredLanguage,
+                detectLanguage: true
+            )
+            let translationPass = try await whisperKit.transcribe(audioArray: audioArray, decodeOptions: translationOptions)
+            let translatedText = TranscriptionEngine.shared.processText(
+                translationPass
+                    .map { $0.text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+                    .joined(separator: " ")
+            )
+
+            return WhisperTranscriptionResult(
+                outputText: translatedText,
+                originalText: originalText,
+                translatedText: translatedText,
+                detectedLanguage: detectedLanguage
+            )
+        }
+
+        return WhisperTranscriptionResult(
+            outputText: originalText,
+            originalText: originalText,
+            translatedText: nil,
+            detectedLanguage: detectedLanguage
+        )
     }
 
     private func convertBufferToFloatArray(_ buffer: AVAudioPCMBuffer) throws -> [Float] {

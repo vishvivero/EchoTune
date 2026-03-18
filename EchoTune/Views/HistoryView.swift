@@ -256,11 +256,34 @@ struct TranscriptionDetailView: View {
                 }
             }
 
+            if let originalText = item.originalText, originalText != item.text {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Original")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .textCase(.uppercase)
+
+                    ScrollView {
+                        Text(originalText)
+                            .font(.body)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(minHeight: 40, maxHeight: 120)
+                }
+            }
+
             // Metadata
             HStack(spacing: 16) {
                 Label(item.formattedDate, systemImage: "calendar")
                 Label(String(format: "%.1fs", item.duration), systemImage: "timer")
                 Label("\(item.wordCount) words", systemImage: "textformat")
+                if let detectedLanguage = item.detectedLanguage {
+                    Label(languageName(for: detectedLanguage), systemImage: "globe")
+                }
+                if item.translatedText != nil {
+                    Label("English Output", systemImage: "character.bubble")
+                }
                 if let size = audioFileSize {
                     Label(size, systemImage: "waveform")
                 }
@@ -365,6 +388,10 @@ struct TranscriptionDetailView: View {
         let minutes = Int(time) / 60
         let seconds = Int(time) % 60
         return String(format: "%d:%02d", minutes, seconds)
+    }
+
+    private func languageName(for code: String) -> String {
+        LanguageManager.shared.language(for: code)?.name ?? code.uppercased()
     }
 }
 
@@ -866,12 +893,22 @@ class TranscriptionHistoryManager: ObservableObject {
         }
     }
 
-    func addTranscription(_ text: String, duration: TimeInterval, audioFilePath: String? = nil) {
+    func addTranscription(
+        _ text: String,
+        duration: TimeInterval,
+        audioFilePath: String? = nil,
+        originalText: String? = nil,
+        translatedText: String? = nil,
+        detectedLanguage: String? = nil
+    ) {
         let item = TranscriptionHistoryItem(
             text: text,
             date: Date(),
             duration: duration,
-            audioFilePath: audioFilePath
+            audioFilePath: audioFilePath,
+            originalText: originalText,
+            translatedText: translatedText,
+            detectedLanguage: detectedLanguage
         )
 
         transcriptions.insert(item, at: 0) // Most recent first
@@ -887,7 +924,10 @@ class TranscriptionHistoryManager: ObservableObject {
                 text: newText,
                 date: item.date,
                 duration: item.duration,
-                audioFilePath: item.audioFilePath
+                audioFilePath: item.audioFilePath,
+                originalText: item.originalText,
+                translatedText: item.translatedText,
+                detectedLanguage: item.detectedLanguage
             )
             saveHistory()
             debugLog("📝 Updated transcription text for \(item.id)")
@@ -923,7 +963,10 @@ class TranscriptionHistoryManager: ObservableObject {
                 text: item.text,
                 date: item.date,
                 duration: item.duration,
-                audioFilePath: nil
+                audioFilePath: nil,
+                originalText: item.originalText,
+                translatedText: item.translatedText,
+                detectedLanguage: item.detectedLanguage
             )
             saveHistory()
         }
@@ -1006,7 +1049,10 @@ class TranscriptionHistoryManager: ObservableObject {
                 text: item.text,
                 date: item.date,
                 duration: item.duration,
-                audioFilePath: nil
+                audioFilePath: nil,
+                originalText: item.originalText,
+                translatedText: item.translatedText,
+                detectedLanguage: item.detectedLanguage
             )
             saveHistory()
         }
@@ -1035,21 +1081,47 @@ struct TranscriptionHistoryItem: Identifiable, Codable {
     let date: Date
     let duration: TimeInterval
     var audioFilePath: String?
+    var originalText: String?
+    var translatedText: String?
+    var detectedLanguage: String?
 
-    init(text: String, date: Date, duration: TimeInterval, audioFilePath: String? = nil) {
+    init(
+        text: String,
+        date: Date,
+        duration: TimeInterval,
+        audioFilePath: String? = nil,
+        originalText: String? = nil,
+        translatedText: String? = nil,
+        detectedLanguage: String? = nil
+    ) {
         self.id = UUID()
         self.text = text
         self.date = date
         self.duration = duration
         self.audioFilePath = audioFilePath
+        self.originalText = originalText
+        self.translatedText = translatedText
+        self.detectedLanguage = detectedLanguage
     }
 
-    init(id: UUID, text: String, date: Date, duration: TimeInterval, audioFilePath: String? = nil) {
+    init(
+        id: UUID,
+        text: String,
+        date: Date,
+        duration: TimeInterval,
+        audioFilePath: String? = nil,
+        originalText: String? = nil,
+        translatedText: String? = nil,
+        detectedLanguage: String? = nil
+    ) {
         self.id = id
         self.text = text
         self.date = date
         self.duration = duration
         self.audioFilePath = audioFilePath
+        self.originalText = originalText
+        self.translatedText = translatedText
+        self.detectedLanguage = detectedLanguage
     }
 
     var wordCount: Int {

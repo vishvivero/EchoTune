@@ -37,12 +37,14 @@ class RecordingIndicatorWindow: NSPanel {
         self.level = .statusBar
         self.isOpaque = false
         self.backgroundColor = .clear
-        self.hasShadow = true
+        self.hasShadow = false
         self.ignoresMouseEvents = false
         self.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
 
         // Set up the content view
         let hostingView = NSHostingView(rootView: RecordingIndicatorView())
+        hostingView.wantsLayer = true
+        hostingView.layer?.backgroundColor = NSColor.clear.cgColor
         self.contentView = hostingView
 
         // Reposition when screens change so we stay on the primary display
@@ -175,7 +177,6 @@ struct RecordingIndicatorView: View {
                 )
                 .shadow(color: Color.black.opacity(0.35), radius: 10, x: 0, y: 6)
         )
-        .padding(.horizontal, 6)
         .onChange(of: audioManager.audioLevel) { _, _ in updateSpeakingState() }
         .onAppear { updateSpeakingState() }
         .onReceive(Timer.publish(every: 0.06, on: .main, in: .common).autoconnect()) { _ in

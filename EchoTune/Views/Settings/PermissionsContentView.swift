@@ -32,7 +32,7 @@ struct PermissionsContentView: View {
                 PermissionCard(
                     icon: "figure.walk",
                     title: "Accessibility Access",
-                    description: "Required for keyboard shortcuts and text insertion",
+                    description: permissionsManager.accessibilityInlineInstructions,
                     isGranted: permissionsManager.hasAccessibilityPermission,
                     onGrant: {
                         permissionsManager.requestAccessibilityPermission()
@@ -42,7 +42,7 @@ struct PermissionsContentView: View {
                 PermissionCard(
                     icon: "rectangle.on.rectangle",
                     title: "Screen Recording Access",
-                    description: "Recommended for better browser compatibility",
+                    description: permissionsManager.screenRecordingInlineInstructions,
                     isGranted: permissionsManager.hasScreenRecordingPermission,
                     onGrant: {
                         permissionsManager.requestScreenRecordingPermission()
@@ -85,20 +85,18 @@ struct PermissionsContentView: View {
                     loadAudioDevices()
                 }
 
-                Button("Restart EchoTune") {
-                    restartApp()
-                }
-
                 if !permissionsManager.hasAccessibilityPermission {
-                    Text("After granting Accessibility permission, you must restart EchoTune.")
+                    Text("Return to EchoTune after granting access. The app refreshes permission state automatically.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
 
-                Button("Open System Settings") {
-                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy") {
-                        NSWorkspace.shared.open(url)
-                    }
+                Button("Open Accessibility Settings") {
+                    permissionsManager.openAccessibilitySettings()
+                }
+
+                Button("Open Screen Recording Settings") {
+                    permissionsManager.openScreenRecordingSettings()
                 }
             }
         }
@@ -115,27 +113,6 @@ struct PermissionsContentView: View {
             selectedMicrophoneID = currentDevice.id
         } else if let defaultDevice = availableAudioDevices.first(where: { $0.isDefault }) {
             selectedMicrophoneID = defaultDevice.id
-        }
-    }
-
-    private func restartApp() {
-        let alert = NSAlert()
-        alert.messageText = "Restart EchoTune?"
-        alert.informativeText = "This will quit and relaunch the app to apply permission changes."
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "Restart")
-        alert.addButton(withTitle: "Cancel")
-
-        if alert.runModal() == .alertFirstButtonReturn {
-            let appPath = Bundle.main.bundlePath
-            let task = Process()
-            task.launchPath = "/usr/bin/open"
-            task.arguments = [appPath]
-
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                task.launch()
-                NSApplication.shared.terminate(nil)
-            }
         }
     }
 }

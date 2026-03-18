@@ -11,6 +11,7 @@ import SwiftUI
 class StatusBarController {
     private var statusItem: NSStatusItem!
     private var menu: NSMenu!
+    private let brandImageSize = NSSize(width: 16, height: 16)
 
     init() {
         setupStatusBar()
@@ -23,29 +24,14 @@ class StatusBarController {
     }
 
     private func setupStatusBar() {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         if let button = statusItem.button {
-            // Try to load custom logo from Assets
-            if let customImage = NSImage(named: "MenuBarIcon") {
-                // Make the image template so it adapts to dark/light mode
-                customImage.isTemplate = true
-
-                // Resize to menu bar size (typically 22x22 points)
-                customImage.size = NSSize(width: 18, height: 18)
-
-                button.image = customImage
-                button.imagePosition = .imageOnly
-                debugLog("✓ Status bar button created with custom logo")
-            } else {
-                // Fallback to system microphone icon if custom logo not found
-                if let image = NSImage(systemSymbolName: "waveform", accessibilityDescription: "EchoTune") {
-                    image.isTemplate = true
-                    button.image = image
-                    button.imagePosition = .imageOnly
-                }
-                debugLog("⚠️ Custom logo not found, using waveform icon")
-            }
+            button.image = statusImage(for: .idle)
+            button.imagePosition = .imageOnly
+            button.imageScaling = .scaleProportionallyDown
+            statusItem.length = 28
+            debugLog("✓ Status bar button created")
 
             // Set tooltip for discoverability
             button.toolTip = "EchoTune - Click for menu, or press Control to record"
@@ -196,17 +182,16 @@ class StatusBarController {
 
         menu.addItem(NSMenuItem.separator())
 
-        // SECTION 5: Testing & Troubleshooting (always available)
-        // Reset Onboarding (moved out of DEBUG for testing accessibility/permissions)
-        let resetItem = NSMenuItem(
-            title: "Reset Onboarding...",
-            action: #selector(resetOnboarding),
-            keyEquivalent: ""
-        )
-        resetItem.target = self
-        menu.addItem(resetItem)
-
-        menu.addItem(NSMenuItem.separator())
+        if shouldShowResetOnboarding {
+            let resetItem = NSMenuItem(
+                title: "Reset Onboarding...",
+                action: #selector(resetOnboarding),
+                keyEquivalent: ""
+            )
+            resetItem.target = self
+            menu.addItem(resetItem)
+            menu.addItem(NSMenuItem.separator())
+        }
 
         // SECTION 6: About & Quit
         // About
@@ -239,13 +224,82 @@ class StatusBarController {
     func updateIcon(for state: RecordingState) {
         guard let button = statusItem.button else { return }
 
-        let iconName = state.iconName
-        button.image = NSImage(systemSymbolName: iconName, accessibilityDescription: state.description)
+        button.image = statusImage(for: state)
+        button.toolTip = "EchoTune - \(state.description)"
 
         // Add subtle animation for recording state
         if case .recording = state {
             animateIcon(button)
         }
+    }
+
+    private var shouldShowResetOnboarding: Bool {
+        #if DEBUG
+        return true
+        #else
+        return UserDefaults.standard.bool(forKey: "internalTestingMode") ||
+            ProcessInfo.processInfo.arguments.contains("--internal-testing")
+        #endif
+    }
+
+    private func statusImage(for state: RecordingState) -> NSImage? {
+        guard let baseImage = brandBaseImage() else {
+            return fallbackSymbolImage(for: state)
+        }
+
+        switch state {
+        case .idle:
+            return baseImage
+        case .recording:
+            return brandedBadgeImage(baseImage: baseImage, badgeColor: .systemRed, badgeInset: 1.5)
+        case .processing, .loadingModel:
+            return brandedBadgeImage(baseImage: baseImage, badgeColor: .systemBlue, badgeInset: 2.5)
+        case .error:
+            return brandedBadgeImage(baseImage: baseImage, badgeColor: .systemOrange, badgeInset: 1.5)
+        }
+    }
+
+    private func brandBaseImage() -> NSImage? {
+        guard let image = NSImage(named: "MenuBarIcon")?.copy() as? NSImage else {
+            debugLog("⚠️ Custom logo not found, using waveform icon")
+            return nil
+        }
+
+        image.isTemplate = true
+        image.size = brandImageSize
+        return image
+    }
+
+    private func fallbackSymbolImage(for state: RecordingState) -> NSImage? {
+        let image = NSImage(systemSymbolName: state.iconName, accessibilityDescription: state.description)
+        image?.isTemplate = true
+        return image
+    }
+
+    private func brandedBadgeImage(baseImage: NSImage, badgeColor: NSColor, badgeInset: CGFloat) -> NSImage {
+        let composedImage = NSImage(size: brandImageSize)
+        composedImage.lockFocus()
+
+        baseImage.draw(in: NSRect(origin: .zero, size: brandImageSize))
+
+        let badgeDiameter: CGFloat = 5.5
+        let badgeRect = NSRect(
+            x: brandImageSize.width - badgeDiameter - badgeInset,
+            y: badgeInset,
+            width: badgeDiameter,
+            height: badgeDiameter
+        )
+
+        NSColor.controlBackgroundColor.setFill()
+        NSBezierPath(ovalIn: badgeRect.insetBy(dx: -1.0, dy: -1.0)).fill()
+
+        badgeColor.setFill()
+        NSBezierPath(ovalIn: badgeRect).fill()
+
+        composedImage.unlockFocus()
+        composedImage.isTemplate = false
+        composedImage.size = brandImageSize
+        return composedImage
     }
 
     private func animateIcon(_ button: NSStatusBarButton) {
@@ -399,8 +453,7 @@ class StatusBarController {
         alert.addButton(withTitle: "Cancel")
 
         if alert.runModal() == .alertFirstButtonReturn {
-            // Reset onboarding flag
-            UserDefaults.standard.set(false, forKey: "hasCompletedOnboarding")
+            OnboardingStateStore.shared.resetProgress()
             debugLog("🔄 Onboarding reset - restarting app...")
 
             // Restart the app

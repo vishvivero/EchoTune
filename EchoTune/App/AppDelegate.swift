@@ -12,15 +12,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var statusBarController: StatusBarController?
     var settingsWindow: NSWindow?
     var onboardingWindow: NSWindow?
+    private let onboardingState = OnboardingStateStore.shared
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         debugLog("🚀 EchoTune launching...")
-
-        // CRITICAL FIX: Use .accessory policy to prevent focus stealing
-        // This allows EchoTune to run without ever stealing focus from other apps
-        // User can still access settings via menu bar
-        NSApp.setActivationPolicy(.accessory)
-        debugLog("✓ Using .accessory policy - will not steal focus")
 
         // Initialize status bar (always show for accessory apps)
         statusBarController = StatusBarController()
@@ -35,11 +30,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
 
         // Check if first launch or onboarding not completed
-        let hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
+        let hasCompletedOnboarding = onboardingState.hasCompletedOnboarding
+        updateActivationPolicy(hasCompletedOnboarding: hasCompletedOnboarding)
         debugLog("📋 Onboarding completed: \(hasCompletedOnboarding)")
 
         if !hasCompletedOnboarding {
             debugLog("🎓 Showing onboarding...")
+            hidePrimaryAppWindows()
             showOnboarding()
         }
 
@@ -78,11 +75,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if onboardingWindow == nil {
             let onboardingView = OnboardingView {
                 debugLog("✓ Onboarding completed")
-                // Onboarding completed
+                self.updateActivationPolicy(hasCompletedOnboarding: true)
                 self.onboardingWindow?.close()
                 self.onboardingWindow = nil
 
-                // Show welcome notification
+                self.showPrimaryAppWindows()
                 self.showWelcomeNotification()
             }
 
@@ -90,20 +87,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             onboardingWindow = NSWindow(contentViewController: hostingController)
             onboardingWindow?.title = "Welcome to EchoTune"
-            onboardingWindow?.styleMask = [.titled, .closable, .resizable]
+            onboardingWindow?.styleMask = [.titled, .closable]
             onboardingWindow?.titlebarAppearsTransparent = false
             onboardingWindow?.setContentSize(NSSize(width: 700, height: 600))
             onboardingWindow?.minSize = NSSize(width: 700, height: 600)
             onboardingWindow?.maxSize = NSSize(width: 700, height: 600)
             onboardingWindow?.center()
             onboardingWindow?.isReleasedWhenClosed = false
+            onboardingWindow?.collectionBehavior = [.moveToActiveSpace]
             debugLog("🪟 Onboarding window created")
         }
 
-        // Show window without stealing focus
+        // Show onboarding as the primary first-launch experience.
+        NSApp.activate(ignoringOtherApps: true)
         onboardingWindow?.makeKeyAndOrderFront(nil)
-        // REMOVED: NSApp.activate(ignoringOtherApps: true) - this steals focus!
-        debugLog("🪟 Onboarding window shown (without stealing focus)")
+        onboardingWindow?.orderFrontRegardless()
+        debugLog("🪟 Onboarding window shown")
     }
 
     func showSettings() {
@@ -131,29 +130,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func showWelcomeNotification() {
-        // Show welcome alert with instructions
+        // Hand off cleanly to the main dashboard instead of interrupting with another modal.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            let alert = NSAlert()
-            alert.messageText = "🎉 Welcome to EchoTune!"
-            alert.informativeText = """
-            Setup complete! EchoTune is now running in your menu bar.
+            NSApp.activate(ignoringOtherApps: true)
 
-            Look for the microphone icon (🎤) at the top-right of your screen.
-
-            Quick Start:
-            • Press Control (⌃) anywhere to start dictating
-            • Click the menu bar icon for settings and options
-            • Find EchoTune in: System Settings → Privacy & Security
-
-            Ready to try it? Press Control in any app!
-            """
-            alert.alertStyle = .informational
-            alert.addButton(withTitle: "Got it!")
-            alert.addButton(withTitle: "Open Settings")
-
-            let response = alert.runModal()
-            if response == .alertSecondButtonReturn {
-                self.showSettings()
+            if let mainWindow = NSApp.windows.first(where: { window in
+                window != self.settingsWindow &&
+                window.isVisible &&
+                window.canBecomeKey
+            }) {
+                mainWindow.makeKeyAndOrderFront(nil)
+                mainWindow.orderFrontRegardless()
+                debugLog("🪟 Main dashboard brought to front after onboarding")
+            } else {
+                debugLog("ℹ️ Main dashboard window not yet visible after onboarding handoff")
             }
         }
     }
@@ -184,6 +174,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     debugLog("⚠️ Model preload failed: \(error)")
                     debugLog("   Model will load on first transcription instead")
                 }
+            }
+        }
+    }
+
+    private func updateActivationPolicy(hasCompletedOnboarding: Bool) {
+        let policy: NSApplication.ActivationPolicy = hasCompletedOnboarding ? .accessory : .regular
+        NSApp.setActivationPolicy(policy)
+        debugLog("✓ Using \(hasCompletedOnboarding ? ".accessory" : ".regular") activation policy")
+    }
+
+    private func hidePrimaryAppWindows() {
+        DispatchQueue.main.async {
+            for window in NSApp.windows where window !== self.onboardingWindow && window !== self.settingsWindow {
+                window.orderOut(nil)
+                debugLog("🙈 Hid primary app window during onboarding: \(window.title)")
+            }
+        }
+    }
+
+    private func showPrimaryAppWindows() {
+        DispatchQueue.main.async {
+            for window in NSApp.windows where window !== self.onboardingWindow && window !== self.settingsWindow {
+                window.makeKeyAndOrderFront(nil)
+                window.orderFrontRegardless()
+                debugLog("🪟 Revealed primary app window after onboarding: \(window.title)")
+                break
             }
         }
     }

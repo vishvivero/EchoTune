@@ -63,10 +63,17 @@ private extension Color {
 struct OnboardingView: View {
     let onComplete: () -> Void
 
-    @State private var currentStep = 0
+    @State private var currentStep: Int
     @State private var direction: Int = 1
 
-    private let totalSteps = 6
+    private let onboardingState = OnboardingStateStore.shared
+    private static let totalSteps = 6
+    private let totalSteps = Self.totalSteps
+
+    init(onComplete: @escaping () -> Void) {
+        self.onComplete = onComplete
+        _currentStep = State(initialValue: OnboardingStateStore.shared.resumeStep(totalSteps: Self.totalSteps))
+    }
 
     var body: some View {
         ZStack {
@@ -110,24 +117,31 @@ struct OnboardingView: View {
             }
         }
         .frame(width: 700, height: 650)
+        .onAppear {
+            onboardingState.setCurrentStep(currentStep)
+        }
     }
 
     private func goForward() {
         direction = 1
+        let nextStep = min(currentStep + 1, totalSteps - 1)
+        onboardingState.setCurrentStep(nextStep)
         withAnimation(.easeInOut(duration: 0.35)) {
-            currentStep += 1
+            currentStep = nextStep
         }
     }
 
     private func goBack() {
         direction = -1
+        let previousStep = max(currentStep - 1, 0)
+        onboardingState.setCurrentStep(previousStep)
         withAnimation(.easeInOut(duration: 0.35)) {
-            currentStep -= 1
+            currentStep = previousStep
         }
     }
 
     private func completeOnboarding() {
-        UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
+        onboardingState.completeOnboarding()
         NotificationCenter.default.post(name: NSNotification.Name("OnboardingCompleted"), object: nil)
         onComplete()
     }
@@ -253,9 +267,11 @@ private struct PermissionsStep: View {
 
             Spacer().frame(height: 6)
 
-            Text("EchoTune needs these to work its magic.")
+            Text("Each button opens the exact macOS privacy pane. Enable EchoTune there, then come back here.")
                 .font(.system(size: 14))
                 .foregroundColor(.echoTextSecondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 72)
 
             Spacer().frame(height: 32)
 
@@ -264,7 +280,7 @@ private struct PermissionsStep: View {
                 OnboardingPermissionCard(
                     icon: "mic.fill",
                     title: "Microphone Access",
-                    subtitle: "To hear your voice",
+                    subtitle: "Approve the system prompt so EchoTune can hear your voice",
                     isGranted: permissions.hasMicrophonePermission,
                     isRequired: true,
                     onGrant: {
@@ -280,7 +296,7 @@ private struct PermissionsStep: View {
                 OnboardingPermissionCard(
                     icon: "hand.raised.fill",
                     title: "Accessibility",
-                    subtitle: "To type text into any app",
+                    subtitle: permissions.accessibilityInlineInstructions,
                     isGranted: permissions.hasAccessibilityPermission,
                     isRequired: true,
                     onGrant: {
@@ -294,10 +310,11 @@ private struct PermissionsStep: View {
                 OnboardingPermissionCard(
                     icon: "rectangle.dashed.badge.record",
                     title: "Screen Recording",
-                    subtitle: "For context-aware accuracy (optional)",
+                    subtitle: permissions.screenRecordingInlineInstructions,
                     isGranted: permissions.hasScreenRecordingPermission,
                     isRequired: false,
                     onGrant: {
+                        OnboardingStateStore.shared.setCurrentStep(1)
                         permissions.requestScreenRecordingPermission()
                     }
                 )
@@ -306,6 +323,15 @@ private struct PermissionsStep: View {
                 .animation(.easeOut(duration: 0.5).delay(0.3), value: appeared)
             }
             .padding(.horizontal, 48)
+
+            if !permissions.hasAccessibilityPermission || !permissions.hasScreenRecordingPermission {
+                PermissionReturnHint(
+                    showAccessibilityHint: !permissions.hasAccessibilityPermission,
+                    showScreenRecordingHint: !permissions.hasScreenRecordingPermission
+                )
+                .padding(.horizontal, 48)
+                .padding(.top, 14)
+            }
 
             Spacer()
 
@@ -327,17 +353,70 @@ private struct PermissionsStep: View {
         }
         .onAppear {
             appeared = true
+            permissions.checkAllPermissions()
             startPolling()
         }
+        .onChange(of: requiredPermissionsGranted) { _, granted in
+            if granted {
+                stopPolling()
+            } else {
+                startPolling()
+            }
+        }
         .onDisappear {
-            pollTimer?.invalidate()
+            stopPolling()
         }
     }
 
     private func startPolling() {
+        guard pollTimer == nil else { return }
+
         pollTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { _ in
             permissions.checkAllPermissions()
         }
+    }
+
+    private func stopPolling() {
+        pollTimer?.invalidate()
+        pollTimer = nil
+    }
+}
+
+private struct PermissionReturnHint: View {
+    let showAccessibilityHint: Bool
+    let showScreenRecordingHint: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("When System Settings opens:")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.echoTextPrimary)
+
+            if showAccessibilityHint {
+                Text("1. In Accessibility, turn on EchoTune.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.echoTextSecondary)
+            }
+
+            if showScreenRecordingHint {
+                Text(showAccessibilityHint ? "2. In Screen Recording, enable EchoTune for richer app-aware context." : "1. In Screen Recording, enable EchoTune for richer app-aware context.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.echoTextSecondary)
+            }
+
+            Text("Return to EchoTune afterward. Permission status refreshes automatically when the app becomes active again.")
+                .font(.system(size: 11))
+                .foregroundColor(.echoTextSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(Color.echoSurface.opacity(0.9))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.echoBorder, lineWidth: 1)
+        )
     }
 }
 
@@ -432,8 +511,10 @@ private struct SetupStep: View {
     @State private var availableDevices: [AudioDevice] = []
     @State private var isDownloading = false
     @State private var downloadProgress: Double = 0
-    @State private var downloadComplete = false
     @State private var downloadFailed = false
+    @State private var isVerifyingModel = false
+    @State private var modelReady = false
+    @State private var modelErrorMessage: String?
     @State private var appeared = false
 
     // Audio level monitoring
@@ -569,7 +650,7 @@ private struct SetupStep: View {
                     title: "Transcription Model",
                     subtitle: modelSubtitle
                 ) {
-                    if downloadComplete {
+                    if modelReady {
                         HStack(spacing: 6) {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundColor(.green)
@@ -577,6 +658,15 @@ private struct SetupStep: View {
                             Text("Ready")
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundColor(.green)
+                        }
+                    } else if !modelManager.isReady || isVerifyingModel {
+                        VStack(alignment: .trailing, spacing: 4) {
+                            ProgressView()
+                                .controlSize(.small)
+                                .tint(Color.echoPrimary)
+                            Text(modelManager.isReady ? "Verifying…" : "Checking…")
+                                .font(.system(size: 10))
+                                .foregroundColor(.echoTextTertiary)
                         }
                     } else if isDownloading {
                         VStack(alignment: .trailing, spacing: 4) {
@@ -618,11 +708,19 @@ private struct SetupStep: View {
             .opacity(appeared ? 1 : 0)
             .offset(y: appeared ? 0 : 12)
 
+            if let modelErrorMessage, !modelReady {
+                Text(modelErrorMessage)
+                    .font(.system(size: 11))
+                    .foregroundColor(.red.opacity(0.9))
+                    .padding(.top, 10)
+                    .padding(.horizontal, 48)
+            }
+
             Spacer()
 
             PrimaryButton(title: "Continue", action: onNext)
 
-            if !downloadComplete && !isDownloading {
+            if !modelReady && !isDownloading && !isVerifyingModel {
                 Text("You can skip — Apple Speech will be used instead")
                     .font(.system(size: 11))
                     .foregroundColor(.echoTextTertiary)
@@ -634,9 +732,13 @@ private struct SetupStep: View {
         .onAppear {
             loadDevices()
             startAudioLevelMonitoring()
+            refreshModelStatus()
             withAnimation(.easeOut(duration: 0.5).delay(0.1)) {
                 appeared = true
             }
+        }
+        .onReceive(modelManager.$isReady) { _ in
+            refreshModelStatus()
         }
         .onDisappear {
             audioLevelTimer?.invalidate()
@@ -655,9 +757,11 @@ private struct SetupStep: View {
     }
 
     private var modelSubtitle: String {
-        if downloadComplete { return "Ready to go" }
-        if isDownloading { return "Setting up offline transcription" }
-        if downloadFailed { return "Download failed — try again or skip" }
+        if modelReady { return "Offline transcription is ready to use" }
+        if !modelManager.isReady { return "Checking installed models on this Mac" }
+        if isDownloading { return "Downloading offline transcription model" }
+        if isVerifyingModel { return "Verifying model files and loading Whisper" }
+        if downloadFailed { return "Model setup failed — try again or skip" }
         return "Offline transcription with Whisper"
     }
 
@@ -682,14 +786,27 @@ private struct SetupStep: View {
     }
 
     private func downloadModel() {
-        guard let model = recommendedModel, !model.isInstalled else {
-            downloadComplete = true
+        guard modelManager.isReady else {
+            modelErrorMessage = "EchoTune is still checking installed models. Wait a moment, then try again."
+            return
+        }
+
+        guard let model = recommendedModel else {
+            modelErrorMessage = "No recommended offline model is available right now."
+            return
+        }
+
+        if let installedModel = modelManager.installedModel(withID: model.id),
+           modelManager.isInstalledAndUsable(model) {
+            verifyModel(installedModel)
             return
         }
 
         isDownloading = true
         downloadProgress = 0
         downloadFailed = false
+        modelReady = false
+        modelErrorMessage = nil
 
         modelManager.downloadModel(model, progressHandler: { progress in
             DispatchQueue.main.async {
@@ -700,9 +817,75 @@ private struct SetupStep: View {
                 self.isDownloading = false
                 switch result {
                 case .success:
-                    self.downloadComplete = true
+                    if let installedModel = self.modelManager.installedModel(withID: model.id) {
+                        self.verifyModel(installedModel)
+                    } else {
+                        self.downloadFailed = true
+                        self.modelErrorMessage = "The download finished, but EchoTune could not find the installed model files."
+                    }
                 case .failure:
                     self.downloadFailed = true
+                    self.modelErrorMessage = "Model download failed. Check your internet connection, then try again."
+                }
+            }
+        }
+    }
+
+    private func refreshModelStatus() {
+        guard let recommendedModel else {
+            modelReady = false
+            modelErrorMessage = "No recommended offline model is available right now."
+            return
+        }
+
+        guard modelManager.isReady else {
+            modelReady = false
+            if !isDownloading {
+                modelErrorMessage = nil
+            }
+            return
+        }
+
+        guard let installedModel = modelManager.installedModel(withID: recommendedModel.id),
+              modelManager.isInstalledAndUsable(recommendedModel) else {
+            modelReady = false
+            if !downloadFailed && !isDownloading {
+                modelErrorMessage = nil
+            }
+            return
+        }
+
+        if !modelReady && !isVerifyingModel && !isDownloading {
+            verifyModel(installedModel)
+        }
+    }
+
+    private func verifyModel(_ model: AIModel) {
+        guard !isVerifyingModel else { return }
+
+        isVerifyingModel = true
+        modelReady = false
+        downloadFailed = false
+        modelErrorMessage = nil
+
+        guard modelManager.setCurrentModel(model) else {
+            isVerifyingModel = false
+            modelErrorMessage = "EchoTune could not select \(model.name) as the active transcription model."
+            return
+        }
+
+        WhisperEngine.shared.loadModel(model) { result in
+            DispatchQueue.main.async {
+                self.isVerifyingModel = false
+
+                switch result {
+                case .success:
+                    self.modelReady = true
+                    self.modelErrorMessage = nil
+                case .failure(let error):
+                    self.modelReady = false
+                    self.downloadFailed = true
+                    self.modelErrorMessage = "EchoTune downloaded \(model.name), but Whisper could not load it: \(error.localizedDescription)"
                 }
             }
         }
@@ -774,11 +957,14 @@ private struct LiveDemoStep: View {
 
     @StateObject private var audioManager = AudioManager.shared
     @StateObject private var modelManager = ModelManager.shared
+    @StateObject private var transcriptionEngine = TranscriptionEngine.shared
 
     @State private var appeared = false
     @State private var isRecording = false
     @State private var transcribedText = ""
     @State private var displayedText = ""
+    @State private var resultCaption = ""
+    @State private var resultIsError = false
     @State private var isTranscribing = false
     @State private var showResult = false
     @State private var recordingSeconds: Int = 0
@@ -816,13 +1002,13 @@ private struct LiveDemoStep: View {
                             .fill(Color.echoSurface)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 16)
-                                    .stroke(Color.echoPrimary.opacity(0.3), lineWidth: 1)
+                                    .stroke((resultIsError ? Color.red : Color.echoPrimary).opacity(0.3), lineWidth: 1)
                             )
 
                         VStack(spacing: 12) {
-                            Image(systemName: "text.quote")
+                            Image(systemName: resultIsError ? "exclamationmark.triangle.fill" : "text.quote")
                                 .font(.system(size: 20))
-                                .foregroundColor(.echoPrimary)
+                                .foregroundColor(resultIsError ? .red : .echoPrimary)
 
                             Text(displayedText)
                                 .font(.system(size: 18, weight: .medium))
@@ -831,14 +1017,14 @@ private struct LiveDemoStep: View {
                                 .padding(.horizontal, 24)
                                 .frame(minHeight: 60)
 
-                            if displayedText.count == transcribedText.count && !transcribedText.isEmpty {
+                            if displayedText.count == transcribedText.count && !resultCaption.isEmpty {
                                 HStack(spacing: 4) {
-                                    Image(systemName: "sparkles")
+                                    Image(systemName: resultIsError ? "info.circle" : "sparkles")
                                         .font(.system(size: 11))
-                                    Text("Transcribed in real-time")
+                                    Text(resultCaption)
                                         .font(.system(size: 11))
                                 }
-                                .foregroundColor(.echoPrimary)
+                                .foregroundColor(resultIsError ? .red : .echoPrimary)
                                 .transition(.opacity.combined(with: .scale))
                             }
                         }
@@ -959,10 +1145,50 @@ private struct LiveDemoStep: View {
     }
 
     private func startRecording() {
+        guard let currentModel = currentModel else {
+            presentDemoMessage(
+                "No transcription model is selected. Go back to Setup and choose an offline model before running the demo.",
+                isError: true,
+                caption: "Setup required"
+            )
+            return
+        }
+
+        guard currentModel.category != .cloud else {
+            presentDemoMessage(
+                "The onboarding demo only supports Apple Speech or an offline Whisper model. Go back to Setup and install the Base model for a local demo.",
+                isError: true,
+                caption: "Cloud models need API keys"
+            )
+            return
+        }
+
+        if currentModel.isBuiltIn && !transcriptionEngine.isPermissionGranted {
+            transcriptionEngine.requestPermission { granted in
+                if granted {
+                    self.beginRecording()
+                } else {
+                    self.presentDemoMessage(
+                        "Speech Recognition permission is required when Apple Speech is selected. Allow it in the system prompt, or go back and install the offline Base model instead.",
+                        isError: true,
+                        caption: "Permission required"
+                    )
+                }
+            }
+            return
+        }
+
+        beginRecording()
+    }
+
+    private func beginRecording() {
         isRecording = true
         recordingSeconds = 0
         transcribedText = ""
         displayedText = ""
+        resultCaption = ""
+        resultIsError = false
+        showResult = false
 
         // Start audio recording
         audioManager.startRecording()
@@ -1001,40 +1227,128 @@ private struct LiveDemoStep: View {
         isTranscribing = true
 
         // Determine engine type
-        let currentModel = modelManager.currentModel
-        let useWhisper = currentModel != nil && currentModel!.category == .local && !currentModel!.isBuiltIn
+        let useWhisper = currentModel?.category == .local && currentModel?.isBuiltIn == false
         let engineType: AudioManager.AudioEngine = useWhisper ? .whisper : .appleSpeech
         let audioData = audioManager.stopRecording(forEngine: engineType)
 
-        // Transcribe using AppCoordinator's transcription engines
-        // For the demo, we'll use a simplified approach
         if let audioData = audioData, !audioData.isEmpty {
             performDemoTranscription(audioData: audioData)
         } else {
-            // No audio captured
             isTranscribing = false
-            transcribedText = "No audio captured. Try speaking louder!"
-            showResultWithAnimation()
+            presentDemoMessage(
+                "No audio was captured. Check the selected microphone, then try again and speak a little louder.",
+                isError: true,
+                caption: "Recording failed"
+            )
         }
     }
 
     private func performDemoTranscription(audioData: Data) {
-        // Use the TranscriptionEngine (Apple Speech) for the demo since it's always available
-        let engine = TranscriptionEngine.shared
+        guard let currentModel = currentModel else {
+            isTranscribing = false
+            presentDemoMessage(
+                "No transcription model is selected. Go back to Setup and choose a model before running the demo.",
+                isError: true,
+                caption: "Setup required"
+            )
+            return
+        }
 
-        engine.transcribeAudio(audioData) { result in
-            DispatchQueue.main.async {
-                self.isTranscribing = false
-                switch result {
-                case .success(let text):
-                    self.transcribedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if self.transcribedText.isEmpty {
-                        self.transcribedText = "Hmm, couldn't catch that. Try again?"
+        if currentModel.isBuiltIn {
+            transcriptionEngine.transcribeAudio(audioData) { result in
+                DispatchQueue.main.async {
+                    self.isTranscribing = false
+
+                    switch result {
+                    case .success(let text):
+                        let cleanedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if cleanedText.isEmpty {
+                            self.presentDemoMessage(
+                                "No words were detected. Try again, speak naturally, and stay close to the microphone.",
+                                isError: true,
+                                caption: "Nothing recognized"
+                            )
+                        } else {
+                            self.presentDemoMessage(
+                                cleanedText,
+                                isError: false,
+                                caption: "Processed with Apple Speech"
+                            )
+                        }
+                    case .failure(let error):
+                        self.presentDemoMessage(
+                            self.appleSpeechErrorMessage(for: error),
+                            isError: true,
+                            caption: "Apple Speech could not complete the demo"
+                        )
                     }
-                case .failure:
-                    self.transcribedText = "Transcription demo unavailable. Don't worry — it works great in the app!"
                 }
-                self.showResultWithAnimation()
+            }
+            return
+        }
+
+        guard let installedModel = modelManager.installedModel(withID: currentModel.id),
+              modelManager.isInstalledAndUsable(currentModel) else {
+            isTranscribing = false
+            presentDemoMessage(
+                "The selected offline model is not installed anymore. Go back to Setup and download the Base model again.",
+                isError: true,
+                caption: "Offline model missing"
+            )
+            return
+        }
+
+        guard modelManager.setCurrentModel(installedModel) else {
+            isTranscribing = false
+            presentDemoMessage(
+                "EchoTune could not switch to \(installedModel.name). Go back to Setup and re-run model setup.",
+                isError: true,
+                caption: "Model selection failed"
+            )
+            return
+        }
+
+        WhisperEngine.shared.loadModel(installedModel) { loadResult in
+            DispatchQueue.main.async {
+                switch loadResult {
+                case .success:
+                    WhisperEngine.shared.transcribeAudio(audioData) { result in
+                        DispatchQueue.main.async {
+                            self.isTranscribing = false
+
+                            switch result {
+                            case .success(let transcription):
+                                let cleanedText = transcription.outputText.trimmingCharacters(in: .whitespacesAndNewlines)
+                                if cleanedText.isEmpty {
+                                    self.presentDemoMessage(
+                                        "No words were detected. Try again with a longer phrase and a quieter room if possible.",
+                                        isError: true,
+                                        caption: "Nothing recognized"
+                                    )
+                                } else {
+                                    self.presentDemoMessage(
+                                        cleanedText,
+                                        isError: false,
+                                        caption: "Processed with \(installedModel.name)"
+                                    )
+                                }
+                            case .failure(let error):
+                                self.presentDemoMessage(
+                                    self.whisperErrorMessage(for: error, model: installedModel),
+                                    isError: true,
+                                    caption: "Offline transcription failed"
+                                )
+                            }
+                        }
+                    }
+                case .failure(let error):
+                    self.isTranscribing = false
+                    self.presentDemoMessage(
+                        "EchoTune downloaded \(installedModel.name), but Whisper could not load it for the demo: \(error.localizedDescription)",
+                        isError: true,
+                        caption: "Model load failed"
+                    )
+                }
             }
         }
     }
@@ -1058,6 +1372,8 @@ private struct LiveDemoStep: View {
             showResult = false
             transcribedText = ""
             displayedText = ""
+            resultCaption = ""
+            resultIsError = false
             audioLevels = Array(repeating: 0.05, count: 30)
         }
     }
@@ -1067,6 +1383,52 @@ private struct LiveDemoStep: View {
         audioLevelTimer?.invalidate()
         if isRecording {
             _ = audioManager.stopRecording()
+        }
+    }
+
+    private var currentModel: AIModel? {
+        modelManager.currentModel ?? modelManager.availableModels.first(where: { $0.id == "apple-speech" })
+    }
+
+    private func presentDemoMessage(_ message: String, isError: Bool, caption: String) {
+        transcribedText = message
+        displayedText = ""
+        resultIsError = isError
+        resultCaption = caption
+        showResultWithAnimation()
+    }
+
+    private func appleSpeechErrorMessage(for error: TranscriptionEngine.TranscriptionError) -> String {
+        switch error {
+        case .permissionDenied:
+            return "Speech Recognition permission is not granted. Allow it in System Settings, or use the offline Base model instead."
+        case .unavailable:
+            return "Apple Speech is unavailable right now on this Mac. Go back to Setup and use the offline Base model for a deterministic demo."
+        case .noAudioData:
+            return "No audio data reached the speech recognizer. Check the selected microphone and try again."
+        case .recognitionError(let underlyingError):
+            return "Apple Speech failed during transcription: \(underlyingError.localizedDescription)"
+        case .audioFormatError:
+            return "EchoTune could not prepare the recorded audio for Apple Speech. Try the demo again."
+        case .processingError:
+            return "Apple Speech could not finish processing that sample. Try again with a slightly longer phrase."
+        }
+    }
+
+    private func whisperErrorMessage(for error: WhisperEngine.WhisperError, model: AIModel) -> String {
+        switch error {
+        case .modelNotLoaded:
+            return "\(model.name) was not loaded when transcription started. Go back to Setup and re-run model setup."
+        case .modelLoadFailed(let underlyingError):
+            return "Whisper could not load \(model.name): \(underlyingError.localizedDescription)"
+        case .transcriptionFailed(let underlyingError):
+            return "Whisper failed to transcribe the recording: \(underlyingError.localizedDescription)"
+        case .audioFormatError:
+            return "EchoTune could not convert the recorded audio into Whisper's expected format."
+        case .noAudioData:
+            return "No audio data reached Whisper. Check the selected microphone and try again."
+        case .modelNotFound:
+            return "\(model.name) is no longer installed on this Mac. Go back to Setup and download it again."
         }
     }
 }
@@ -1210,6 +1572,9 @@ private struct TrialCTAStep: View {
     @State private var isActivating = false
     @State private var activationError: String?
     @State private var showLicenseField = false
+    @State private var purchaseStatusMessage: String?
+    @State private var purchaseStatusIsError = false
+    @State private var showPurchaseSheet = false
 
     private let licenseManager = LicenseManager.shared
 
@@ -1278,7 +1643,7 @@ private struct TrialCTAStep: View {
             VStack(spacing: 12) {
                 // Primary: Start Free Trial
                 Button(action: onFinish) {
-                    Text("Start Free Trial")
+                    Text(primaryButtonTitle)
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundColor(.white)
                         .frame(width: 260, height: 46)
@@ -1295,17 +1660,37 @@ private struct TrialCTAStep: View {
                 .buttonStyle(.plain)
 
                 #if APPSTORE
-                // App Store build: Show IAP option
                 Button(action: {
-                    AppCoordinator.shared.showPurchaseSheet = true
+                    showPurchaseSheet = true
+                    purchaseStatusMessage = nil
                 }) {
-                    Text("Upgrade to Pro")
+                    Text(storeButtonTitle)
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(.echoPrimary)
                 }
                 .buttonStyle(.plain)
                 #else
-                // Direct sale: Show license key entry
+                HStack(spacing: 16) {
+                    Button(action: openPurchaseFlow) {
+                        Text("Get License")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.echoPrimary)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: {
+                        activationError = nil
+                        withAnimation(.easeOut(duration: 0.25)) {
+                            showLicenseField.toggle()
+                        }
+                    }) {
+                        Text(showLicenseField ? "Hide License Field" : "I have a license key")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.echoPrimary)
+                    }
+                    .buttonStyle(.plain)
+                }
+
                 if showLicenseField {
                     VStack(spacing: 8) {
                         HStack(spacing: 8) {
@@ -1326,7 +1711,7 @@ private struct TrialCTAStep: View {
                             }
                             .buttonStyle(.plain)
                             .foregroundColor(.echoPrimary)
-                            .disabled(licenseKey.isEmpty || isActivating)
+                            .disabled(licenseKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isActivating)
                         }
 
                         if let error = activationError {
@@ -1336,25 +1721,22 @@ private struct TrialCTAStep: View {
                         }
                     }
                     .transition(.opacity.combined(with: .move(edge: .top)))
-                } else {
-                    Button(action: {
-                        withAnimation(.easeOut(duration: 0.25)) {
-                            showLicenseField = true
-                        }
-                    }) {
-                        Text("I have a license key")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(.echoPrimary)
-                    }
-                    .buttonStyle(.plain)
                 }
                 #endif
+
+                if let purchaseStatusMessage {
+                    Text(purchaseStatusMessage)
+                        .font(.system(size: 11))
+                        .foregroundColor(purchaseStatusIsError ? .red : .echoPrimary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 320)
+                }
             }
             .opacity(appeared ? 1 : 0)
 
             Spacer()
 
-            Text("7-day trial • 50 transcriptions • Then £29.99")
+            Text(trialFooterText)
                 .font(.system(size: 11))
                 .foregroundColor(.echoTextTertiary)
                 .padding(.bottom, 48)
@@ -1364,11 +1746,19 @@ private struct TrialCTAStep: View {
                 appeared = true
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("PurchaseCompleted"))) { _ in
+            purchaseStatusIsError = false
+            purchaseStatusMessage = "Pro unlocked on this Mac. Finish setup when you're ready."
+        }
+        .sheet(isPresented: $showPurchaseSheet) {
+            PurchaseView()
+        }
     }
 
     private func activateLicense() {
         isActivating = true
         activationError = nil
+        purchaseStatusMessage = nil
 
         licenseManager.activateLicense(licenseKey.uppercased()) { result in
             isActivating = false
@@ -1379,6 +1769,31 @@ private struct TrialCTAStep: View {
                 activationError = error.localizedDescription
             }
         }
+    }
+
+    private func openPurchaseFlow() {
+        activationError = nil
+        let opened = licenseManager.openPurchaseURL()
+        purchaseStatusIsError = !opened
+        purchaseStatusMessage = opened
+            ? "Purchase page opened in your browser. After checkout, come back here and paste your license key."
+            : "EchoTune could not open the purchase page. Visit \(Constants.purchaseURL) manually to buy a license."
+    }
+
+    private var primaryButtonTitle: String {
+        licenseManager.isPro ? "Finish Setup" : "Start Free Trial"
+    }
+
+    private var storeButtonTitle: String {
+        licenseManager.isPro ? "Pro unlocked" : "Upgrade to Pro"
+    }
+
+    private var trialFooterText: String {
+        #if APPSTORE
+        return "7-day free trial • Then a one-time App Store purchase"
+        #else
+        return "7-day free trial • Then a one-time EchoTune license"
+        #endif
     }
 }
 

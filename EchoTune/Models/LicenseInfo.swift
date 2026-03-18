@@ -46,13 +46,13 @@ enum LicenseTier: String, Codable {
             return [
                 "Unlimited transcriptions",
                 "All models included",
-                "1 user license"
+                "One-time purchase for 1 Mac"
             ]
         case .pro:
             return [
                 "Unlimited transcriptions",
                 "All models included",
-                "2 user licenses"
+                "One-time purchase for up to 3 Macs"
             ]
         }
     }

@@ -13,6 +13,11 @@ struct PurchaseView: View {
     @StateObject private var storeManager = StoreKitManager.shared
     @State private var showError = false
     @State private var errorMessage = ""
+    @State private var licenseManager = LicenseManager.shared
+
+    private var primaryCTA: String {
+        licenseManager.isTrialExpired ? "Purchase Now" : "Upgrade to Pro"
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -63,8 +68,7 @@ struct PurchaseView: View {
                 Text("Upgrade to Pro")
                     .font(.title2)
                     .fontWeight(.bold)
-
-                Text("Unlock unlimited transcriptions")
+                Text(licenseManager.isTrialExpired ? "Buy the one-time Pro unlock to keep dictating on this Mac." : "Unlock Pro early with a one-time App Store purchase.")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
             }
@@ -98,7 +102,7 @@ struct PurchaseView: View {
                 .font(.largeTitle)
                 .fontWeight(.bold)
 
-            Text("Transform your workflow with unlimited AI-powered voice transcription")
+            Text("One App Store purchase. Unlimited transcription with no subscription.")
                 .font(.body)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
@@ -154,7 +158,7 @@ struct PurchaseView: View {
                     }
 
                     VStack(spacing: 4) {
-                        Text("Upgrade to Pro")
+                        Text(primaryCTA)
                             .font(.headline)
                         Text(product.displayPrice)
                             .font(.subheadline)
@@ -167,7 +171,7 @@ struct PurchaseView: View {
             .controlSize(.large)
             .disabled(storeManager.isPurchasing)
 
-            Text("One-time purchase • No subscription • Single device")
+            Text("One-time App Store purchase • No subscription")
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
@@ -205,7 +209,7 @@ struct PurchaseView: View {
 
     private var termsSection: some View {
         VStack(spacing: 8) {
-            Text("Payment will be charged to your Apple Account. Purchases are non-refundable except as required by law.")
+            Text("Payment is charged to your Apple Account once. This is a non-renewing purchase, not a subscription.")
                 .font(.caption2)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)

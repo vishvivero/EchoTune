@@ -1671,12 +1671,16 @@ struct LicenseSubscriptionButton: View {
         if isPro {
             return "Pro Version"
         } else if !appCoordinator.licenseManager.isTrialExpired {
-            return "Trial Active"
+            #if APPSTORE
+            return "Upgrade to Pro"
+            #else
+            return "Purchase Now"
+            #endif
         } else {
             #if APPSTORE
             return "Upgrade to Pro"
             #else
-            return "Activate License"
+            return "Purchase Now"
             #endif
         }
     }
@@ -1684,10 +1688,8 @@ struct LicenseSubscriptionButton: View {
     private var buttonIcon: String {
         if isPro {
             return "crown.fill"
-        } else if !appCoordinator.licenseManager.isTrialExpired {
-            return "clock.fill"
         } else {
-            return "key.fill"
+            return "cart.fill"
         }
     }
 
@@ -1703,17 +1705,8 @@ struct LicenseSubscriptionButton: View {
 
     var body: some View {
         Button(action: {
-            #if APPSTORE
-                // App Store: Show purchase view if not pro
-                if isPro {
-                    // Just show info, maybe do nothing or show a "You're Pro!" message
-                } else {
-                    appCoordinator.showPurchaseSheet = true
-                }
-            #else
-                // Direct sale: Show license key entry
-                appCoordinator.showLicenseSheet = true
-            #endif
+            guard !isPro else { return }
+            appCoordinator.presentPurchaseFlow()
         }) {
             HStack(spacing: 8) {
                 Image(systemName: buttonIcon)

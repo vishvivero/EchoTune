@@ -499,11 +499,13 @@ class LicenseManager {
 
     // MARK: - Purchase
 
-    func openPurchaseURL() {
+    @discardableResult
+    func openPurchaseURL() -> Bool {
         // Polar.sh checkout for Solo product
         let checkoutURL = "https://buy.polar.sh/polar_cl_WceepXgXX84woZwlMk3QyIZw79tHTl3PcpXGh0KA2Xo"
         if let url = URL(string: checkoutURL) {
-            NSWorkspace.shared.open(url)
+            return NSWorkspace.shared.open(url)
         }
+        return false
     }
 }

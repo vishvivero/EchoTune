@@ -651,6 +651,29 @@ class ModelManager: ObservableObject {
 
         return true
     }
+
+    func installedModel(withID id: String) -> AIModel? {
+        installedModels.first(where: { $0.id == id })
+    }
+
+    func isInstalledAndUsable(_ model: AIModel) -> Bool {
+        guard let installedModel = installedModel(withID: model.id) else {
+            return false
+        }
+
+        if installedModel.isBuiltIn {
+            return true
+        }
+
+        switch installedModel.category {
+        case .local:
+            return installedModel.localPath != nil
+        case .cloud:
+            return isCloudEnabled(installedModel)
+        default:
+            return false
+        }
+    }
     
     private func updateStorageInfo() {
         do {
@@ -752,7 +775,6 @@ enum ModelCategory: String, CaseIterable {
     case cloud = "Cloud"
     case comingSoon = "Coming Soon"
 }
-
 
 
 

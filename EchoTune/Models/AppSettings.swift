@@ -9,6 +9,31 @@ import Foundation
 import Combine
 import SwiftUI
 
+enum DictationOutputMode: String, CaseIterable, Identifiable {
+    case spokenLanguage = "spokenLanguage"
+    case autoDetectTranslateToEnglish = "autoDetectTranslateToEnglish"
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .spokenLanguage:
+            return "Transcribe Spoken Language"
+        case .autoDetectTranslateToEnglish:
+            return "Auto-Detect + Translate to English"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .spokenLanguage:
+            return "Paste the spoken language as-is."
+        case .autoDetectTranslateToEnglish:
+            return "Detect the input language and paste English."
+        }
+    }
+}
+
 class AppSettings: ObservableObject {
     static let shared = AppSettings()
     // General Settings
@@ -39,6 +64,19 @@ class AppSettings: ObservableObject {
 
     @Published var translateToEnglish: Bool {
         didSet { UserDefaults.standard.set(translateToEnglish, forKey: "translateToEnglish") }
+    }
+
+    var dictationOutputMode: DictationOutputMode {
+        get { translateToEnglish ? .autoDetectTranslateToEnglish : .spokenLanguage }
+        set {
+            switch newValue {
+            case .spokenLanguage:
+                translateToEnglish = false
+            case .autoDetectTranslateToEnglish:
+                autoDetectLanguage = true
+                translateToEnglish = true
+            }
+        }
     }
     
     // Privacy Settings

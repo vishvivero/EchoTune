@@ -135,11 +135,13 @@ struct ReferralView: View {
                     RoundedRectangle(cornerRadius: 4)
                         .fill(
                             referralManager.hasFreeYear
-                                ? Color.green
-                                : LinearGradient(
-                                    colors: [.blue, .purple],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
+                                ? AnyShapeStyle(Color.green)
+                                : AnyShapeStyle(
+                                    LinearGradient(
+                                        colors: [.blue, .purple],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
                                 )
                         )
                         .frame(

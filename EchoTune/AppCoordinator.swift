@@ -14,6 +14,13 @@ import os.log
 
 private let appLog = OSLog(subsystem: "com.echotune.EchoTune", category: "debug")
 
+private struct FinalizedTranscription {
+    let outputText: String
+    let originalText: String
+    let translatedText: String?
+    let detectedLanguage: String?
+}
+
 class AppCoordinator: ObservableObject {
     @Published var showAbout = false
     @Published var showLicenseSheet = false
@@ -209,6 +216,17 @@ class AppCoordinator: ObservableObject {
         debugLog("🔄 Refreshing keyboard shortcut registration...")
         shortcutManager.unregisterGlobalShortcut()
         shortcutManager.registerGlobalShortcut()
+    }
+
+    func presentPurchaseFlow() {
+        #if APPSTORE
+        showPurchaseSheet = true
+        #else
+        let opened = licenseManager.openPurchaseURL()
+        if !opened {
+            showLicenseSheet = true
+        }
+        #endif
     }
     
     func setupApplication() {
@@ -519,7 +537,15 @@ class AppCoordinator: ObservableObject {
                     ])
 
                     // Process and insert text
-                    self.processAndInsertText(transcribedText, recordingDuration: recordingDuration)
+                    self.processAndInsertText(
+                        FinalizedTranscription(
+                            outputText: transcribedText,
+                            originalText: transcribedText,
+                            translatedText: nil,
+                            detectedLanguage: nil
+                        ),
+                        recordingDuration: recordingDuration
+                    )
                 }
 
             } catch {
@@ -830,10 +856,10 @@ class AppCoordinator: ObservableObject {
 
     // MARK: - Transcription
 
-    private func handleWhisperResult(_ result: Result<String, WhisperEngine.WhisperError>) {
+    private func handleWhisperResult(_ result: Result<WhisperTranscriptionResult, WhisperEngine.WhisperError>) {
         switch result {
-        case .success(let text):
-            os_log("📝 handleWhisperResult SUCCESS text='%{public}@' len=%d", log: appLog, type: .info, text, text.count)
+        case .success(let payload):
+            os_log("📝 handleWhisperResult SUCCESS text='%{public}@' len=%d", log: appLog, type: .info, payload.outputText, payload.outputText.count)
         case .failure(let error):
             os_log("📝 handleWhisperResult FAILURE error=%{public}@", log: appLog, type: .error, "\(error)")
         }
@@ -843,17 +869,26 @@ class AppCoordinator: ObservableObject {
         notificationManager.dismissProcessingNotification()
 
         switch result {
-        case .success(let transcribedText):
-            os_log("✅ Whisper success: '%{public}@' words=%d dur=%.1f", log: appLog, type: .info, transcribedText, transcribedText.split(separator: " ").count, recordingDuration)
+        case .success(let payload):
+            os_log("✅ Whisper success: '%{public}@' words=%d dur=%.1f", log: appLog, type: .info, payload.outputText, payload.outputText.split(separator: " ").count, recordingDuration)
 
             self.errorLogger.logInfo("Whisper transcription successful", category: "Transcription", context: [
-                "wordCount": "\(transcribedText.split(separator: " ").count)",
+                "wordCount": "\(payload.outputText.split(separator: " ").count)",
                 "recordingDuration": "\(String(format: "%.2f", recordingDuration))s",
-                "model": self.modelManager.currentModel?.name ?? "unknown"
+                "model": self.modelManager.currentModel?.name ?? "unknown",
+                "detectedLanguage": payload.detectedLanguage ?? "unknown",
+                "translated": payload.wasTranslated ? "true" : "false"
             ])
 
-            // Process and insert text (same as Apple Speech)
-            processAndInsertText(transcribedText, recordingDuration: recordingDuration)
+            processAndInsertText(
+                FinalizedTranscription(
+                    outputText: payload.outputText,
+                    originalText: payload.originalText,
+                    translatedText: payload.translatedText,
+                    detectedLanguage: payload.detectedLanguage
+                ),
+                recordingDuration: recordingDuration
+            )
 
         case .failure(let error):
             os_log("❌ Whisper FAILURE: %{public}@", log: appLog, type: .error, "\(error)")
@@ -882,8 +917,15 @@ class AppCoordinator: ObservableObject {
                 "recordingDuration": "\(String(format: "%.2f", recordingDuration))s"
             ])
 
-            // Process and insert text
-            processAndInsertText(transcribedText, recordingDuration: recordingDuration)
+            processAndInsertText(
+                FinalizedTranscription(
+                    outputText: transcribedText,
+                    originalText: transcribedText,
+                    translatedText: nil,
+                    detectedLanguage: nil
+                ),
+                recordingDuration: recordingDuration
+            )
 
         case .failure(let error):
             debugLog("❌ Apple Speech transcription failed: \(error)")
@@ -896,7 +938,9 @@ class AppCoordinator: ObservableObject {
         }
     }
 
-    private func processAndInsertText(_ transcribedText: String, recordingDuration: TimeInterval) {
+    private func processAndInsertText(_ transcription: FinalizedTranscription, recordingDuration: TimeInterval) {
+        let transcribedText = transcription.outputText
+
         // Validate transcription - detect silence/hallucinations
         if isLikelyHallucination(transcribedText, recordingDuration: recordingDuration) {
             debugLog("⚠️ Detected likely hallucination or silence, not inserting text: '\(transcribedText)'")
@@ -1012,7 +1056,14 @@ class AppCoordinator: ObservableObject {
         }
 
         // Add to history (with audio file path if saved)
-        TranscriptionHistoryManager.shared.addTranscription(processedText, duration: recordingDuration, audioFilePath: savedAudioPath)
+        TranscriptionHistoryManager.shared.addTranscription(
+            processedText,
+            duration: recordingDuration,
+            audioFilePath: savedAudioPath,
+            originalText: nil,
+            translatedText: nil,
+            detectedLanguage: nil
+        )
 
         // Insert text directly with performance monitoring
         PerformanceMonitor.shared.startTextInsertion()
@@ -1165,34 +1216,31 @@ class AppCoordinator: ObservableObject {
 
         #if APPSTORE
             // App Store build: Show in-app purchase option
-            alert.informativeText = "Your 7-day trial has expired. Upgrade to Pro to continue using EchoTune with unlimited transcriptions."
-            alert.addButton(withTitle: "Upgrade to Pro")
+            alert.informativeText = "Your 7-day trial has expired. Buy the one-time Pro unlock to continue using EchoTune with unlimited transcriptions."
+            alert.addButton(withTitle: "Purchase Now")
             alert.addButton(withTitle: "Later")
 
             let response = alert.runModal()
             if response == .alertFirstButtonReturn {
-                // Show in-app purchase view
                 DispatchQueue.main.async {
-                    self.showPurchaseSheet = true
+                    self.presentPurchaseFlow()
                 }
             }
         #else
             // Direct sale build: Show license key option
-            alert.informativeText = "Your 7-day trial has expired. Please purchase a license to continue using EchoTune."
+            alert.informativeText = "Your 7-day trial has expired. Purchase a one-time EchoTune license, or enter an existing license key, to continue."
+            alert.addButton(withTitle: "Purchase Now")
             alert.addButton(withTitle: "Enter License Key")
-            alert.addButton(withTitle: "Purchase Online")
             alert.addButton(withTitle: "Later")
 
             let response = alert.runModal()
             if response == .alertFirstButtonReturn {
-                // Open license sheet directly
                 DispatchQueue.main.async {
-                    self.showLicenseSheet = true
+                    self.presentPurchaseFlow()
                 }
             } else if response == .alertSecondButtonReturn {
-                // Open website purchase page
-                if let url = URL(string: "https://buy.polar.sh/polar_cl_WceepXgXX84woZwlMk3QyIZw79tHTl3PcpXGh0KA2Xo") {
-                    NSWorkspace.shared.open(url)
+                DispatchQueue.main.async {
+                    self.showLicenseSheet = true
                 }
             }
         #endif
@@ -1295,14 +1343,14 @@ class AppCoordinator: ObservableObject {
                         case .success:
                             self.whisperEngine.transcribeAudio(audioData) { result in
                                 switch result {
-                                case .success(let text):
+                                case .success(let payload):
                                     debugLog("✅ Re-transcription (Whisper) successful")
                                     self.notificationManager.showNotification(
                                         title: "Re-Transcription Complete",
                                         body: "Transcription updated with \(currentModel.name).",
                                         sound: false
                                     )
-                                    completion(text)
+                                    completion(payload.outputText)
                                 case .failure(let error):
                                     debugLog("❌ Re-transcription failed: \(error)")
                                     self.notificationManager.showNotification(
@@ -1326,14 +1374,14 @@ class AppCoordinator: ObservableObject {
                 } else {
                     whisperEngine.transcribeAudio(audioData) { [weak self] result in
                         switch result {
-                        case .success(let text):
+                        case .success(let payload):
                             debugLog("✅ Re-transcription (Whisper) successful")
                             self?.notificationManager.showNotification(
                                 title: "Re-Transcription Complete",
                                 body: "Transcription updated with \(currentModel.name).",
                                 sound: false
                             )
-                            completion(text)
+                            completion(payload.outputText)
                         case .failure(let error):
                             debugLog("❌ Re-transcription failed: \(error)")
                             self?.notificationManager.showNotification(

@@ -14,6 +14,36 @@ import Carbon
 
 class PermissionsManager: ObservableObject {
     static let shared = PermissionsManager()
+    private static let accessibilityPollInterval: TimeInterval = 2.0
+
+    private enum PrivacyPane {
+        case accessibility
+        case screenRecording
+
+        var urlCandidates: [String] {
+            switch self {
+            case .accessibility:
+                return [
+                    "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+                    "x-apple.systempreferences:com.apple.preference.security?Privacy"
+                ]
+            case .screenRecording:
+                return [
+                    "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
+                    "x-apple.systempreferences:com.apple.preference.security?Privacy"
+                ]
+            }
+        }
+
+        var fallbackPathDescription: String {
+            switch self {
+            case .accessibility:
+                return "Privacy & Security → Accessibility"
+            case .screenRecording:
+                return "Privacy & Security → Screen Recording"
+            }
+        }
+    }
 
     // Microphone
     @Published var hasMicrophonePermission = false
@@ -33,23 +63,69 @@ class PermissionsManager: ObservableObject {
     // Timer for periodic permission checking
     private var permissionCheckTimer: Timer?
 
+    private var foregroundObserver: NSObjectProtocol?
+
     private init() {
         checkAllPermissions()
         startPermissionMonitoring()
+        startForegroundMonitoring()
         debugLog("✓ PermissionsManager initialized")
+    }
+
+    deinit {
+        stopPermissionMonitoring()
+        if let foregroundObserver {
+            NotificationCenter.default.removeObserver(foregroundObserver)
+        }
     }
 
     // Periodically check accessibility permission when not granted
     private func startPermissionMonitoring() {
+        guard permissionCheckTimer == nil else { return }
+
         // Check every 2 seconds if accessibility permission is not granted
-        permissionCheckTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+        permissionCheckTimer = Timer.scheduledTimer(withTimeInterval: Self.accessibilityPollInterval, repeats: true) { [weak self] _ in
             guard let self = self else { return }
 
             // Only check if permission is not currently granted
             if !self.hasAccessibilityPermission {
                 self.checkAccessibilityPermission()
+            } else {
+                self.stopPermissionMonitoring()
             }
         }
+    }
+
+    private func stopPermissionMonitoring() {
+        permissionCheckTimer?.invalidate()
+        permissionCheckTimer = nil
+    }
+
+    private func updateAccessibilityMonitoring() {
+        if hasAccessibilityPermission {
+            stopPermissionMonitoring()
+        } else {
+            startPermissionMonitoring()
+        }
+    }
+
+    private func startForegroundMonitoring() {
+        foregroundObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: NSApplication.shared,
+            queue: .main
+        ) { [weak self] _ in
+            debugLog("🔄 App became active - refreshing permission state")
+            self?.checkAllPermissions()
+        }
+    }
+
+    var accessibilityInlineInstructions: String {
+        "System Settings opens directly to Accessibility. Turn on EchoTune, authenticate if macOS asks, then return here."
+    }
+
+    var screenRecordingInlineInstructions: String {
+        "System Settings opens directly to Screen Recording. Enable EchoTune there, then quit and reopen the app only if macOS asks you to."
     }
 
     // MARK: - Check All Permissions
@@ -166,6 +242,8 @@ class PermissionsManager: ObservableObject {
                 self.accessibilityStatus = hasRequestedBefore ? .denied : .notDetermined
             }
 
+            self.updateAccessibilityMonitoring()
+
             if statusChanged {
                 debugLog("🔄 Accessibility status changed: \(wasGranted ? "granted" : "not granted") → \(finalStatus ? "granted" : "not granted")\(apiWorks ? " (API verified)" : "")")
                 self.objectWillChange.send()
@@ -193,20 +271,9 @@ class PermissionsManager: ObservableObject {
             debugLog("✅ Accessibility permission already granted!")
             self.hasAccessibilityPermission = true
             self.accessibilityStatus = .granted
+            self.updateAccessibilityMonitoring()
+            NotificationCenter.default.post(name: NSNotification.Name("AccessibilityPermissionGranted"), object: nil)
             return
-        }
-
-        // Reset accessibility permission for our bundle to clear stale entries,
-        // then re-trigger the system prompt so macOS registers the app fresh.
-        // This handles the case where the user previously dismissed the prompt
-        // or where a different binary was registered.
-        if let bundleId = Bundle.main.bundleIdentifier {
-            let task = Process()
-            task.launchPath = "/usr/bin/tccutil"
-            task.arguments = ["reset", "Accessibility", bundleId]
-            try? task.run()
-            task.waitUntilExit()
-            debugLog("   ✓ Reset TCC accessibility entry for \(bundleId)")
         }
 
         // Now show the system prompt — this will register the current binary fresh
@@ -216,97 +283,14 @@ class PermissionsManager: ObservableObject {
         let _ = AXIsProcessTrustedWithOptions(promptOptions)
         debugLog("   ✓ System prompt triggered")
 
-        // Also open System Settings as a fallback — user can use the + button
-        // to manually add the app if the system prompt doesn't appear
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+        // Open the exact settings pane so the EchoTune toggle is visible immediately.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
             self.openAccessibilitySettings()
         }
     }
 
-    private func showAccessibilityInstructions() {
-        let alert = NSAlert()
-        alert.messageText = "Accessibility Permission Required"
-        alert.informativeText = """
-        EchoTune needs Accessibility permission to:
-        • Insert transcribed text into other applications
-        • Register global keyboard shortcuts for hands-free dictation
-
-        Steps:
-        1. Click "Open System Settings" below
-        2. In the Privacy & Security section, scroll to Accessibility
-        3. Find "EchoTune" in the list and toggle it ON
-        4. Return to EchoTune and click "Refresh Status" in Privacy Settings
-
-        Note: After granting permission, you may need to restart EchoTune.
-        """
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "Open System Settings")
-        alert.addButton(withTitle: "Later")
-
-        let response = alert.runModal()
-        if response == .alertFirstButtonReturn {
-            openAccessibilitySettings()
-        }
-    }
-
     func openAccessibilitySettings() {
-        // Use the correct method based on macOS version
-        let osVersion = ProcessInfo.processInfo.operatingSystemVersion
-        
-        // Try opening Accessibility settings with the app's bundle identifier
-        // This sometimes helps macOS recognize which app is requesting permission
-        if let bundleId = Bundle.main.bundleIdentifier {
-            debugLog("📦 Bundle ID: \(bundleId)")
-            
-            // For macOS 13+, try using the new System Settings format
-            if osVersion.majorVersion >= 13 {
-                if #available(macOS 13.0, *) {
-                    // Try direct URL to accessibility settings
-                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-                        NSWorkspace.shared.open(url)
-                        
-                        // Don't show dialog automatically - user will see if EchoTune appears or not
-                        return
-                    }
-                }
-            }
-        }
-        
-        // Fallback for macOS 12 and earlier, or if new method fails
-        let urlStrings = [
-            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
-            "x-apple.systempreferences:com.apple.preference.security?Privacy",
-        ]
-        
-        for urlString in urlStrings {
-            if let url = URL(string: urlString) {
-                NSWorkspace.shared.open(url)
-                
-                // Don't show dialog automatically
-                return
-            }
-        }
-        
-        debugLog("⚠️ Could not open System Settings - please navigate manually to Privacy & Security → Accessibility")
-    }
-
-    // Helper method to show instructions if app doesn't appear (call manually if needed)
-    func showManualAdditionInstructions() {
-        let alert = NSAlert()
-        alert.messageText = "Add EchoTune to Accessibility"
-        alert.informativeText = """
-        If EchoTune doesn't appear in the Accessibility list:
-
-        1. Click the "+" button (if available) in System Settings
-        2. Navigate to Applications folder
-        3. Select EchoTune.app
-        4. Enable the toggle next to EchoTune
-
-        Note: If running from Xcode, you may need to build and run the release version.
-        """
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
+        openPrivacyPane(.accessibility)
     }
 
     // MARK: - Screen Recording Permission
@@ -393,20 +377,21 @@ class PermissionsManager: ObservableObject {
     }
 
     func openScreenRecordingSettings() {
-        // Open Screen Recording settings
-        let urlStrings = [
-            "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
-            "x-apple.systempreferences:com.apple.preference.security?Privacy",
-        ]
+        openPrivacyPane(.screenRecording)
+    }
 
-        for urlString in urlStrings {
-            if let url = URL(string: urlString) {
-                NSWorkspace.shared.open(url)
-                return
+    @discardableResult
+    private func openPrivacyPane(_ pane: PrivacyPane) -> Bool {
+        for urlString in pane.urlCandidates {
+            guard let url = URL(string: urlString) else { continue }
+            if NSWorkspace.shared.open(url) {
+                debugLog("⚙️ Opened System Settings pane: \(urlString)")
+                return true
             }
         }
 
-        debugLog("⚠️ Could not open System Settings - please navigate manually to Privacy & Security → Screen Recording")
+        debugLog("⚠️ Could not open System Settings - please navigate manually to \(pane.fallbackPathDescription)")
+        return false
     }
 
     // MARK: - Combined Check
@@ -416,76 +401,21 @@ class PermissionsManager: ObservableObject {
     }
 
     func requestAllPermissions(completion: @escaping (Bool) -> Void) {
-        // Request microphone first
-        requestMicrophonePermission { [weak self] micGranted in
+        requestMicrophonePermission { [weak self] microphoneGranted in
             guard let self = self else { return }
 
-            if !micGranted {
+            guard microphoneGranted else {
                 completion(false)
                 return
             }
 
-            // Then check/request accessibility
-            if !self.hasAccessibilityPermission {
-                self.requestAccessibilityPermission()
-                // Accessibility requires manual grant, so we return false
-                // User needs to enable it in System Settings
-                completion(false)
-            } else {
+            if self.hasAccessibilityPermission {
                 completion(true)
+            } else {
+                self.requestAccessibilityPermission()
+                completion(false)
             }
         }
-    }
-
-    // MARK: - UI Helpers
-
-    func showPermissionsAlert() {
-        let missingPermissions = getMissingPermissions()
-
-        if missingPermissions.isEmpty {
-            return
-        }
-
-        let alert = NSAlert()
-        alert.messageText = "Permissions Required"
-
-        var message = "EchoTune needs the following permissions:\n\n"
-
-        if !hasMicrophonePermission {
-            message += "• Microphone - To record your voice\n"
-        }
-
-        if !hasAccessibilityPermission {
-            message += "• Accessibility - To insert text into apps\n"
-        }
-
-        alert.informativeText = message
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Grant Permissions")
-        alert.addButton(withTitle: "Cancel")
-
-        let response = alert.runModal()
-        if response == .alertFirstButtonReturn {
-            requestAllPermissions { _ in }
-        }
-    }
-
-    func getMissingPermissions() -> [String] {
-        var missing: [String] = []
-
-        if !hasMicrophonePermission {
-            missing.append("Microphone")
-        }
-
-        if !hasAccessibilityPermission {
-            missing.append("Accessibility")
-        }
-
-        if !hasScreenRecordingPermission {
-            missing.append("Screen Recording (Recommended)")
-        }
-
-        return missing
     }
 
     // Check if we have core permissions (mic + accessibility)

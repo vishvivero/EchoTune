@@ -711,8 +711,8 @@ class TranscriptionEngine: NSObject, ObservableObject {
             // Model is loaded, transcribe directly
             whisperEngine.transcribeAudio(audioData) { result in
                 switch result {
-                case .success(let text):
-                    completion(.success(text))
+                case .success(let transcription):
+                    completion(.success(transcription.outputText))
                 case .failure(let error):
                     debugLog("❌ Whisper transcription failed: \(error)")
                     completion(.failure(.processingError))
@@ -726,8 +726,8 @@ class TranscriptionEngine: NSObject, ObservableObject {
                 case .success:
                     whisperEngine.transcribeAudio(audioData) { result in
                         switch result {
-                        case .success(let text):
-                            completion(.success(text))
+                        case .success(let transcription):
+                            completion(.success(transcription.outputText))
                         case .failure(let error):
                             debugLog("❌ Whisper transcription failed after model load: \(error)")
                             completion(.failure(.processingError))

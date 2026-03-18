@@ -74,10 +74,9 @@ xcodebuild archive \
     -configuration "${CONFIGURATION}" \
     -archivePath "${ARCHIVE_PATH}" \
     -destination "generic/platform=macOS" \
-    CODE_SIGN_IDENTITY="Developer ID Application" \
-    | xcpretty || exit 1
+    CODE_SIGN_IDENTITY="Developer ID Application"
 
-if [ ! -d "${ARCHIVE_PATH}" ]; then
+if [ $? -ne 0 ]; then
     echo -e "${RED}❌ Archive failed${NC}"
     exit 1
 fi

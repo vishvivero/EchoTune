@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		6A7ACFC92EAE9C0200D8C6EE /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 6A7ACFC82EAE9C0200D8C6EE /* WhisperKit */; };
+		A1B2C3D42EAF000100D8C6EE /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D32EAF000100D8C6EE /* Sentry */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -70,6 +71,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				6A7ACFC92EAE9C0200D8C6EE /* WhisperKit in Frameworks */,
+				A1B2C3D42EAF000100D8C6EE /* Sentry in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -139,6 +141,7 @@
 			name = EchoTune;
 			packageProductDependencies = (
 				6A7ACFC82EAE9C0200D8C6EE /* WhisperKit */,
+				A1B2C3D32EAF000100D8C6EE /* Sentry */,
 			);
 			productName = EchoTune;
 			productReference = 6A7ACEA62EAD27FB00D8C6EE /* EchoTune.app */;
@@ -224,6 +227,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				6A7ACFC42EAE9ABA00D8C6EE /* XCRemoteSwiftPackageReference "WhisperKit" */,
+				A1B2C3D12EAF000100D8C6EE /* XCRemoteSwiftPackageReference "sentry-cocoa" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 6A7ACEA72EAD27FB00D8C6EE /* Products */;
@@ -640,6 +644,14 @@
 				minimumVersion = 0.9.0;
 			};
 		};
+		A1B2C3D12EAF000100D8C6EE /* XCRemoteSwiftPackageReference "sentry-cocoa" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/getsentry/sentry-cocoa.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 8.37.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -647,6 +659,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 6A7ACFC42EAE9ABA00D8C6EE /* XCRemoteSwiftPackageReference "WhisperKit" */;
 			productName = WhisperKit;
+		};
+		A1B2C3D32EAF000100D8C6EE /* Sentry */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1B2C3D12EAF000100D8C6EE /* XCRemoteSwiftPackageReference "sentry-cocoa" */;
+			productName = Sentry;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

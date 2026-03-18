@@ -63,11 +63,11 @@ struct LicenseSettingsView: View {
                             Text(licenseManager.isTrialExpired ? "Trial Expired" : "Trial Active")
                                 .fontWeight(.semibold)
                             if !licenseManager.isTrialExpired {
-                                Text("\(licenseManager.trialDaysRemaining) days remaining")
+                                Text("\(licenseManager.trialDaysRemaining) days remaining. Buy once when you're ready for unlimited use.")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             } else {
-                                Text("Enter a license key to continue using EchoTune")
+                                Text(trialExpiredSubtitle)
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
@@ -81,6 +81,10 @@ struct LicenseSettingsView: View {
             if !licenseManager.isLicensed {
                 #if !APPSTORE
                 Section("Activate License") {
+                    Text("Direct purchases are one-time licenses. Activate the key you received after checkout.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
                     TextField("XXXXX-XXXXX-XXXXX-XXXXX", text: $licenseKey)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(.body, design: .monospaced))
@@ -110,16 +114,18 @@ struct LicenseSettingsView: View {
                         .buttonStyle(.borderedProminent)
                         .disabled(licenseKey.isEmpty || isActivating)
 
-                        Button("Purchase") {
-                            if let url = URL(string: "https://echotune.app/purchase") {
-                                NSWorkspace.shared.open(url)
-                            }
+                        Button(licenseManager.isTrialExpired ? "Purchase Now" : "Upgrade to Pro") {
+                            AppCoordinator.shared.presentPurchaseFlow()
                         }
                         .buttonStyle(.bordered)
                     }
                 }
                 #else
                 Section("Purchase") {
+                    Text("App Store builds use a one-time Pro unlock tied to your Apple Account.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
                     if storeKit.products.isEmpty {
                         HStack {
                             ProgressView().controlSize(.small)
@@ -131,7 +137,7 @@ struct LicenseSettingsView: View {
                             showPurchaseSheet = true
                         } label: {
                             HStack {
-                                Text("Purchase Pro")
+                                Text(licenseManager.isTrialExpired ? "Purchase Now" : "Upgrade to Pro")
                                 Spacer()
                                 Text(product.displayPrice)
                                     .foregroundColor(.secondary)
@@ -229,6 +235,14 @@ struct LicenseSettingsView: View {
         formatter.dateStyle = .medium
         return formatter.string(from: date)
     }
+
+    private var trialExpiredSubtitle: String {
+        #if APPSTORE
+        return "Your trial ended. Buy the one-time Pro unlock to keep using EchoTune on this Mac."
+        #else
+        return "Your trial ended. Purchase a one-time EchoTune license or enter an existing key to continue."
+        #endif
+    }
 }
 
 // MARK: - License Detail Row
@@ -305,7 +319,7 @@ struct PurchaseSheet: View {
                     .font(.title)
                     .fontWeight(.bold)
 
-                Text("Unlock all features and support development")
+                Text("Unlock all features with a one-time App Store purchase")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
@@ -336,7 +350,7 @@ struct PurchaseSheet: View {
                             .font(.system(size: 36, weight: .bold))
                             .foregroundColor(.blue)
 
-                        Text("One-time purchase • Lifetime access")
+                        Text("One-time purchase • No subscription")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }

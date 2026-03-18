@@ -46,10 +46,20 @@ struct PermissionsView: View {
                 PermissionRowView(
                     icon: "keyboard.fill",
                     title: "Accessibility Access",
-                    description: "Required to insert transcribed text into applications",
+                    description: permissionsManager.accessibilityInlineInstructions,
                     status: permissionsManager.accessibilityStatus,
                     action: {
                         requestAccessibilityPermission()
+                    }
+                )
+
+                PermissionRowView(
+                    icon: "rectangle.dashed.badge.record",
+                    title: "Screen Recording Access",
+                    description: permissionsManager.screenRecordingInlineInstructions,
+                    status: permissionsManager.screenRecordingStatus,
+                    action: {
+                        permissionsManager.requestScreenRecordingPermission()
                     }
                 )
             }
@@ -78,11 +88,6 @@ struct PermissionsView: View {
                         Text("Some permissions are missing")
                             .foregroundColor(.secondary)
                     }
-
-                    Button("Request All Permissions") {
-                        requestAllPermissions()
-                    }
-                    .buttonStyle(.borderedProminent)
                 }
                 .padding()
                 .frame(maxWidth: .infinity)
@@ -98,8 +103,13 @@ struct PermissionsView: View {
                 }
                 .buttonStyle(.bordered)
 
-                Button("Open System Settings") {
-                    openSystemSettings()
+                Button("Open Accessibility Settings") {
+                    permissionsManager.openAccessibilitySettings()
+                }
+                .buttonStyle(.bordered)
+
+                Button("Open Screen Recording Settings") {
+                    permissionsManager.openScreenRecordingSettings()
                 }
                 .buttonStyle(.bordered)
             }
@@ -124,21 +134,8 @@ struct PermissionsView: View {
         permissionsManager.requestAccessibilityPermission()
     }
 
-    private func requestAllPermissions() {
-        isChecking = true
-        permissionsManager.requestAllPermissions { _ in
-            isChecking = false
-        }
-    }
-
     private func refreshPermissions() {
         permissionsManager.checkAllPermissions()
-    }
-
-    private func openSystemSettings() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy") {
-            NSWorkspace.shared.open(url)
-        }
     }
 }
 
