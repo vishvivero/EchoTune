@@ -82,7 +82,10 @@ struct EchoTuneApp: App {
                     EmptyView()
                 }
             }
+            .onOpenURL(perform: handleURL)
+            .frame(minWidth: 900, minHeight: 700)
         }
+        .defaultSize(width: 1100, height: 800)
 
         // Settings window
         Settings {

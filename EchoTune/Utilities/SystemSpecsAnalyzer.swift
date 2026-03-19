@@ -63,11 +63,11 @@ enum PerformanceTier {
         case .veryLow:
             return "apple-speech" // Built-in only for very low-end
         case .low:
-            return "tiny.en" // Tiny models for low-end
+            return "distil-whisper_distil-large-v3_turbo" // Distil Large v3 Turbo for low-end (fast + accurate)
         case .medium:
-            return "base.en" // Base models for medium-tier
+            return "distil-whisper_distil-large-v3_turbo" // Distil Large v3 Turbo for medium-tier
         case .high:
-            return "small.en" // Small or higher for high-end
+            return "distil-whisper_distil-large-v3_turbo" // Distil Large v3 Turbo for high-end
         }
     }
 }

@@ -12,7 +12,7 @@ import CoreML
 import WhisperKit
 import os.log
 
-private let wLog = OSLog(subsystem: "com.echotune.EchoTune", category: "whisper")
+let wLog = OSLog(subsystem: "com.echotune.EchoTune", category: "whisper")
 
 struct WhisperTranscriptionResult {
     let outputText: String
@@ -37,6 +37,8 @@ class WhisperEngine: ObservableObject {
         case modelNotFound
     }
 
+    // MARK: - Stored Properties
+
     // Whisper instance
     private var whisperKit: WhisperKit?
 
@@ -47,11 +49,33 @@ class WhisperEngine: ObservableObject {
     @Published var currentText = ""
     @Published var loadedModelName: String?
 
+    // Loading progress (0.0 to 1.0) for UI feedback during model initialization
+    @Published var loadingProgress: Double = 0.0
+    @Published var loadingStage: String = ""
+
     // Current model info
     private var currentModelID: String?
 
     private let audioProcessingQueue = DispatchQueue(label: "com.echotune.whisperProcessing", qos: .userInitiated)
     private var pendingLoadCompletions: [(Result<Void, WhisperError>) -> Void] = []
+
+    // Streaming state (stored properties must remain in main class file)
+    var audioBuffers: [AVAudioPCMBuffer] = []
+    var streamingTask: Task<Void, Never>?
+
+    // MARK: - Internal Accessors for Extensions
+
+    /// Provides read-only access to the WhisperKit instance for extension files.
+    var whisperKitRef: WhisperKit? {
+        whisperKit
+    }
+
+    /// Provides access to the audio processing queue for extension files.
+    var audioProcessingQueueRef: DispatchQueue {
+        audioProcessingQueue
+    }
+
+    // MARK: - Initialization
 
     private init() {
         debugLog("🎙️ WhisperEngine initialized")
@@ -91,6 +115,8 @@ class WhisperEngine: ObservableObject {
 
         isLoading = true
         loadedModelName = nil
+        loadingProgress = 0.0
+        loadingStage = "Preparing..."
 
         debugLog("📦 Loading Whisper model: \(model.name) (\(model.id))")
 
@@ -98,6 +124,10 @@ class WhisperEngine: ObservableObject {
             do {
                 // ✅ PHASE 3: Metal GPU Acceleration + Neural Engine
                 // Configure optimal compute units for maximum performance
+                await MainActor.run {
+                    self.loadingProgress = 0.1
+                    self.loadingStage = "Configuring GPU acceleration..."
+                }
                 debugLog("⚡ Configuring Metal GPU acceleration...")
 
                 let computeOptions = ModelComputeOptions(
@@ -112,10 +142,22 @@ class WhisperEngine: ObservableObject {
                 debugLog("   Text Decoder: All compute units (CPU + GPU + Neural Engine)")
                 debugLog("   Cache Prefill: GPU accelerated")
 
+                await MainActor.run {
+                    self.loadingProgress = 0.2
+                    self.loadingStage = "Setting up model directory..."
+                }
+
+                // Use Application Support to avoid Documents permission popup.
+                // WhisperKit will download to: ~/Library/Application Support/EchoTune/WhisperModels/huggingface/...
+                let appSupportDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+                let whisperBaseDir = appSupportDir.appendingPathComponent("EchoTune/WhisperModels", isDirectory: true)
+
+                // Ensure directory exists
+                try? FileManager.default.createDirectory(at: whisperBaseDir, withIntermediateDirectories: true)
+
                 // Use the model's localPath if set by ModelManager (which knows the correct
                 // folder naming convention, e.g., "base" → "openai_whisper-base").
                 // Fall back to constructing the path from the model ID.
-                let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
                 let modelFolderPath: String
                 if let localPath = model.localPath {
                     modelFolderPath = localPath.path
@@ -127,7 +169,7 @@ class WhisperEngine: ObservableObject {
                     } else {
                         folderName = "openai_whisper-\(model.id)"
                     }
-                    modelFolderPath = documentsURL
+                    modelFolderPath = whisperBaseDir
                         .appendingPathComponent("huggingface/models/argmaxinc/whisperkit-coreml")
                         .appendingPathComponent(folderName)
                         .path
@@ -137,20 +179,48 @@ class WhisperEngine: ObservableObject {
                 debugLog("📂 Model folder: \(modelFolderPath)")
                 debugLog("   Exists: \(modelExists)")
 
+                await MainActor.run {
+                    self.loadingProgress = 0.3
+                    self.loadingStage = modelExists ? "Loading model files..." : "Downloading model..."
+                }
+
                 // Load WhisperKit with Metal optimization and model prewarming
+                // Note: WhisperKit initialization includes CoreML compilation which takes time for large models
+                await MainActor.run {
+                    self.loadingProgress = 0.4
+                    self.loadingStage = "Initializing WhisperKit..."
+                }
+
                 let whisper = try await WhisperKit(
                     model: model.id,
-                    downloadBase: documentsURL,           // Explicit base so it finds local models
+                    downloadBase: whisperBaseDir,         // Use App Support (no Documents permission needed)
                     modelFolder: modelExists ? modelFolderPath : nil,  // Use local folder if available
                     computeOptions: computeOptions,       // Enable Metal + Neural Engine
                     verbose: true,
                     logLevel: .debug,
-                    prewarm: true,                        // Prewarm models for faster first transcription
+                    prewarm: false,                       // We'll prewarm separately for progress tracking
                     load: true,                           // Ensure model loads immediately
                     download: !modelExists                // Only download if not already local
                 )
 
                 await MainActor.run {
+                    self.loadingProgress = 0.7
+                    self.loadingStage = "Compiling CoreML models..."
+                }
+
+                // Prewarm the model for faster first transcription
+                await MainActor.run {
+                    self.loadingProgress = 0.85
+                    self.loadingStage = "Warming up model..."
+                }
+
+                // Prewarm decoder for faster first inference
+                try? await whisper.prewarmModels()
+
+                await MainActor.run {
+                    self.loadingProgress = 1.0
+                    self.loadingStage = "Ready!"
+
                     self.whisperKit = whisper
                     self.currentModelID = model.id
                     self.loadedModelName = model.name
@@ -170,6 +240,8 @@ class WhisperEngine: ObservableObject {
                 await MainActor.run {
                     self.isLoading = false
                     self.isAvailable = false
+                    self.loadingProgress = 0.0
+                    self.loadingStage = "Failed"
 
                     debugLog("❌ Failed to load Whisper model: \(error)")
                     completion(.failure(.modelLoadFailed(error)))
@@ -247,490 +319,6 @@ class WhisperEngine: ObservableObject {
                 }
             }
         }
-    }
-
-    // MARK: - Streaming Transcription (for live audio)
-
-    private var audioBuffers: [AVAudioPCMBuffer] = []
-    private var streamingTask: Task<Void, Never>?
-
-    func startStreamingTranscription(completion: @escaping (Result<WhisperTranscriptionResult, WhisperError>) -> Void) {
-        os_log("🎤 startStreamingTranscription, whisperKit=%{public}@, isAvailable=%d", log: wLog, type: .info, whisperKit == nil ? "nil" : "loaded", isAvailable ? 1 : 0)
-        guard whisperKit != nil else {
-            os_log("❌ whisperKit is nil — modelNotLoaded", log: wLog, type: .error)
-            completion(.failure(.modelNotLoaded))
-            return
-        }
-
-        isProcessing = true
-        currentText = ""
-        audioBuffers = []
-
-        debugLog("🎤 Starting streaming transcription...")
-    }
-
-    func appendAudioBuffer(_ buffer: AVAudioPCMBuffer) {
-        audioProcessingQueue.async { [weak self] in
-            guard let self = self else { return }
-
-            // Accumulate buffers for batch processing
-            self.audioBuffers.append(buffer)
-
-            // For now, we'll process when user stops recording
-            // WhisperKit works better with complete audio rather than streaming
-        }
-    }
-
-    func endStreamingTranscription(completion: @escaping (Result<WhisperTranscriptionResult, WhisperError>) -> Void) {
-        debugLog("🛑 Ending streaming transcription")
-        debugLog("📊 Total buffers accumulated: \(audioBuffers.count)")
-        os_log("🛑 endStreamingTranscription: buffers=%d whisperKit=%{public}@", log: wLog, type: .info, audioBuffers.count, whisperKit == nil ? "nil" : "loaded")
-
-        guard let whisperKit = whisperKit else {
-            os_log("❌ whisperKit nil at endStreaming", log: wLog, type: .error)
-            isProcessing = false
-            completion(.failure(.modelNotLoaded))
-            return
-        }
-
-        guard !audioBuffers.isEmpty else {
-            os_log("❌ audioBuffers empty at endStreaming", log: wLog, type: .error)
-            isProcessing = false
-            completion(.failure(.noAudioData))
-            return
-        }
-
-        // Synchronize with audioProcessingQueue to safely snapshot buffers
-        let buffersSnapshot: [AVAudioPCMBuffer] = audioProcessingQueue.sync {
-            let snapshot = self.audioBuffers
-            self.audioBuffers = []
-            return snapshot
-        }
-
-        Task {
-            do {
-                os_log("🔄 Task started: processing %d buffers", log: wLog, type: .info, buffersSnapshot.count)
-
-                // Calculate total frames from all buffers
-                let totalFrameCount = buffersSnapshot.reduce(0) { $0 + Int($1.frameLength) }
-                let sampleRate = buffersSnapshot[0].format.sampleRate
-                let audioDuration = Double(totalFrameCount) / sampleRate
-                os_log("📊 Audio: %.2fs (%d frames, %.0fHz)", log: wLog, type: .info, audioDuration, totalFrameCount, sampleRate)
-
-                // Convert all buffers to a single Float array
-                let audioArray = try self.convertBuffersToFloatArray(buffersSnapshot)
-                os_log("✅ Converted to %d samples", log: wLog, type: .info, audioArray.count)
-
-                // Calculate RMS to verify audio is present
-                let rms = sqrt(audioArray.map { $0 * $0 }.reduce(0, +) / Float(max(audioArray.count, 1)))
-                os_log("🔊 RMS=%.6f (need >0.001)", log: wLog, type: .info, rms)
-
-                // Start performance monitoring for transcription
-                await MainActor.run {
-                    PerformanceMonitor.shared.startTranscription(
-                        engine: "WhisperKit",
-                        model: self.loadedModelName ?? "unknown"
-                    )
-                }
-
-                // Transcribe directly from audio array
-                os_log("🎙️ Calling whisperKit.transcribe(audioArray:)...", log: wLog, type: .info)
-                let transcriptionResult = try await self.transcribeWithCurrentSettings(audioArray: audioArray, whisperKit: whisperKit)
-                os_log("📝 Transcription: '%{public}@' (%d words)", log: wLog, type: .info, transcriptionResult.outputText, transcriptionResult.outputText.split(separator: " ").count)
-
-                await MainActor.run {
-                    // End performance monitoring with word count
-                    PerformanceMonitor.shared.endTranscription(
-                        wordCount: transcriptionResult.outputText.split(separator: " ").count
-                    )
-
-                    self.currentText = transcriptionResult.outputText
-                    self.isProcessing = false
-                    os_log("✅ Final cleaned: '%{public}@'", log: wLog, type: .info, transcriptionResult.outputText)
-                    completion(.success(transcriptionResult))
-                }
-            } catch {
-                os_log("❌ Transcription Task FAILED: %{public}@", log: wLog, type: .error, "\(error)")
-                await MainActor.run {
-                    self.isProcessing = false
-
-                    debugLog("❌ Streaming transcription failed: \(error)")
-                    completion(.failure(.transcriptionFailed(error)))
-                }
-            }
-        }
-    }
-
-    // MARK: - Audio Processing Helpers
-
-    private func convertAudioDataToBuffer(_ audioData: Data) throws -> AVAudioPCMBuffer {
-        // Read audio data from CAF/WAV format into a buffer
-        let tempURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("whisper_temp_\(UUID().uuidString).caf")
-
-        try audioData.write(to: tempURL)
-        defer { try? FileManager.default.removeItem(at: tempURL) }
-
-        let audioFile = try AVAudioFile(forReading: tempURL)
-        let format = audioFile.processingFormat
-
-        guard let buffer = AVAudioPCMBuffer(
-            pcmFormat: format,
-            frameCapacity: AVAudioFrameCount(audioFile.length)
-        ) else {
-            throw WhisperError.audioFormatError
-        }
-
-        try audioFile.read(into: buffer)
-        buffer.frameLength = AVAudioFrameCount(audioFile.length)
-
-        return buffer
-    }
-
-    private func transcribeWithCurrentSettings(audioArray: [Float], whisperKit: WhisperKit) async throws -> WhisperTranscriptionResult {
-        let settings = AppSettings.shared
-        let preferredLanguage = settings.preferredLanguage.components(separatedBy: "-").first
-
-        let transcriptionOptions = DecodingOptions(
-            task: .transcribe,
-            language: settings.autoDetectLanguage ? nil : preferredLanguage,
-            detectLanguage: settings.autoDetectLanguage || settings.translateToEnglish
-        )
-        let transcriptionPass = try await whisperKit.transcribe(audioArray: audioArray, decodeOptions: transcriptionOptions)
-        let originalText = TranscriptionEngine.shared.processText(
-            transcriptionPass
-                .map { $0.text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-                .joined(separator: " ")
-        )
-        let detectedLanguage = transcriptionPass.first?.language
-
-        if settings.translateToEnglish, let detectedLanguage, !detectedLanguage.hasPrefix("en") {
-            let translationOptions = DecodingOptions(
-                task: .translate,
-                language: settings.autoDetectLanguage ? nil : preferredLanguage,
-                detectLanguage: true
-            )
-            let translationPass = try await whisperKit.transcribe(audioArray: audioArray, decodeOptions: translationOptions)
-            let translatedText = TranscriptionEngine.shared.processText(
-                translationPass
-                    .map { $0.text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) }
-                    .filter { !$0.isEmpty }
-                    .joined(separator: " ")
-            )
-
-            return WhisperTranscriptionResult(
-                outputText: translatedText,
-                originalText: originalText,
-                translatedText: translatedText,
-                detectedLanguage: detectedLanguage
-            )
-        }
-
-        return WhisperTranscriptionResult(
-            outputText: originalText,
-            originalText: originalText,
-            translatedText: nil,
-            detectedLanguage: detectedLanguage
-        )
-    }
-
-    private func convertBufferToFloatArray(_ buffer: AVAudioPCMBuffer) throws -> [Float] {
-        // Convert a single buffer to Float array for WhisperKit
-        // Uses file-based resampling for reliability with any buffer size
-        return try convertBuffersToFloatArray([buffer])
-    }
-
-    private func convertBuffersToFloatArray(_ buffers: [AVAudioPCMBuffer]) throws -> [Float] {
-        guard !buffers.isEmpty else {
-            throw WhisperError.noAudioData
-        }
-
-        let inputFormat = buffers[0].format
-        let targetSampleRate: Double = 16000
-
-        os_log("🔄 convertBuffers: %d buffers, format=%.0fHz %dch %{public}@",
-               log: wLog, type: .info, buffers.count, inputFormat.sampleRate, inputFormat.channelCount,
-               inputFormat.commonFormat == .pcmFormatFloat32 ? "Float32" : inputFormat.commonFormat == .pcmFormatInt16 ? "Int16" : "other")
-
-        // If already 16kHz mono Float32, just extract float data directly
-        if inputFormat.sampleRate == targetSampleRate && inputFormat.channelCount == 1
-            && inputFormat.commonFormat == .pcmFormatFloat32 {
-            var result: [Float] = []
-            for buffer in buffers {
-                guard let channelData = buffer.floatChannelData else {
-                    throw WhisperError.audioFormatError
-                }
-                let frameCount = Int(buffer.frameLength)
-                result.append(contentsOf: UnsafeBufferPointer(start: channelData[0], count: frameCount))
-            }
-            os_log("✅ Already 16kHz mono Float32, %d samples", log: wLog, type: .info, result.count)
-            return result
-        }
-
-        // Step 1: Merge all input buffers into one contiguous buffer
-        let totalInputFrames = buffers.reduce(AVAudioFrameCount(0)) { $0 + $1.frameLength }
-        guard totalInputFrames > 0 else { throw WhisperError.noAudioData }
-
-        guard let mergedInput = AVAudioPCMBuffer(pcmFormat: inputFormat, frameCapacity: totalInputFrames) else {
-            throw WhisperError.audioFormatError
-        }
-
-        var writeOffset: AVAudioFrameCount = 0
-        for buffer in buffers {
-            let frameCount = Int(buffer.frameLength)
-            guard frameCount > 0 else { continue }
-            for channel in 0..<Int(inputFormat.channelCount) {
-                if let src = buffer.floatChannelData?[channel],
-                   let dst = mergedInput.floatChannelData?[channel] {
-                    memcpy(dst.advanced(by: Int(writeOffset)), src, frameCount * MemoryLayout<Float>.size)
-                }
-            }
-            writeOffset += buffer.frameLength
-        }
-        mergedInput.frameLength = totalInputFrames
-
-        let inputDuration = Double(totalInputFrames) / inputFormat.sampleRate
-        os_log("📦 Merged: %d frames (%.1fs at %.0fHz)",
-               log: wLog, type: .info, totalInputFrames, inputDuration, inputFormat.sampleRate)
-
-        // Step 2: Convert directly with AVAudioConverter (no temp file — avoids format issues)
-        let targetFormat = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: targetSampleRate,
-            channels: 1,
-            interleaved: false
-        )!
-
-        guard let converter = AVAudioConverter(from: inputFormat, to: targetFormat) else {
-            os_log("❌ Failed to create converter from %{public}@ to 16kHz", log: wLog, type: .error, "\(inputFormat)")
-            throw WhisperError.audioFormatError
-        }
-
-        // Calculate output capacity generously
-        let outputFrameCapacity = AVAudioFrameCount(ceil(inputDuration * targetSampleRate)) + 1000
-
-        guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: outputFrameCapacity) else {
-            throw WhisperError.audioFormatError
-        }
-
-        var inputConsumed = false
-        let inputBlock: AVAudioConverterInputBlock = { _, outStatus in
-            if inputConsumed {
-                outStatus.pointee = .endOfStream
-                return nil
-            }
-            inputConsumed = true
-            outStatus.pointee = .haveData
-            return mergedInput
-        }
-
-        var convError: NSError?
-        let status = converter.convert(to: outputBuffer, error: &convError, withInputFrom: inputBlock)
-
-        os_log("🔧 Convert: status=%d outFrames=%d capacity=%d err=%{public}@",
-               log: wLog, type: .info, status.rawValue, outputBuffer.frameLength, outputFrameCapacity,
-               convError?.localizedDescription ?? "none")
-
-        // AVAudioConverter sometimes returns .inputRanDry with valid data in the buffer
-        if outputBuffer.frameLength == 0 {
-            os_log("⚠️ frameLength=0, checking if data exists...", log: wLog, type: .info)
-            // Try estimating the output size
-            let estimated = AVAudioFrameCount(ceil(inputDuration * targetSampleRate))
-            if estimated > 0 && (status == .haveData || status == .inputRanDry) {
-                outputBuffer.frameLength = estimated
-                os_log("⚠️ Set frameLength to estimated %d", log: wLog, type: .info, estimated)
-            }
-        }
-
-        guard outputBuffer.frameLength > 0, let channelData = outputBuffer.floatChannelData else {
-            os_log("❌ Conversion produced 0 frames, status=%d", log: wLog, type: .error, status.rawValue)
-            throw WhisperError.noAudioData
-        }
-
-        let floatArray = Array(UnsafeBufferPointer(start: channelData[0], count: Int(outputBuffer.frameLength)))
-
-        // Verify audio content
-        let rms = sqrt(floatArray.map { $0 * $0 }.reduce(0, +) / Float(max(floatArray.count, 1)))
-        os_log("✅ Output: %d samples (%.1fs), RMS=%.6f", log: wLog, type: .info,
-               floatArray.count, Double(floatArray.count) / targetSampleRate, rms)
-
-        return floatArray
-    }
-
-    private func mergeBuffers(_ buffers: [AVAudioPCMBuffer]) throws -> AVAudioPCMBuffer {
-        guard !buffers.isEmpty else {
-            throw WhisperError.noAudioData
-        }
-
-        // ✅ OPTIMIZED: Pre-calculate total size once
-        let format = buffers[0].format
-        let totalFrames = buffers.reduce(0) { $0 + AVAudioFrameCount($1.frameLength) }
-
-        guard let mergedBuffer = AVAudioPCMBuffer(
-            pcmFormat: format,
-            frameCapacity: totalFrames
-        ) else {
-            throw WhisperError.audioFormatError
-        }
-
-        // ✅ OPTIMIZED: Use UnsafeMutableBufferPointer for faster memory operations
-        let channelCount = Int(format.channelCount)
-        let floatSize = MemoryLayout<Float>.stride
-
-        var currentFrame: AVAudioFramePosition = 0
-        for buffer in buffers {
-            let frameLength = Int(buffer.frameLength)
-            let byteCount = frameLength * floatSize
-
-            // Process all channels at once
-            for channel in 0..<channelCount {
-                if let src = buffer.floatChannelData?[channel],
-                   let dst = mergedBuffer.floatChannelData?[channel] {
-                    // Single memcpy per buffer per channel (more efficient)
-                    memcpy(dst.advanced(by: Int(currentFrame)), src, byteCount)
-                }
-            }
-
-            currentFrame += AVAudioFramePosition(frameLength)
-        }
-
-        mergedBuffer.frameLength = totalFrames
-        return mergedBuffer
-    }
-
-    private func mergeBuffersToWAV(_ buffers: [AVAudioPCMBuffer]) throws -> Data {
-        guard !buffers.isEmpty else {
-            throw WhisperError.noAudioData
-        }
-
-        // Get format from first buffer
-        let format = buffers[0].format
-
-        // Calculate total frame count
-        let totalFrames = buffers.reduce(0) { $0 + AVAudioFrameCount($1.frameLength) }
-
-        // Create merged buffer
-        guard let mergedBuffer = AVAudioPCMBuffer(
-            pcmFormat: format,
-            frameCapacity: totalFrames
-        ) else {
-            throw WhisperError.audioFormatError
-        }
-
-        // Copy all buffers into merged buffer
-        var currentFrame: AVAudioFramePosition = 0
-        for buffer in buffers {
-            let frameLength = buffer.frameLength
-
-            for channel in 0..<Int(format.channelCount) {
-                if let src = buffer.floatChannelData?[channel],
-                   let dst = mergedBuffer.floatChannelData?[channel] {
-                    memcpy(dst.advanced(by: Int(currentFrame)), src, Int(frameLength) * MemoryLayout<Float>.size)
-                }
-            }
-
-            currentFrame += AVAudioFramePosition(frameLength)
-        }
-
-        mergedBuffer.frameLength = totalFrames
-
-        // Convert to WAV data
-        return try convertToWAV(mergedBuffer)
-    }
-
-    private func convertToWAV(_ buffer: AVAudioPCMBuffer) throws -> Data {
-        // For Whisper, we need 16kHz mono PCM Float32
-        let targetFormat = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: 16000,
-            channels: 1,
-            interleaved: false
-        )!
-
-        debugLog("🔄 Converting audio for Whisper:")
-        debugLog("   Input: \(buffer.format.sampleRate)Hz, \(buffer.format.channelCount) ch, \(buffer.frameLength) frames")
-        debugLog("   Target: \(targetFormat.sampleRate)Hz, \(targetFormat.channelCount) ch")
-
-        // Create converter
-        guard let converter = AVAudioConverter(from: buffer.format, to: targetFormat) else {
-            debugLog("❌ Failed to create audio converter")
-            throw WhisperError.audioFormatError
-        }
-
-        // Calculate output frame capacity
-        let frameCapacity = AVAudioFrameCount(ceil(Double(buffer.frameLength) * targetFormat.sampleRate / buffer.format.sampleRate))
-
-        debugLog("   Calculated output capacity: \(frameCapacity) frames")
-
-        guard let convertedBuffer = AVAudioPCMBuffer(
-            pcmFormat: targetFormat,
-            frameCapacity: frameCapacity
-        ) else {
-            debugLog("❌ Failed to create output buffer")
-            throw WhisperError.audioFormatError
-        }
-
-        // Perform conversion
-        var error: NSError?
-        var inputConsumed = false
-
-        let inputBlock: AVAudioConverterInputBlock = { inNumPackets, outStatus in
-            if inputConsumed {
-                outStatus.pointee = .noDataNow
-                return nil
-            }
-            inputConsumed = true
-            outStatus.pointee = .haveData
-            return buffer
-        }
-
-        let status = converter.convert(to: convertedBuffer, error: &error, withInputFrom: inputBlock)
-
-        if let error = error {
-            debugLog("❌ Conversion error: \(error)")
-            throw WhisperError.transcriptionFailed(error)
-        }
-
-        if status != .haveData {
-            debugLog("⚠️ Conversion status: \(status)")
-        }
-
-        // Set the actual frame length (converter doesn't set this automatically)
-        convertedBuffer.frameLength = frameCapacity
-
-        debugLog("✅ Converted buffer: \(convertedBuffer.frameLength) frames")
-
-        // Check if buffer has actual audio data
-        if let channelData = convertedBuffer.floatChannelData {
-            let samples = UnsafeBufferPointer(start: channelData[0], count: Int(convertedBuffer.frameLength))
-            let rms = sqrt(samples.map { $0 * $0 }.reduce(0, +) / Float(convertedBuffer.frameLength))
-            debugLog("   RMS level: \(rms) (should be > 0.001 for speech)")
-
-            if rms < 0.001 {
-                debugLog("⚠️ WARNING: Audio level too low - may not contain speech!")
-            }
-        }
-
-        // Write to WAV file
-        let tempURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("whisper_audio_\(UUID().uuidString).wav")
-
-        let audioFile = try AVAudioFile(
-            forWriting: tempURL,
-            settings: targetFormat.settings,
-            commonFormat: targetFormat.commonFormat,
-            interleaved: targetFormat.isInterleaved
-        )
-
-        try audioFile.write(from: convertedBuffer)
-
-        let data = try Data(contentsOf: tempURL)
-        debugLog("✅ WAV file created: \(data.count) bytes at \(tempURL.lastPathComponent)")
-
-        try? FileManager.default.removeItem(at: tempURL)
-
-        return data
     }
 
     // MARK: - Cleanup

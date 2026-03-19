@@ -12,8 +12,10 @@ import Carbon
 class ShortcutManager: NSObject {
     static let shared = ShortcutManager()
 
-    // Callback for when shortcut is triggered
+    // Callback for when shortcut is triggered (key down / press)
     var onShortcutTriggered: (() -> Void)?
+    // Callback for when shortcut is released (key up) — used for push-to-talk mode
+    var onShortcutReleased: (() -> Void)?
     
     // Default shortcut: Control key (single press)
     private var shortcutKeyCode: UInt32 = 59 // Control key alone
@@ -201,6 +203,10 @@ class ShortcutManager: NSObject {
                         return Unmanaged.passRetained(event)
                     } else if !fnPressed && isShortcutPressed {
                         isShortcutPressed = false
+                        debugLog("🎯 Globe/Fn key released")
+                        DispatchQueue.main.async { [weak self] in
+                            self?.onShortcutReleased?()
+                        }
                         return Unmanaged.passRetained(event)
                     }
                 } else {
@@ -217,6 +223,10 @@ class ShortcutManager: NSObject {
                         return Unmanaged.passRetained(event)
                     } else if currentModifiers == 0 && isShortcutPressed {
                         isShortcutPressed = false
+                        debugLog("🎯 Single modifier shortcut released")
+                        DispatchQueue.main.async { [weak self] in
+                            self?.onShortcutReleased?()
+                        }
                         return Unmanaged.passRetained(event)
                     }
                 }
@@ -246,6 +256,9 @@ class ShortcutManager: NSObject {
                 } else if type == .keyUp && isShortcutPressed {
                     isShortcutPressed = false
                     debugLog("🎯 Shortcut released")
+                    DispatchQueue.main.async { [weak self] in
+                        self?.onShortcutReleased?()
+                    }
 
                     // Consume the event
                     return nil

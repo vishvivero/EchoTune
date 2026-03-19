@@ -113,12 +113,10 @@ class LicenseManager {
         if trimmedKey.hasPrefix("DEMO-") {
             let info = LicenseInfo(
                 key: trimmedKey,
-                tier: .solo,
+                tier: .individual,
                 activatedOn: Date(),
                 expiryDate: nil,
-                deviceFingerprint: getDeviceFingerprint(),
-                polarLicenseId: nil,
-                customerEmail: nil
+                deviceFingerprint: getDeviceFingerprint()
             )
             storeLicense(info)
             isLicensed = true
@@ -211,7 +209,7 @@ class LicenseManager {
                 if status == "revoked" {
                     debugLog("❌ Polar: License revoked")
                     self.activationError = "This license has been revoked."
-                    completion(.failure(LicenseError.licenseRevoked))
+                    completion(.failure(LicenseError.activationFailed))
                     return
                 }
 
@@ -235,22 +233,18 @@ class LicenseManager {
                     }
                 }
 
-                // Parse customer email
+                // Parse customer email (for referral system)
                 var customerEmail: String?
                 if let customer = json["customer"] as? [String: Any] {
                     customerEmail = customer["email"] as? String
                 }
 
-                let polarId = json["id"] as? String
-
                 let info = LicenseInfo(
                     key: key,
-                    tier: .solo,
+                    tier: .individual,
                     activatedOn: Date(),
                     expiryDate: expiryDate,
-                    deviceFingerprint: self.getDeviceFingerprint(),
-                    polarLicenseId: polarId,
-                    customerEmail: customerEmail
+                    deviceFingerprint: self.getDeviceFingerprint()
                 )
 
                 self.storeLicense(info)

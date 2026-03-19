@@ -5,51 +5,17 @@
 //  Phase 6A: AI Post-Processing for Transcriptions
 //  Fixes grammar, removes fillers, improves clarity
 //
+//  Provider-specific methods are in AIEnhancementEngine+Providers.swift
+//  Trigger word models are in Models/TriggerWordRule.swift
+//
 
 import Foundation
 import Combine
 
-// MARK: - Trigger Word Rule
-
-/// A trigger word rule that activates a specific AI prompt when detected in transcription
-struct TriggerWordRule: Identifiable, Codable, Equatable {
-    let id: UUID
-    var triggerPhrase: String           // e.g., "fix this", "translate", "summarize"
-    var enhancementPrompt: String       // The prompt to use when triggered
-    var isEnabled: Bool
-    var removeTriggerFromOutput: Bool   // Strip the trigger word from final text
-    var activateAI: Bool               // Force-enable AI even if globally off
-
-    init(id: UUID = UUID(),
-         triggerPhrase: String,
-         enhancementPrompt: String,
-         isEnabled: Bool = true,
-         removeTriggerFromOutput: Bool = true,
-         activateAI: Bool = true) {
-        self.id = id
-        self.triggerPhrase = triggerPhrase
-        self.enhancementPrompt = enhancementPrompt
-        self.isEnabled = isEnabled
-        self.removeTriggerFromOutput = removeTriggerFromOutput
-        self.activateAI = activateAI
-    }
-}
-
-// MARK: - Trigger Word Result
-
-struct TriggerWordResult {
-    let matchedRule: TriggerWordRule?
-    let cleanedTranscript: String       // Transcript with trigger word removed (if applicable)
-    let overridePrompt: String?         // The prompt to use instead of default
-    let shouldForceAI: Bool             // Whether to force AI enhancement on
-}
-
 class AIEnhancementEngine: ObservableObject {
     static let shared = AIEnhancementEngine()
 
-    // MARK: - Trigger Words
-    @Published var triggerWordRules: [TriggerWordRule] = []
-    private let triggerWordsStorageKey = "triggerWordRules"
+    // MARK: - Enums
 
     enum EnhancementModel: String, CaseIterable, Identifiable {
         case gpt4oMini = "gpt-4o-mini"
@@ -110,8 +76,17 @@ class AIEnhancementEngine: ObservableObject {
         }
     }
 
+    // MARK: - Published Properties
+
     @Published var isEnhancing = false
     @Published var lastError: EnhancementError?
+
+    // MARK: - Trigger Words
+
+    @Published var triggerWordRules: [TriggerWordRule] = []
+    private let triggerWordsStorageKey = "triggerWordRules"
+
+    // MARK: - Init
 
     private init() {
         loadTriggerWordRules()
@@ -193,6 +168,8 @@ class AIEnhancementEngine: ObservableObject {
         saveTriggerWordRules()
     }
 
+    // MARK: - Trigger Word Persistence
+
     private func saveTriggerWordRules() {
         if let encoded = try? JSONEncoder().encode(triggerWordRules) {
             UserDefaults.standard.set(encoded, forKey: triggerWordsStorageKey)
@@ -270,176 +247,9 @@ class AIEnhancementEngine: ObservableObject {
         }
     }
 
-    // MARK: - OpenAI Enhancement
-
-    private func enhanceWithOpenAI(_ transcript: String,
-                                     model: EnhancementModel,
-                                     apiKey: String,
-                                     customPrompt: String?,
-                                     dictionaryContext: String?,
-                                     screenContext: ScreenContext?) async throws -> String {
-        let endpoint = "https://api.openai.com/v1/chat/completions"
-
-        let systemPrompt = buildEnhancementPrompt(customPrompt: customPrompt, dictionaryContext: dictionaryContext, screenContext: screenContext)
-
-        let requestBody: [String: Any] = [
-            "model": model.rawValue,
-            "messages": [
-                ["role": "system", "content": systemPrompt],
-                ["role": "user", "content": "<TRANSCRIPT>\n\(transcript)\n</TRANSCRIPT>"]
-            ],
-            "temperature": 0.3,
-            "max_tokens": 4000
-        ]
-
-        var request = URLRequest(url: URL(string: endpoint)!)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
-        request.timeoutInterval = 60
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw EnhancementError.invalidResponse
-        }
-
-        if httpResponse.statusCode != 200 {
-            if let errorResponse = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let error = errorResponse["error"] as? [String: Any],
-               let message = error["message"] as? String {
-                throw EnhancementError.apiError(message)
-            }
-            throw EnhancementError.apiError("HTTP \(httpResponse.statusCode)")
-        }
-
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let choices = json["choices"] as? [[String: Any]],
-              let firstChoice = choices.first,
-              let message = firstChoice["message"] as? [String: Any],
-              let content = message["content"] as? String else {
-            throw EnhancementError.invalidResponse
-        }
-
-        return content.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    // MARK: - Claude Enhancement
-
-    private func enhanceWithClaude(_ transcript: String,
-                                     model: EnhancementModel,
-                                     apiKey: String,
-                                     customPrompt: String?,
-                                     dictionaryContext: String?,
-                                     screenContext: ScreenContext?) async throws -> String {
-        let endpoint = "https://api.anthropic.com/v1/messages"
-
-        let systemPrompt = buildEnhancementPrompt(customPrompt: customPrompt, dictionaryContext: dictionaryContext, screenContext: screenContext)
-
-        let requestBody: [String: Any] = [
-            "model": model.rawValue,
-            "max_tokens": 4000,
-            "system": systemPrompt,
-            "messages": [
-                ["role": "user", "content": "<TRANSCRIPT>\n\(transcript)\n</TRANSCRIPT>"]
-            ],
-            "temperature": 0.3
-        ]
-
-        var request = URLRequest(url: URL(string: endpoint)!)
-        request.httpMethod = "POST"
-        request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
-        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
-        request.timeoutInterval = 60
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw EnhancementError.invalidResponse
-        }
-
-        if httpResponse.statusCode != 200 {
-            if let errorResponse = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let error = errorResponse["error"] as? [String: Any],
-               let message = error["message"] as? String {
-                throw EnhancementError.apiError(message)
-            }
-            throw EnhancementError.apiError("HTTP \(httpResponse.statusCode)")
-        }
-
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let content = json["content"] as? [[String: Any]],
-              let firstContent = content.first,
-              let text = firstContent["text"] as? String else {
-            throw EnhancementError.invalidResponse
-        }
-
-        return text.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    // MARK: - Groq Enhancement (OpenAI-compatible API)
-
-    private func enhanceWithGroq(_ transcript: String,
-                                   model: EnhancementModel,
-                                   apiKey: String,
-                                   customPrompt: String?,
-                                   dictionaryContext: String?,
-                                   screenContext: ScreenContext?) async throws -> String {
-        // Groq uses an OpenAI-compatible chat completions API
-        let endpoint = "https://api.groq.com/openai/v1/chat/completions"
-
-        let systemPrompt = buildEnhancementPrompt(customPrompt: customPrompt, dictionaryContext: dictionaryContext, screenContext: screenContext)
-
-        let requestBody: [String: Any] = [
-            "model": model.rawValue,
-            "messages": [
-                ["role": "system", "content": systemPrompt],
-                ["role": "user", "content": "<TRANSCRIPT>\n\(transcript)\n</TRANSCRIPT>"]
-            ],
-            "temperature": 0.3,
-            "max_tokens": 4000
-        ]
-
-        var request = URLRequest(url: URL(string: endpoint)!)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
-        request.timeoutInterval = 60
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw EnhancementError.invalidResponse
-        }
-
-        if httpResponse.statusCode != 200 {
-            if let errorResponse = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let error = errorResponse["error"] as? [String: Any],
-               let message = error["message"] as? String {
-                throw EnhancementError.apiError(message)
-            }
-            throw EnhancementError.apiError("HTTP \(httpResponse.statusCode)")
-        }
-
-        // Same response format as OpenAI
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let choices = json["choices"] as? [[String: Any]],
-              let firstChoice = choices.first,
-              let message = firstChoice["message"] as? [String: Any],
-              let content = message["content"] as? String else {
-            throw EnhancementError.invalidResponse
-        }
-
-        return content.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
     // MARK: - Enhancement Prompt Builder
 
-    private func buildEnhancementPrompt(customPrompt: String?, dictionaryContext: String?, screenContext: ScreenContext?) -> String {
+    func buildEnhancementPrompt(customPrompt: String?, dictionaryContext: String?, screenContext: ScreenContext?) -> String {
         if let customPrompt = customPrompt, !customPrompt.isEmpty {
             // User has custom prompt, use it
             var prompt = customPrompt
@@ -523,41 +333,4 @@ class AIEnhancementEngine: ObservableObject {
 
         return prompt
     }
-}
-
-// MARK: - Default Trigger Word Rules
-
-extension TriggerWordRule {
-    static let defaultRules: [TriggerWordRule] = [
-        TriggerWordRule(
-            triggerPhrase: "fix this",
-            enhancementPrompt: "Fix the grammar, spelling, and punctuation of the following text. Make it clear and professional. Output ONLY the corrected text.",
-            removeTriggerFromOutput: true,
-            activateAI: true
-        ),
-        TriggerWordRule(
-            triggerPhrase: "summarize",
-            enhancementPrompt: "Summarize the following text into a concise summary with key points. Use bullet points if there are multiple items. Output ONLY the summary.",
-            removeTriggerFromOutput: true,
-            activateAI: true
-        ),
-        TriggerWordRule(
-            triggerPhrase: "translate to spanish",
-            enhancementPrompt: "Translate the following text to Spanish. Output ONLY the Spanish translation, nothing else.",
-            removeTriggerFromOutput: true,
-            activateAI: true
-        ),
-        TriggerWordRule(
-            triggerPhrase: "make it formal",
-            enhancementPrompt: "Rewrite the following text in a formal, professional tone suitable for business communication. Output ONLY the rewritten text.",
-            removeTriggerFromOutput: true,
-            activateAI: true
-        ),
-        TriggerWordRule(
-            triggerPhrase: "make it casual",
-            enhancementPrompt: "Rewrite the following text in a casual, friendly tone suitable for messaging friends or colleagues. Output ONLY the rewritten text.",
-            removeTriggerFromOutput: true,
-            activateAI: true
-        ),
-    ]
 }

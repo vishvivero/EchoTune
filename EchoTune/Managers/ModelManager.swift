@@ -11,36 +11,45 @@ import WhisperKit
 
 class ModelManager: ObservableObject {
     static let shared = ModelManager()
+
+    // MARK: - ModelError
+
     enum ModelError: Error {
         case downloadFailed
         case installationFailed
         case modelNotFound
         case invalidModel
     }
-    
+
+    // MARK: - Published Properties
+
     // Model status
     @Published var availableModels: [AIModel] = []
     @Published var installedModels: [AIModel] = []
     @Published var currentModel: AIModel?
-    
+
     // Download status
     @Published var isDownloading = false
     @Published var downloadProgress: Double = 0
     @Published var currentDownloadModel: AIModel?
-    
+
     // Storage info
     @Published var availableStorage: Int64 = 0
     @Published var usedStorage: Int64 = 0
-    
-    private var cancellables = Set<AnyCancellable>()
-    private var observations: [NSKeyValueObservation] = []
-    private let modelsDirectory: URL
-    private let apiKeyPrefix = "apiKey:"
 
     /// Fires once after `checkInstalledModels()` finishes on the background thread.
     /// Observers (e.g. AppCoordinator.preloadDefaultModel) can wait on this.
     @Published var isReady = false
-    
+
+    // MARK: - Internal / Private State
+
+    private var cancellables = Set<AnyCancellable>()
+    private var observations: [NSKeyValueObservation] = []
+    private let modelsDirectory: URL
+    let apiKeyPrefix = "apiKey:"
+
+    // MARK: - Init
+
     init() {
         // Create models directory in Application Support
         let appSupportDirectory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -76,218 +85,16 @@ class ModelManager: ObservableObject {
             }
         }
     }
-    
-    private func loadAvailableModels() {
-        // Define available Whisper models (will use WhisperKit for loading)
-        availableModels = [
-            // Built-in Apple Speech
-            AIModel(
-                id: "apple-speech",
-                name: "Apple Speech",
-                size: 0,
-                description: "Uses native Apple Speech framework for transcription",
-                language: "Multilingual",
-                url: URL(string: "builtin://apple-speech")!,
-                type: .fast,
-                category: .local,
-                speedRating: 5,
-                accuracyRating: 3,
-                isBuiltIn: true
-            ),
-            // Supported Whisper local models (downloadable via WhisperKit)
 
-            // Tiny models
-            AIModel(
-                id: "tiny.en",
-                name: "Tiny (English)",
-                size: 75 * 1024 * 1024, // 75MB
-                description: "Tiny model, fastest, less accurate",
-                language: "English only",
-                url: URL(string: "https://huggingface.co/argmaxinc/whisperkit-coreml")!,
-                type: .fast,
-                category: .local,
-                speedRating: 5,
-                accuracyRating: 2
-            ),
-            AIModel(
-                id: "tiny",
-                name: "Tiny",
-                size: 75 * 1024 * 1024,
-                description: "Tiny model, fastest, less accurate, supports multiple languages",
-                language: "Multilingual",
-                url: URL(string: "https://huggingface.co/argmaxinc/whisperkit-coreml")!,
-                type: .fast,
-                category: .local,
-                speedRating: 5,
-                accuracyRating: 2
-            ),
+    // MARK: - Installed Models Check
 
-            // Base models
-            AIModel(
-                id: "base.en",
-                name: "Base (English)",
-                size: 143 * 1024 * 1024, // 143MB
-                description: "Base model, good balance between speed and accuracy",
-                language: "English only",
-                url: URL(string: "https://huggingface.co/argmaxinc/whisperkit-coreml")!,
-                type: .balanced,
-                category: .local,
-                speedRating: 4,
-                accuracyRating: 3
-            ),
-            AIModel(
-                id: "base",
-                name: "Base",
-                size: 143 * 1024 * 1024,
-                description: "Base model, good balance between speed and accuracy, supports multiple languages",
-                language: "Multilingual",
-                url: URL(string: "https://huggingface.co/argmaxinc/whisperkit-coreml")!,
-                type: .balanced,
-                category: .local,
-                speedRating: 4,
-                accuracyRating: 3
-            ),
-
-            // Small models
-            AIModel(
-                id: "small.en",
-                name: "Small (English)",
-                size: 488 * 1024 * 1024, // 488MB
-                description: "Small model, better accuracy, slower",
-                language: "English only",
-                url: URL(string: "https://huggingface.co/argmaxinc/whisperkit-coreml")!,
-                type: .accurate,
-                category: .local,
-                speedRating: 3,
-                accuracyRating: 4
-            ),
-            AIModel(
-                id: "small",
-                name: "Small",
-                size: 488 * 1024 * 1024,
-                description: "Small model, better accuracy, slower, supports multiple languages",
-                language: "Multilingual",
-                url: URL(string: "https://huggingface.co/argmaxinc/whisperkit-coreml")!,
-                type: .accurate,
-                category: .local,
-                speedRating: 3,
-                accuracyRating: 4
-            ),
-
-            // Medium models
-            AIModel(
-                id: "medium.en",
-                name: "Medium (English)",
-                size: 1500 * 1024 * 1024, // 1.5GB
-                description: "Medium model, high accuracy, requires more resources",
-                language: "English only",
-                url: URL(string: "https://huggingface.co/argmaxinc/whisperkit-coreml")!,
-                type: .accurate,
-                category: .local,
-                speedRating: 2,
-                accuracyRating: 4
-            ),
-            AIModel(
-                id: "medium",
-                name: "Medium",
-                size: 1500 * 1024 * 1024,
-                description: "Medium model, high accuracy, requires more resources, supports multiple languages",
-                language: "Multilingual",
-                url: URL(string: "https://huggingface.co/argmaxinc/whisperkit-coreml")!,
-                type: .accurate,
-                category: .local,
-                speedRating: 2,
-                accuracyRating: 4
-            ),
-
-            // Large v3
-            AIModel(
-                id: "large-v3",
-                name: "Large v3",
-                size: 2900 * 1024 * 1024, // 2.9GB
-                description: "Largest model, best accuracy, slowest, supports multiple languages",
-                language: "Multilingual",
-                url: URL(string: "https://huggingface.co/argmaxinc/whisperkit-coreml")!,
-                type: .accurate,
-                category: .local,
-                speedRating: 1,
-                accuracyRating: 5
-            ),
-
-            // Large v3 Turbo (Optimized/Quantized)
-            AIModel(
-                id: "openai_whisper-large-v3_turbo",
-                name: "Large v3 Turbo",
-                size: 954 * 1024 * 1024, // 954MB (3x smaller!)
-                description: "Optimized Large v3: 2-3x faster, same accuracy, uses quantization",
-                language: "Multilingual",
-                url: URL(string: "https://huggingface.co/argmaxinc/whisperkit-coreml")!,
-                type: .balanced,
-                category: .local,
-                speedRating: 3,
-                accuracyRating: 5
-            ),
-
-            // Distilled Large v3 Turbo (Fastest large model)
-            AIModel(
-                id: "distil-whisper_distil-large-v3_turbo",
-                name: "Distil Large v3 Turbo",
-                size: 600 * 1024 * 1024, // 600MB (5x smaller!)
-                description: "Distilled + Turbo: Fastest large model, 3-4x faster than base large-v3",
-                language: "Multilingual",
-                url: URL(string: "https://huggingface.co/argmaxinc/whisperkit-coreml")!,
-                type: .fast,
-                category: .local,
-                speedRating: 4,
-                accuracyRating: 4
-            ),
-            // Cloud models (require API key)
-            AIModel(
-                id: "groq-whisper-large-v3-turbo",
-                name: "Groq Whisper",
-                size: 0,
-                description: "Lightning-fast cloud transcription via Groq (requires API key)",
-                language: "Multilingual",
-                url: URL(string: "https://console.groq.com")!,
-                type: .fast,
-                category: .cloud,
-                speedRating: 5,
-                accuracyRating: 5,
-                isBuiltIn: false
-            ),
-            AIModel(
-                id: "deepgram-nova",
-                name: "Deepgram Nova 2",
-                size: 0,
-                description: "High-accuracy cloud transcription via Deepgram (requires API key)",
-                language: "Multilingual",
-                url: URL(string: "https://console.deepgram.com")!,
-                type: .accurate,
-                category: .cloud,
-                speedRating: 4,
-                accuracyRating: 5,
-                isBuiltIn: false
-            ),
-
-            // Coming soon list (not selectable, no download)
-            AIModel(
-                id: "parakeet-v3",
-                name: "Parakeet V3",
-                size: 2200 * 1024 * 1024,
-                description: "High-quality local ASR (coming soon)",
-                language: "Multilingual",
-                url: URL(string: "comingsoon://parakeet-v3")!,
-                type: .accurate,
-                category: .comingSoon,
-                speedRating: 2,
-                accuracyRating: 5
-            ),
-        ]
-    }
-    
     private func checkInstalledModels() {
-        // WhisperKit stores models in: ~/Documents/huggingface/models/argmaxinc/whisperkit-coreml/
-        let whisperKitModelsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        // WhisperKit stores models in Application Support to avoid Documents permission popup:
+        // ~/Library/Application Support/EchoTune/WhisperModels/huggingface/models/argmaxinc/whisperkit-coreml/
+        let appSupportDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let whisperKitModelsPath = appSupportDir
+            .appendingPathComponent("EchoTune")
+            .appendingPathComponent("WhisperModels")
             .appendingPathComponent("huggingface")
             .appendingPathComponent("models")
             .appendingPathComponent("argmaxinc")
@@ -380,11 +187,36 @@ class ModelManager: ObservableObject {
             }
 
             // Sync AppSettings for routing consistency
+            // Only override AppSettings if no user preference is saved,
+            // or if the preferred model is installed (avoid downgrading to a smaller model)
+            let preferredModel = AppSettings.shared.defaultTranscriptionModel
             if let resolved = resolvedCurrent {
-                AppSettings.shared.defaultTranscriptionModel = resolved.id
+                let preferredIsInstalled = foundInstalled.contains(where: { $0.id == preferredModel })
+                if !preferredIsInstalled {
+                    // Preferred model not installed yet — use best available but trigger download
+                    AppSettings.shared.defaultTranscriptionModel = resolved.id
+                    debugLog("⚠️ Preferred model '\(preferredModel)' not installed, using '\(resolved.id)' temporarily")
+                    
+                    // Auto-download the preferred model if it's a local model
+                    if let targetModel = self.availableModels.first(where: { $0.id == preferredModel }),
+                       targetModel.category == .local {
+                        debugLog("📥 Auto-downloading preferred default model: \(preferredModel)")
+                        self.downloadModel(targetModel) { [weak self] result in
+                            if case .success(let downloaded) = result {
+                                DispatchQueue.main.async {
+                                    debugLog("✅ Preferred model downloaded, setting as active: \(downloaded.id)")
+                                    _ = self?.setCurrentModel(downloaded)
+                                }
+                            }
+                        }
+                    }
+                }
+                // If preferred IS installed, keep AppSettings as-is (don't override user choice)
             }
         }
     }
+
+    // MARK: - Model Queries
 
     func getModels(for category: ModelCategory) -> [AIModel] {
         if category == .recommended {
@@ -424,7 +256,9 @@ class ModelManager: ObservableObject {
             return false
         }
     }
-    
+
+    // MARK: - Download
+
     func downloadModel(_ model: AIModel, progressHandler: ((Double) -> Void)? = nil, completion: @escaping (Result<AIModel, ModelError>) -> Void) {
         // Don't download built-in models
         guard !model.isBuiltIn else {
@@ -468,8 +302,11 @@ class ModelManager: ObservableObject {
                     // Update installed models
                     var installedModel = model
                     installedModel.isInstalled = true
-                    // Point to WhisperKit location
-                    let whisperRoot = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+                    // Point to WhisperKit location in Application Support (no Documents permission needed)
+                    let appSupportDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+                    let whisperRoot = appSupportDir
+                        .appendingPathComponent("EchoTune")
+                        .appendingPathComponent("WhisperModels")
                         .appendingPathComponent("huggingface")
                         .appendingPathComponent("models")
                         .appendingPathComponent("argmaxinc")
@@ -535,56 +372,8 @@ class ModelManager: ObservableObject {
         return whisperVariant(for: model.id) != nil
     }
 
-    // MARK: - Cloud API Keys
-    func apiKey(for model: AIModel) -> String {
-        UserDefaults.standard.string(forKey: apiKeyPrefix + model.id) ?? ""
-    }
+    // MARK: - Delete
 
-    func saveApiKey(_ key: String, for model: AIModel) {
-        UserDefaults.standard.set(key, forKey: apiKeyPrefix + model.id)
-        objectWillChange.send()
-    }
-
-    func clearApiKey(for model: AIModel) {
-        UserDefaults.standard.removeObject(forKey: apiKeyPrefix + model.id)
-        objectWillChange.send()
-    }
-
-    func apiKeyURL(for model: AIModel) -> URL? {
-        switch model.id {
-        case "groq-whisper-large-v3-turbo":
-            return URL(string: "https://console.groq.com/keys")
-        case "elevenlabs-scribe-v1":
-            return URL(string: "https://elevenlabs.io/app/subscription")
-        case "deepgram-nova", "deepgram-nova-3-medical":
-            return URL(string: "https://console.deepgram.com/api-keys")
-        case "mistral-voxtral-mini":
-            return URL(string: "https://console.mistral.ai/api-keys/")
-        case "gemini-2.5-pro", "gemini-2.5-flash":
-            return URL(string: "https://aistudio.google.com/app/apikey")
-        case "soniox-stt-async-v3":
-            return URL(string: "https://soniox.com/docs/authentication")
-        default:
-            return nil
-        }
-    }
-
-    func isCloudEnabled(_ model: AIModel) -> Bool {
-        guard model.category == .cloud else { return false }
-        // Check both the per-model key store AND the global AppSettings keys
-        let perModelKey = apiKey(for: model)
-        if !perModelKey.isEmpty { return true }
-        // Fall back to AppSettings global API keys
-        switch model.id {
-        case "groq-whisper-large-v3-turbo":
-            return !AppSettings.shared.groqAPIKey.isEmpty
-        case "deepgram-nova":
-            return !AppSettings.shared.deepgramAPIKey.isEmpty
-        default:
-            return false
-        }
-    }
-    
     func deleteModel(_ model: AIModel) -> Bool {
         // Don't allow deleting built-in models
         guard !model.isBuiltIn else {
@@ -634,7 +423,9 @@ class ModelManager: ObservableObject {
             return false
         }
     }
-    
+
+    // MARK: - Current Model
+
     func setCurrentModel(_ model: AIModel) -> Bool {
         guard model.isInstalled else {
             return false
@@ -674,15 +465,17 @@ class ModelManager: ObservableObject {
             return false
         }
     }
-    
+
+    // MARK: - Storage
+
     private func updateStorageInfo() {
         do {
             let fileSystem = try FileManager.default.attributesOfFileSystem(forPath: modelsDirectory.path)
-            
+
             if let freeSize = fileSystem[.systemFreeSize] as? Int64 {
                 availableStorage = freeSize
             }
-            
+
             // Calculate used storage by models
             usedStorage = 0
             for model in installedModels {
@@ -696,7 +489,7 @@ class ModelManager: ObservableObject {
             debugLog("Failed to get storage info: \(error.localizedDescription)")
         }
     }
-    
+
     func getModelForType(_ type: ModelSize) -> AIModel? {
         // First check installed models
         if let model = installedModels.first(where: { $0.type == type }) {
@@ -711,71 +504,3 @@ class ModelManager: ObservableObject {
         return ByteCountFormatter.string(fromByteCount: usedStorage, countStyle: .file)
     }
 }
-
-struct AIModel: Identifiable, Equatable {
-    let id: String
-    let name: String
-    let size: Int64
-    let description: String
-    let language: String
-    let url: URL
-    let type: ModelSize
-    let category: ModelCategory
-    let speedRating: Int  // 1-5 stars
-    let accuracyRating: Int  // 1-5 stars
-    let isBuiltIn: Bool
-
-    var isInstalled: Bool = false
-    var localPath: URL?
-
-    init(id: String, name: String, size: Int64, description: String, language: String, url: URL, type: ModelSize, category: ModelCategory = .recommended, speedRating: Int = 3, accuracyRating: Int = 3, isBuiltIn: Bool = false) {
-        self.id = id
-        self.name = name
-        self.size = size
-        self.description = description
-        self.language = language
-        self.url = url
-        self.type = type
-        self.category = category
-        self.speedRating = speedRating
-        self.accuracyRating = accuracyRating
-        self.isBuiltIn = isBuiltIn
-    }
-
-    var filename: String {
-        if isBuiltIn {
-            return id
-        }
-        return "\(id).mlmodelc"
-    }
-
-    var formattedSize: String {
-        if size == 0 {
-            return "Built-in"
-        }
-        return ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
-    }
-
-    var speedRatingStars: String {
-        return String(repeating: "⭐", count: speedRating)
-    }
-
-    var accuracyRatingStars: String {
-        return String(repeating: "⭐", count: accuracyRating)
-    }
-
-    static func == (lhs: AIModel, rhs: AIModel) -> Bool {
-        return lhs.id == rhs.id
-    }
-}
-
-enum ModelCategory: String, CaseIterable {
-    case recommended = "Recommended"
-    case local = "Local"
-    case cloud = "Cloud"
-    case comingSoon = "Coming Soon"
-}
-
-
-
-

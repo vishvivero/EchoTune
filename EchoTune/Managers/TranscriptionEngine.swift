@@ -21,32 +21,59 @@ class TranscriptionEngine: NSObject, ObservableObject {
         case noAudioData
         case processingError
     }
-    
-    // Speech recognition properties
-    private var speechRecognizer: SFSpeechRecognizer?
-    private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
-    private var recognitionTask: SFSpeechRecognitionTask?
-    
-    // Status properties
+
+    // MARK: - Speech Recognition Properties
+
+    // Internal for cross-file extension access (TranscriptionEngine+Routing, +LiveStreaming)
+    var speechRecognizer: SFSpeechRecognizer?
+    var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
+    var recognitionTask: SFSpeechRecognitionTask?
+
+    // MARK: - Status Properties
+
     @Published var isAvailable = false
     @Published var isPermissionGranted = false
     @Published var isProcessing = false
     @Published var currentText = ""
-    
-    // Language settings
+
+    // MARK: - Language Settings
+
     @Published var currentLanguage: String = "en-US" {
         didSet {
             setupSpeechRecognizer()
         }
     }
 
-    // Formatting options
+    // MARK: - Formatting Options
+
     var autoPunctuation = true
     var smartCapitalization = true
 
     // Task state tracking to prevent multiple simultaneous tasks
-    private var isTranscribing = false
-    
+    // Internal for cross-file extension access (TranscriptionEngine+LiveStreaming)
+    var isTranscribing = false
+
+    // MARK: - Live Streaming Properties
+    // Stored properties must remain in the class definition (Swift extensions cannot have stored properties).
+    // Internal for cross-file extension access (TranscriptionEngine+LiveStreaming).
+
+    var audioConverter: AVAudioConverter?
+    var targetFormat: AVAudioFormat?
+    var bufferCount = 0
+    var totalFrames: AVAudioFrameCount = 0
+    let audioProcessingQueue = DispatchQueue(label: "com.echotune.audioProcessing", qos: .userInitiated)
+
+    // Auto-restart support for long recordings (Apple Speech ~60s timeout)
+    var accumulatedTranscriptions: [String] = []
+    var currentSessionText = ""
+    var liveInputFormat: AVAudioFormat?
+    var liveCompletion: ((Result<String, TranscriptionError>) -> Void)?
+    var sessionRestartCount = 0
+    var lastSessionFrameCount: AVAudioFrameCount = 0
+    static let sessionRestartThresholdSeconds: Double = 50 // Restart before 60s timeout
+
+    // MARK: - Initialization
+
     override init() {
         super.init()
         setupSpeechRecognizer()
@@ -55,12 +82,16 @@ class TranscriptionEngine: NSObject, ObservableObject {
         // permission when the user actually selects an Apple Speech model.
         checkPermissionStatus()
     }
-    
+
+    // MARK: - Speech Recognizer Setup
+
     private func setupSpeechRecognizer() {
         speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: currentLanguage))
         isAvailable = speechRecognizer?.isAvailable ?? false
     }
-    
+
+    // MARK: - Permission Handling
+
     /// Non-prompting check — reads the current authorization status without triggering a dialog
     func checkPermissionStatus() {
         let status = SFSpeechRecognizer.authorizationStatus()
@@ -68,7 +99,7 @@ class TranscriptionEngine: NSObject, ObservableObject {
             self.isPermissionGranted = (status == .authorized)
         }
     }
-    
+
     /// Prompting check — only call this when Apple Speech transcription is actually needed
     func checkPermission() {
         SFSpeechRecognizer.requestAuthorization { [weak self] status in
@@ -84,7 +115,7 @@ class TranscriptionEngine: NSObject, ObservableObject {
             }
         }
     }
-    
+
     func requestPermission(completion: @escaping (Bool) -> Void) {
         SFSpeechRecognizer.requestAuthorization { status in
             DispatchQueue.main.async {
@@ -94,7 +125,9 @@ class TranscriptionEngine: NSObject, ObservableObject {
             }
         }
     }
-    
+
+    // MARK: - Main Transcription Entry Point
+
     func transcribeAudio(_ audioData: Data, completion: @escaping (Result<String, TranscriptionError>) -> Void) {
         guard !audioData.isEmpty else {
             completion(.failure(.noAudioData))
@@ -136,10 +169,10 @@ class TranscriptionEngine: NSObject, ObservableObject {
 
         isProcessing = true
         currentText = ""
-        
+
         // Create temporary file for audio data (using CAF format for better Float32 support)
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("transcription.caf")
-        
+
         do {
             try audioData.write(to: tempURL)
 
@@ -210,7 +243,9 @@ class TranscriptionEngine: NSObject, ObservableObject {
             completion(.failure(.audioFormatError))
         }
     }
-    
+
+    // MARK: - Text Processing
+
     func processText(_ text: String) -> String {
         var processedText = text
 
@@ -261,7 +296,7 @@ class TranscriptionEngine: NSObject, ObservableObject {
 
         return result
     }
-    
+
     private func applySentenceCapitalization(_ text: String) -> String {
         // Split text into sentences and capitalize first letter of each
         let sentences = text.components(separatedBy: ". ")
@@ -271,10 +306,12 @@ class TranscriptionEngine: NSObject, ObservableObject {
             let restOfSentence = sentence.dropFirst()
             return firstChar + restOfSentence
         }
-        
+
         return capitalizedSentences.joined(separator: ". ")
     }
-    
+
+    // MARK: - Cancellation
+
     func cancelTranscription() {
         recognitionTask?.cancel()
         recognitionTask = nil
@@ -282,7 +319,9 @@ class TranscriptionEngine: NSObject, ObservableObject {
         isProcessing = false
         isTranscribing = false
     }
-    
+
+    // MARK: - Available Languages
+
     // Get available languages
     func getAvailableLanguages() -> [String] {
         return SFSpeechRecognizer.supportedLocales().map { $0.identifier }.sorted()
@@ -303,512 +342,5 @@ class TranscriptionEngine: NSObject, ObservableObject {
     // Alias for transcribeAudio
     func transcribe(audioData: Data, completion: @escaping (Result<String, TranscriptionError>) -> Void) {
         transcribeAudio(audioData, completion: completion)
-    }
-
-    // MARK: - Live Streaming Transcription
-
-    private var audioConverter: AVAudioConverter?
-    private var targetFormat: AVAudioFormat?
-    private var bufferCount = 0
-    private var totalFrames: AVAudioFrameCount = 0
-    private let audioProcessingQueue = DispatchQueue(label: "com.echotune.audioProcessing", qos: .userInitiated)
-
-    // Auto-restart support for long recordings (Apple Speech ~60s timeout)
-    private var accumulatedTranscriptions: [String] = []
-    private var currentSessionText = ""
-    private var liveInputFormat: AVAudioFormat?
-    private var liveCompletion: ((Result<String, TranscriptionError>) -> Void)?
-    private var sessionRestartCount = 0
-    private var lastSessionFrameCount: AVAudioFrameCount = 0
-    private static let sessionRestartThresholdSeconds: Double = 50 // Restart before 60s timeout
-
-    func startLiveTranscription(audioFormat: AVAudioFormat, completion: @escaping (Result<String, TranscriptionError>) -> Void) {
-        debugLog("🎤 Starting live transcription (with auto-restart for long recordings)...")
-
-        // Prevent multiple simultaneous tasks
-        guard !isTranscribing else {
-            debugLog("⚠️ Already transcribing, ignoring start request")
-            return
-        }
-
-        // Cancel any existing task before starting new one
-        if let existingTask = recognitionTask {
-            debugLog("🛑 Cancelling existing recognition task")
-            existingTask.cancel()
-        }
-        recognitionTask = nil
-        recognitionRequest = nil
-
-        // Reset counters
-        bufferCount = 0
-        totalFrames = 0
-        accumulatedTranscriptions = []
-        currentSessionText = ""
-        sessionRestartCount = 0
-        lastSessionFrameCount = 0
-
-        guard isAvailable else {
-            completion(.failure(.unavailable))
-            return
-        }
-
-        guard isPermissionGranted else {
-            completion(.failure(.permissionDenied))
-            return
-        }
-
-        isTranscribing = true
-        isProcessing = true
-        currentText = ""
-
-        // Store for auto-restart
-        liveInputFormat = audioFormat
-        liveCompletion = completion
-
-        // Create Int16 PCM format for Speech Recognition
-        guard let int16Format = AVAudioFormat(
-            commonFormat: .pcmFormatInt16,
-            sampleRate: audioFormat.sampleRate,
-            channels: audioFormat.channelCount,
-            interleaved: false
-        ) else {
-            debugLog("❌ Failed to create Int16 format")
-            completion(.failure(.audioFormatError))
-            return
-        }
-
-        targetFormat = int16Format
-
-        // Create converter from Float32 to Int16
-        guard let converter = AVAudioConverter(from: audioFormat, to: int16Format) else {
-            debugLog("❌ Failed to create audio converter")
-            completion(.failure(.audioFormatError))
-            return
-        }
-
-        audioConverter = converter
-
-        // Start the first recognition session
-        startRecognitionSession()
-
-        debugLog("✓ Live recognition task started (auto-restart enabled)")
-    }
-
-    /// Starts or restarts a recognition session.
-    /// Called initially and when a session times out for long recordings.
-    private func startRecognitionSession() {
-        // Cancel previous session if any
-        recognitionTask?.cancel()
-        recognitionRequest = nil
-        lastSessionFrameCount = 0
-
-        // Create recognition request for live audio
-        recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
-        recognitionRequest?.shouldReportPartialResults = true
-
-        guard let speechRecognizer = self.speechRecognizer else {
-            debugLog("❌ Speech recognizer not available")
-            isProcessing = false
-            liveCompletion?(.failure(.unavailable))
-            return
-        }
-
-        let sessionIndex = sessionRestartCount
-        debugLog("🔄 Starting recognition session #\(sessionIndex)")
-
-        recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest!) { [weak self] result, error in
-            guard let self = self else { return }
-
-            // If we're no longer transcribing (user stopped), still update partial text
-            // but don't restart sessions. The endLiveTranscription timeout will handle completion.
-            let isActive = self.isTranscribing
-
-            if let error = error {
-                let nsError = error as NSError
-                debugLog("⚠️ Recognition session #\(sessionIndex) error: \(error.localizedDescription) (code: \(nsError.code))")
-
-                // Only auto-restart if we're still actively transcribing
-                let recoverableCodes = [203, 209, 216, 1110]
-                if recoverableCodes.contains(nsError.code) && isActive {
-                    // Save current partial text and restart
-                    if !self.currentSessionText.isEmpty {
-                        self.accumulatedTranscriptions.append(self.currentSessionText)
-                        debugLog("📝 Saved session #\(sessionIndex) text: \(self.currentSessionText)")
-                    }
-                    self.currentSessionText = ""
-                    self.sessionRestartCount += 1
-
-                    debugLog("🔄 Auto-restarting recognition (session \(self.sessionRestartCount))...")
-                    self.startRecognitionSession()
-                    return
-                }
-
-                // Non-recoverable error or we're stopping — save what we have
-                if !self.currentSessionText.isEmpty {
-                    self.accumulatedTranscriptions.append(self.currentSessionText)
-                    self.currentSessionText = ""
-                }
-
-                // Only fire completion if we're still the active handler (isActive)
-                if isActive {
-                    if !self.accumulatedTranscriptions.isEmpty {
-                        let merged = AudioChunker.mergeTranscriptions(self.accumulatedTranscriptions)
-                        let processedText = self.processText(merged)
-                        self.isTranscribing = false
-                        self.isProcessing = false
-                        self.liveCompletion?(.success(processedText))
-                    } else {
-                        self.isTranscribing = false
-                        self.isProcessing = false
-                        self.liveCompletion?(.failure(.recognitionError(error)))
-                    }
-                }
-                return
-            }
-
-            if let result = result {
-                let transcription = result.bestTranscription.formattedString
-                self.currentSessionText = transcription
-
-                // Show accumulated + current text
-                let allParts = self.accumulatedTranscriptions + [transcription]
-                let displayText = AudioChunker.mergeTranscriptions(allParts)
-                self.currentText = displayText
-
-                if result.isFinal {
-                    debugLog("✅ Session #\(sessionIndex) final: \(transcription)")
-                    self.accumulatedTranscriptions.append(transcription)
-                    self.currentSessionText = ""
-
-                    // If we're still recording, auto-restart for continued transcription
-                    if self.isTranscribing {
-                        self.sessionRestartCount += 1
-                        debugLog("🔄 Session ended, auto-restarting (session \(self.sessionRestartCount))...")
-                        self.startRecognitionSession()
-                    }
-                }
-            }
-        }
-    }
-
-    func appendAudioBuffer(_ buffer: AVAudioPCMBuffer) {
-        // Process buffer on background queue to avoid blocking UI
-        audioProcessingQueue.async { [weak self] in
-            guard let self = self else { return }
-
-            // Convert Float32 buffer to Int16 before sending to Speech Recognition
-            guard let converter = self.audioConverter,
-                  let targetFormat = self.targetFormat else {
-                return
-            }
-
-            // Track buffer stats
-            self.bufferCount += 1
-            self.totalFrames += buffer.frameLength
-            self.lastSessionFrameCount += buffer.frameLength
-
-            // Log every 100th buffer to avoid spam
-            if self.bufferCount % 100 == 1 || self.bufferCount <= 5 {
-                let totalSec = Double(self.totalFrames) / buffer.format.sampleRate
-                let sessionSec = Double(self.lastSessionFrameCount) / buffer.format.sampleRate
-                debugLog("🎵 Buffer #\(self.bufferCount): total=\(String(format: "%.1f", totalSec))s, session=\(String(format: "%.1f", sessionSec))s")
-            }
-
-            // Create output buffer for converted audio
-            let frameCapacity = buffer.frameLength
-            guard let convertedBuffer = AVAudioPCMBuffer(
-                pcmFormat: targetFormat,
-                frameCapacity: frameCapacity
-            ) else {
-                debugLog("❌ Failed to create converted buffer")
-                return
-            }
-
-            // Convert the buffer
-            var error: NSError?
-            var inputConsumed = false
-            let inputBlock: AVAudioConverterInputBlock = { inNumPackets, outStatus in
-                if inputConsumed {
-                    outStatus.pointee = .noDataNow
-                    return nil
-                }
-                inputConsumed = true
-                outStatus.pointee = .haveData
-                return buffer
-            }
-
-            let status = converter.convert(to: convertedBuffer, error: &error, withInputFrom: inputBlock)
-
-            // Log detailed conversion info for first few buffers
-            if self.bufferCount <= 3 {
-                debugLog("   Conversion status: \(status)")
-                debugLog("   Converted buffer format: \(convertedBuffer.format)")
-            }
-
-            if status == .error {
-                debugLog("❌ Buffer conversion error: \(error?.localizedDescription ?? "unknown")")
-                return
-            }
-
-            if status != .haveData {
-                return
-            }
-
-            // CRITICAL: Set the frame length on the converted buffer
-            convertedBuffer.frameLength = buffer.frameLength
-
-            // Verify the buffer has valid data
-            if convertedBuffer.frameLength == 0 {
-                return
-            }
-
-            // Append converted Int16 buffer to recognition request
-            self.recognitionRequest?.append(convertedBuffer)
-        }
-    }
-
-    func endLiveTranscription() {
-        debugLog("🛑 Ending live transcription")
-        debugLog("📊 Total buffers processed: \(bufferCount)")
-        debugLog("📊 Total frames: \(totalFrames) (\(Double(totalFrames) / 48000.0) seconds)")
-        debugLog("📊 Sessions used: \(sessionRestartCount + 1)")
-
-        // End audio on current request
-        recognitionRequest?.endAudio()
-        audioConverter = nil
-        targetFormat = nil
-
-        // Capture everything we need BEFORE clearing state
-        let existingAccumulated = accumulatedTranscriptions
-        let existingCurrent = currentSessionText
-        let existingCompletion = liveCompletion
-
-        // Mark that we're stopping — the recognition task handler checks this
-        // But DON'T nil the completion yet — the timeout block needs it
-        isTranscribing = false
-        liveInputFormat = nil
-
-        // Use a flag to track if the recognition task's own handler fires the completion
-        var completionFired = false
-
-        // Give the recognition task a moment to finalize with isFinal result
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-            guard !completionFired else { return }
-            completionFired = true
-
-            debugLog("⏱️ Recognition didn't finalize in time — returning accumulated text")
-
-            var allParts = existingAccumulated
-            if !existingCurrent.isEmpty {
-                allParts.append(existingCurrent)
-            }
-
-            if !allParts.isEmpty {
-                let merged = AudioChunker.mergeTranscriptions(allParts)
-                let processedText = self.processText(merged)
-                self.isProcessing = false
-                existingCompletion?(.success(processedText))
-            } else {
-                // No text at all — return empty success rather than hanging forever
-                self.isProcessing = false
-                existingCompletion?(.success(""))
-            }
-
-            // Clean up the recognition task
-            self.recognitionTask?.cancel()
-            self.recognitionTask = nil
-            self.recognitionRequest = nil
-        }
-
-        // Also hook into the recognition task's own completion to fire faster if possible
-        // The existing recognitionTask handler in startRecognitionSession checks isTranscribing
-        // and since we set it to false above, when the task handler fires with isFinal or error,
-        // it will try to use liveCompletion. But we already captured it above.
-        // So we need a different approach: override the completion in the task handler.
-
-        // Clear liveCompletion so the session handler doesn't also fire it
-        liveCompletion = nil
-    }
-
-    // MARK: - Model Routing Helpers
-
-    private func routeToGroq(_ audioData: Data, completion: @escaping (Result<String, TranscriptionError>) -> Void) {
-        let apiKey = AppSettings.shared.groqAPIKey
-        guard !apiKey.isEmpty else {
-            debugLog("❌ Groq API key not configured")
-            completion(.failure(.unavailable))
-            return
-        }
-
-        debugLog("📡 Routing to Groq transcription service")
-        Task {
-            do {
-                let language = AppSettings.shared.autoDetectLanguage ? nil : AppSettings.shared.preferredLanguage.components(separatedBy: "-").first
-                let text = try await GroqTranscriptionService.shared.transcribe(
-                    audioData: audioData,
-                    language: language,
-                    apiKey: apiKey
-                )
-                await MainActor.run {
-                    let processed = self.processText(text)
-                    completion(.success(processed))
-                }
-            } catch {
-                await MainActor.run {
-                    debugLog("❌ Groq transcription failed: \(error)")
-                    completion(.failure(.recognitionError(error)))
-                }
-            }
-        }
-    }
-
-    private func routeToDeepgram(_ audioData: Data, completion: @escaping (Result<String, TranscriptionError>) -> Void) {
-        let apiKey = AppSettings.shared.deepgramAPIKey
-        guard !apiKey.isEmpty else {
-            debugLog("❌ Deepgram API key not configured")
-            completion(.failure(.unavailable))
-            return
-        }
-
-        debugLog("📡 Routing to Deepgram transcription service")
-        Task {
-            do {
-                let language = AppSettings.shared.autoDetectLanguage ? nil : AppSettings.shared.preferredLanguage.components(separatedBy: "-").first
-                let text = try await DeepgramTranscriptionService.shared.transcribeToText(
-                    audioData: audioData,
-                    model: .nova,
-                    language: language,
-                    apiKey: apiKey
-                )
-                await MainActor.run {
-                    let processed = self.processText(text)
-                    completion(.success(processed))
-                }
-            } catch {
-                await MainActor.run {
-                    debugLog("❌ Deepgram transcription failed: \(error)")
-                    completion(.failure(.recognitionError(error)))
-                }
-            }
-        }
-    }
-
-    private func routeToWhisper(_ audioData: Data, selectedModel: String, completion: @escaping (Result<String, TranscriptionError>) -> Void) {
-        debugLog("🎙️ Routing to local Whisper engine: \(selectedModel)")
-        
-        let whisperEngine = WhisperEngine.shared
-        let modelManager = ModelManager.shared
-        
-        // Find the AIModel for the selected model ID
-        guard let aiModel = modelManager.availableModels.first(where: { $0.id == selectedModel }) else {
-            debugLog("❌ Model not found in available models: \(selectedModel)")
-            completion(.failure(.processingError))
-            return
-        }
-        
-        // Check if the correct model is already loaded
-        if whisperEngine.isAvailable && whisperEngine.loadedModelName == aiModel.name {
-            // Model is loaded, transcribe directly
-            whisperEngine.transcribeAudio(audioData) { result in
-                switch result {
-                case .success(let transcription):
-                    completion(.success(transcription.outputText))
-                case .failure(let error):
-                    debugLog("❌ Whisper transcription failed: \(error)")
-                    completion(.failure(.processingError))
-                }
-            }
-        } else {
-            // Need to load the model first
-            debugLog("📦 Loading Whisper model before transcription: \(aiModel.name)")
-            whisperEngine.loadModel(aiModel) { [weak self] loadResult in
-                switch loadResult {
-                case .success:
-                    whisperEngine.transcribeAudio(audioData) { result in
-                        switch result {
-                        case .success(let transcription):
-                            completion(.success(transcription.outputText))
-                        case .failure(let error):
-                            debugLog("❌ Whisper transcription failed after model load: \(error)")
-                            completion(.failure(.processingError))
-                        }
-                    }
-                case .failure(let error):
-                    debugLog("❌ Failed to load Whisper model: \(error)")
-                    completion(.failure(.processingError))
-                }
-            }
-        }
-    }
-
-    private func transcribeWithAppleSpeech(_ audioData: Data, completion: @escaping (Result<String, TranscriptionError>) -> Void) {
-        guard isAvailable else {
-            completion(.failure(.unavailable))
-            return
-        }
-
-        guard isPermissionGranted else {
-            completion(.failure(.permissionDenied))
-            return
-        }
-
-        isProcessing = true
-        currentText = ""
-
-        // Create temporary file for audio data (using CAF format for better Float32 support)
-        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("transcription.caf")
-
-        do {
-            try audioData.write(to: tempURL)
-
-            debugLog("📄 Wrote audio data to temp file: \(tempURL.path)")
-            debugLog("   File size: \(audioData.count) bytes")
-
-            // Use URL-based recognition instead of buffer-based
-            let urlRequest = SFSpeechURLRecognitionRequest(url: tempURL)
-            urlRequest.shouldReportPartialResults = false
-
-            debugLog("🎯 Starting URL-based speech recognition...")
-
-            guard let speechRecognizer = self.speechRecognizer else {
-                debugLog("❌ Speech recognizer not available")
-                self.isProcessing = false
-                completion(.failure(.unavailable))
-                return
-            }
-
-            recognitionTask = speechRecognizer.recognitionTask(with: urlRequest) { [weak self] result, error in
-                guard let self = self else { return }
-
-                if let error = error {
-                    debugLog("❌ Recognition error: \(error)")
-                    self.isProcessing = false
-                    completion(.failure(.recognitionError(error)))
-                    return
-                }
-
-                if let result = result {
-                    let transcription = result.bestTranscription.formattedString
-                    self.currentText = transcription
-
-                    if result.isFinal {
-                        debugLog("✅ Final transcription: \(transcription)")
-                        self.isProcessing = false
-                        let processedText = self.processText(transcription)
-                        completion(.success(processedText))
-                    }
-                }
-            }
-
-            if recognitionTask == nil {
-                debugLog("❌ Failed to create recognition task")
-                self.isProcessing = false
-                completion(.failure(.unavailable))
-            }
-        } catch {
-            debugLog("❌ Error: \(error)")
-            isProcessing = false
-            completion(.failure(.audioFormatError))
-        }
     }
 }

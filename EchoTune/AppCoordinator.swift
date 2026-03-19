@@ -3,6 +3,12 @@
 //  EchoTune
 //
 //  Phase 2-5: Main Application Coordinator with Real Managers
+//  Core class definition, properties, and initialization.
+//
+//  Extensions:
+//    AppCoordinator+Recording.swift       — Dictation start/stop, recording logic
+//    AppCoordinator+Transcription.swift    — Whisper/Apple Speech result handling, text processing
+//    AppCoordinator+Retranscription.swift  — Re-transcription of saved audio
 //
 
 import Foundation
@@ -12,9 +18,9 @@ import Speech
 import ApplicationServices
 import os.log
 
-private let appLog = OSLog(subsystem: "com.echotune.EchoTune", category: "debug")
+let appLog = OSLog(subsystem: "com.echotune.EchoTune", category: "debug")
 
-private struct FinalizedTranscription {
+struct FinalizedTranscription {
     let outputText: String
     let originalText: String
     let translatedText: String?
@@ -51,22 +57,24 @@ class AppCoordinator: ObservableObject {
     let errorLogger = ErrorLogger.shared
 
     // Track which engine to use
-    private var useWhisper: Bool {
+    var useWhisper: Bool {
         guard let currentModel = modelManager.currentModel else { return false }
         // Use Whisper engine only for local, non-built-in models
         return currentModel.category == .local && !currentModel.isBuiltIn
     }
 
     // Track if we muted system output during this recording session
-    private var didMuteSystemOutput = false
+    var didMuteSystemOutput = false
 
     // Phase 6B: Store screen context for current transcription
-    private var currentScreenContext: ScreenContext?
+    var currentScreenContext: ScreenContext?
 
     // Audio retention: store last recorded audio data for saving alongside transcription
-    private var lastRecordedAudioData: Data?
+    var lastRecordedAudioData: Data?
 
-    private var cancellables = Set<AnyCancellable>()
+    var cancellables = Set<AnyCancellable>()
+
+    // MARK: - Initialization
 
     private init() {
         debugLog("✓ AppCoordinator initialized")
@@ -113,6 +121,8 @@ class AppCoordinator: ObservableObject {
         }
     }
 
+    // MARK: - Setup
+
     private func setupKeyboardShortcut() {
         shortcutManager.onShortcutTriggered = { [weak self] in
             guard let self = self else { return }
@@ -125,10 +135,29 @@ class AppCoordinator: ObservableObject {
                 return
             }
 
-            self.toggleDictation()
+            if AppSettings.shared.recordingMode == .pushToTalk {
+                // Push-to-talk: key down always starts recording
+                if self.appState.recordingState == .idle {
+                    self.toggleDictation()
+                }
+            } else {
+                // Toggle mode: press to start, press again to stop
+                self.toggleDictation()
+            }
         }
 
-        debugLog("✅ Keyboard shortcut callback configured")
+        shortcutManager.onShortcutReleased = { [weak self] in
+            guard let self = self else { return }
+            // Push-to-talk: key up stops recording
+            if AppSettings.shared.recordingMode == .pushToTalk {
+                if self.appState.recordingState == .recording {
+                    debugLog("⌨️ Push-to-talk: key released, stopping recording")
+                    self.toggleDictation()
+                }
+            }
+        }
+
+        debugLog("✅ Keyboard shortcut callback configured (push-to-talk + toggle modes)")
         debugLog("   Current shortcut: \(shortcutManager.getCurrentShortcutString())")
     }
 
@@ -211,6 +240,14 @@ class AppCoordinator: ObservableObject {
         }
     }
 
+    private func setupBindings() {
+        // Bind audio manager state to app state
+        // Note: In a full Observable implementation, we'd use publishers
+        // For now, we'll update manually in recording methods
+    }
+
+    // MARK: - Public API
+
     // Call this method when accessibility permission is granted
     func refreshKeyboardShortcut() {
         debugLog("🔄 Refreshing keyboard shortcut registration...")
@@ -228,7 +265,7 @@ class AppCoordinator: ObservableObject {
         }
         #endif
     }
-    
+
     func setupApplication() {
         debugLog("Setting up application...")
         // Add any additional setup code here
@@ -237,12 +274,6 @@ class AppCoordinator: ObservableObject {
     func startNewTranscription() {
         debugLog("Starting new transcription...")
         startDictation()
-    }
-
-    private func setupBindings() {
-        // Bind audio manager state to app state
-        // Note: In a full Observable implementation, we'd use publishers
-        // For now, we'll update manually in recording methods
     }
 
     // MARK: - Permissions (Phase 2: Real implementation)
@@ -269,307 +300,10 @@ class AppCoordinator: ObservableObject {
         }
     }
 
-    // MARK: - Dictation Actions (Phase 2: Real implementation!)
-
-    func startDictation() {
-        debugLog("🎤 Start dictation")
-        os_log("🎤 startDictation called", log: appLog, type: .info)
-
-        // Check if we can start
-        guard canStartDictation() else {
-            debugLog("❌ Cannot start dictation - requirements not met")
-            os_log("❌ canStartDictation returned false", log: appLog, type: .error)
-            return
-        }
-
-        // ✅ CRITICAL OPTIMIZATION: Run context detection async to avoid blocking recording start
-        // This makes dictation start INSTANTLY like VoiceInk
-        DispatchQueue.global(qos: .userInitiated).async {
-            // ✅ PHASE 6B: Detect and apply Power Mode (context-aware configuration)
-            PowerModeManager.shared.detectAndApplyPowerMode()
-
-            // ✅ PHASE 6B: Capture screen context (if enabled)
-            DispatchQueue.main.async {
-                self.currentScreenContext = ScreenContextService.shared.captureCurrentContext()
-            }
-
-            // ✅ PHASE 3: Detect browser context for context-aware transcription
-            if let context = BrowserContextDetector.shared.detectContext() {
-                debugLog("🌐 Browser context: \(context.description)")
-                if let hint = BrowserContextDetector.shared.getTranscriptionHint() {
-                    debugLog("   Hint: \(hint)")
-                }
-            }
-        }
-
-        // Get current model
-        guard let currentModel = modelManager.currentModel else {
-            debugLog("❌ No model selected")
-            os_log("❌ No model selected", log: appLog, type: .error)
-            showErrorAlert(message: "Please select a transcription model in AI Models settings")
-            return
-        }
-
-        debugLog("📍 Using model: \(currentModel.name) (Whisper: \(useWhisper))")
-        os_log("📍 Model: %{public}@ category=%{public}@ isBuiltIn=%d useWhisper=%d", log: appLog, type: .info, currentModel.name, currentModel.category.rawValue, currentModel.isBuiltIn ? 1 : 0, useWhisper ? 1 : 0)
-
-        // Load Whisper model if needed
-        if useWhisper {
-            if !whisperEngine.isAvailable || whisperEngine.loadedModelName != currentModel.name {
-                debugLog("📦 Loading Whisper model: \(currentModel.name)")
-
-                // Show loading state
-                appState.recordingState = .loadingModel(currentModel.name)
-
-                // Update status bar to show loading
-                if let appDelegate = NSApp.delegate as? AppDelegate,
-                   let statusBar = appDelegate.statusBarController {
-                    statusBar.updateIcon(for: .loadingModel(currentModel.name))
-                }
-
-                // Show notification to user
-                notificationManager.showNotification(
-                    title: "Loading Model",
-                    body: "Loading \(currentModel.name)... This may take a moment for larger models.",
-                    sound: false
-                )
-
-                whisperEngine.loadModel(currentModel) { [weak self] result in
-                    guard let self = self else { return }
-
-                    // Dismiss loading notification
-                    self.notificationManager.dismissProcessingNotification()
-
-                    switch result {
-                    case .success:
-                        debugLog("✅ Whisper model loaded, starting dictation")
-
-                        // Show success notification
-                        self.notificationManager.showNotification(
-                            title: "Model Ready",
-                            body: "\(currentModel.name) loaded successfully!",
-                            sound: false
-                        )
-
-                        // Reset state and start recording
-                        self.appState.recordingState = .idle
-                        self.beginRecording()
-
-                    case .failure(let error):
-                        debugLog("❌ Failed to load Whisper model: \(error)")
-
-                        // Reset state
-                        self.appState.recordingState = .idle
-
-                        // Update status bar
-                        if let appDelegate = NSApp.delegate as? AppDelegate,
-                           let statusBar = appDelegate.statusBarController {
-                            statusBar.updateIcon(for: .idle)
-                        }
-
-                        self.showErrorAlert(message: "Failed to load model: \(error.localizedDescription)")
-                    }
-                }
-                return
-            }
-        }
-
-        // If a cloud model is selected, use cloud transcription
-        if currentModel.category == .cloud {
-            beginCloudRecording(model: currentModel)
-            return
-        }
-
-        // Start recording with local model
-        beginRecording()
-    }
-
-    // MARK: - Cloud Recording (Groq/Deepgram)
-
-    private func beginCloudRecording(model: AIModel) {
-        os_log("☁️ beginCloudRecording: %{public}@ (id=%{public}@)", log: appLog, type: .info, model.name, model.id)
-        // Start performance monitoring
-        PerformanceMonitor.shared.startRecording()
-
-        // Play start sound (if enabled)
-        SoundManager.shared.playStartSound()
-
-        // Update state
-        appState.recordingState = .recording
-
-        // Mute system output while recording to avoid capturing app audio (if enabled)
-        didMuteSystemOutput = false
-        if AppSettings.shared.muteBackgroundAudio {
-            SystemAudioManager.shared.muteSystemOutput()
-            didMuteSystemOutput = true
-        }
-
-        // Show recording indicator (style-aware)
-        showRecorderUI()
-
-        // Start audio recording - we'll use the recorded audio for cloud transcription
-        audioManager.startRecording()
-        debugLog("✓ Cloud recording started for: \(model.name)")
-
-        // Update status bar icon
-        if let appDelegate = NSApp.delegate as? AppDelegate,
-           let statusBar = appDelegate.statusBarController {
-            statusBar.updateIcon(for: .recording)
-        }
-    }
-
-    private func stopCloudRecording() {
-        os_log("🛑 stopCloudRecording called", log: appLog, type: .info)
-
-        // Play stop sound (if enabled)
-        SoundManager.shared.playStopSound()
-
-        // Update state
-        appState.recordingState = .processing
-
-        // Hide recording indicator (all styles)
-        hideRecorderUI()
-
-        // Stop audio recording and get audio data as proper WAV for cloud services
-        let engineType: AudioManager.AudioEngine = .cloud
-        guard let audioData = audioManager.stopRecording(forEngine: engineType) else {
-            os_log("❌ stopRecording returned nil", log: appLog, type: .error)
-            handleTranscriptionError("Failed to capture audio data")
-            return
-        }
-
-        // Store audio data for retention
-        self.lastRecordedAudioData = audioData
-        
-        os_log("📊 Captured %d bytes for cloud transcription", log: appLog, type: .info, audioData.count)
-
-        let recordingDuration = audioManager.lastRecordingDuration
-
-        // Restore system output
-        if didMuteSystemOutput {
-            SystemAudioManager.shared.restoreSystemOutput()
-            didMuteSystemOutput = false
-        }
-
-        // VAD: Check if there's significant speech
-        if VADManager.shared.config.enabled {
-            let hasSignificantSpeech = audioManager.hasSignificantSpeech()
-            if !hasSignificantSpeech {
-                debugLog("⚠️ No significant speech detected - skipping cloud transcription")
-                notificationManager.showNotification(
-                    title: "No Speech Detected",
-                    body: "The recording didn't contain any clear speech. Please try again.",
-                    sound: false
-                )
-                appState.recordingState = .idle
-                if let appDelegate = NSApp.delegate as? AppDelegate,
-                   let statusBar = appDelegate.statusBarController {
-                    statusBar.updateIcon(for: .idle)
-                }
-                return
-            }
-        }
-
-        // Determine which cloud service to use based on model
-        guard let currentModel = modelManager.currentModel else {
-            handleTranscriptionError("No model selected")
-            return
-        }
-
-        Task {
-            do {
-                let transcribedText: String
-
-                // Route to appropriate cloud service
-                if currentModel.id.contains("groq") || currentModel.name.lowercased().contains("groq") {
-                    // Use Groq
-                    let apiKey = settings.groqAPIKey
-                    guard !apiKey.isEmpty else {
-                        await MainActor.run {
-                            handleTranscriptionError("Groq API key not configured. Please add your API key in Settings > API Keys.")
-                        }
-                        return
-                    }
-
-                    os_log("☁️ Transcribing with Groq... audioSize=%d apiKeyLen=%d", log: appLog, type: .info, audioData.count, apiKey.count)
-                    PerformanceMonitor.shared.startTranscription(engine: "Groq", model: "whisper-large-v3-turbo")
-                    transcribedText = try await GroqTranscriptionService.shared.transcribe(
-                        audioData: audioData,
-                        language: AppSettings.shared.autoDetectLanguage ? nil : settings.preferredLanguage.components(separatedBy: "-").first,
-                        apiKey: apiKey
-                    )
-                    os_log("✅ Groq returned: '%{public}@'", log: appLog, type: .info, transcribedText)
-
-                } else if currentModel.id.contains("deepgram") || currentModel.name.lowercased().contains("deepgram") {
-                    // Use Deepgram
-                    let apiKey = settings.deepgramAPIKey
-                    guard !apiKey.isEmpty else {
-                        await MainActor.run {
-                            handleTranscriptionError("Deepgram API key not configured. Please add your API key in Settings > API Keys.")
-                        }
-                        return
-                    }
-
-                    debugLog("☁️ Transcribing with Deepgram...")
-                    PerformanceMonitor.shared.startTranscription(engine: "Deepgram", model: "nova-2")
-                    transcribedText = try await DeepgramTranscriptionService.shared.transcribeToText(
-                        audioData: audioData,
-                        model: .nova,
-                        language: AppSettings.shared.autoDetectLanguage ? nil : settings.preferredLanguage.components(separatedBy: "-").first,
-                        apiKey: apiKey
-                    )
-
-                } else {
-                    await MainActor.run {
-                        handleTranscriptionError("Unknown cloud model: \(currentModel.name)")
-                    }
-                    return
-                }
-
-                await MainActor.run {
-                    PerformanceMonitor.shared.endTranscription(wordCount: transcribedText.split(separator: " ").count)
-
-                    debugLog("✅ Cloud transcription successful: \(transcribedText)")
-                    self.errorLogger.logInfo("Cloud transcription successful", category: "Transcription", context: [
-                        "wordCount": "\(transcribedText.split(separator: " ").count)",
-                        "recordingDuration": "\(String(format: "%.2f", recordingDuration))s",
-                        "model": currentModel.name
-                    ])
-
-                    // Process and insert text
-                    self.processAndInsertText(
-                        FinalizedTranscription(
-                            outputText: transcribedText,
-                            originalText: transcribedText,
-                            translatedText: nil,
-                            detectedLanguage: nil
-                        ),
-                        recordingDuration: recordingDuration
-                    )
-                }
-
-            } catch {
-                await MainActor.run {
-                    os_log("❌ Cloud transcription FAILED: %{public}@", log: appLog, type: .error, "\(error)")
-                    self.errorLogger.logError(error, category: "Transcription", context: [
-                        "model": currentModel.name
-                    ])
-                    self.handleTranscriptionError(error.localizedDescription)
-                }
-            }
-        }
-
-        // Update status bar
-        if let appDelegate = NSApp.delegate as? AppDelegate,
-           let statusBar = appDelegate.statusBarController {
-            statusBar.updateIcon(for: .processing)
-        }
-    }
-
     // MARK: - Recorder UI Helpers
 
     /// Shows the appropriate recorder UI based on user's selected style
-    private func showRecorderUI() {
+    func showRecorderUI() {
         DispatchQueue.main.async {
             switch AppSettings.shared.recorderStyle {
             case .slim:
@@ -583,866 +317,11 @@ class AppCoordinator: ObservableObject {
     }
 
     /// Hides all recorder UIs
-    private func hideRecorderUI() {
+    func hideRecorderUI() {
         DispatchQueue.main.async {
             RecordingIndicatorWindow.shared.hide()
             NotchRecorderWindow.shared.hide()
             MiniRecorderWindow.shared.hide()
-        }
-    }
-
-    private func beginRecording() {
-        os_log("🔴 beginRecording called, useWhisper=%d", log: appLog, type: .info, useWhisper ? 1 : 0)
-
-        // Start performance monitoring
-        PerformanceMonitor.shared.startRecording()
-
-        // Play start sound (if enabled)
-        SoundManager.shared.playStartSound()
-
-        // Update state
-        appState.recordingState = .recording
-
-        // Mute system output while recording to avoid capturing app audio (if enabled)
-        didMuteSystemOutput = false  // Reset flag
-        if AppSettings.shared.muteBackgroundAudio {
-            SystemAudioManager.shared.muteSystemOutput()
-            didMuteSystemOutput = true  // Track that we muted
-        }
-
-        // Show recording indicator (style-aware)
-        showRecorderUI()
-
-        // Start audio recording
-        audioManager.startRecording()
-        debugLog("✓ Recording started successfully")
-
-        // Start transcription based on selected model
-        if useWhisper {
-            // Whisper streaming transcription
-            debugLog("🎯 Starting Whisper streaming transcription")
-
-            whisperEngine.startStreamingTranscription { [weak self] result in
-                guard let self = self else { return }
-                self.handleWhisperResult(result)
-            }
-
-            // Set up callback to stream audio buffers to Whisper
-            audioManager.onAudioBuffer = { [weak self] buffer in
-                self?.whisperEngine.appendAudioBuffer(buffer)
-            }
-        } else {
-            // Apple Speech live transcription
-            if let audioFormat = audioManager.audioEngine?.inputNode.inputFormat(forBus: 0) {
-                debugLog("🎯 Starting Apple Speech live transcription")
-
-                transcriptionEngine.startLiveTranscription(audioFormat: audioFormat) { [weak self] result in
-                    guard let self = self else { return }
-                    self.handleTranscriptionResult(result)
-                }
-
-                // Set up callback to stream audio buffers to Apple Speech
-                audioManager.onAudioBuffer = { [weak self] buffer in
-                    self?.transcriptionEngine.appendAudioBuffer(buffer)
-                }
-            } else {
-                debugLog("⚠️ Could not get audio format, live transcription not started")
-            }
-        }
-
-        // Update status bar icon
-        if let appDelegate = NSApp.delegate as? AppDelegate,
-           let statusBar = appDelegate.statusBarController {
-            statusBar.updateIcon(for: .recording)
-        }
-    }
-
-    func stopDictation() {
-        debugLog("🛑 Stop dictation")
-        os_log("🛑 stopDictation called, useWhisper=%d", log: appLog, type: .info, useWhisper ? 1 : 0)
-
-        // Play stop sound (if enabled)
-        SoundManager.shared.playStopSound()
-
-        // Update state
-        appState.recordingState = .processing
-
-        // Hide recording indicator (all styles)
-        hideRecorderUI()
-
-        // Clear the audio buffer callback
-        audioManager.onAudioBuffer = nil
-
-        // Stop audio recording with correct engine type (this calculates the duration)
-        let engineType: AudioManager.AudioEngine = useWhisper ? .whisper : .appleSpeech
-        let capturedAudioData = audioManager.stopRecording(forEngine: engineType)
-
-        // Store audio data for retention
-        self.lastRecordedAudioData = capturedAudioData
-
-        // NOW read the recording duration (after it's been calculated)
-        let recordingDuration = audioManager.lastRecordingDuration
-
-        // End recording performance monitoring with correct duration
-        PerformanceMonitor.shared.endRecording(
-            duration: recordingDuration,
-            bufferCount: 0  // Buffer count will be tracked internally in AudioManager
-        )
-
-        // Restore system output volume (if we actually muted it at start)
-        if didMuteSystemOutput {
-            SystemAudioManager.shared.restoreSystemOutput()
-            didMuteSystemOutput = false  // Reset flag
-        }
-
-        // VAD: Check if there's significant speech before transcribing
-        if VADManager.shared.config.enabled {
-            debugLog("🎙️ Performing VAD analysis...")
-            let hasSignificantSpeech = audioManager.hasSignificantSpeech()
-
-            if !hasSignificantSpeech {
-                debugLog("⚠️ No significant speech detected - skipping transcription")
-
-                // Show "No speech detected" notification
-                self.notificationManager.showNotification(
-                    title: "No Speech Detected",
-                    body: "The recording didn't contain any clear speech. Please try again.",
-                    sound: false
-                )
-
-                // Log to analytics
-                self.analyticsManager.recordError(type: "VAD", context: "No speech detected")
-
-                // Reset state
-                self.appState.recordingState = .idle
-
-                // Update status bar
-                if let appDelegate = NSApp.delegate as? AppDelegate,
-                   let statusBar = appDelegate.statusBarController {
-                    statusBar.updateIcon(for: .idle)
-                }
-
-                return  // Skip transcription entirely
-            }
-
-            // Log VAD analysis
-            if let vadAnalysis = audioManager.getVADAnalysis() {
-                debugLog("📊 VAD Analysis:")
-                debugLog(vadAnalysis.summary)
-
-                self.errorLogger.logInfo("VAD Analysis completed", category: "VAD", context: [
-                    "speechPercentage": "\(vadAnalysis.speechPercentage)%",
-                    "speechDuration": "\(vadAnalysis.speechDuration)s",
-                    "segments": "\(vadAnalysis.speechSegments.count)"
-                ])
-            }
-        }
-
-        // End transcription based on which engine is being used
-        if useWhisper {
-            debugLog("🛑 Ending Whisper transcription")
-            whisperEngine.endStreamingTranscription { [weak self] result in
-                guard let self = self else { return }
-                self.handleWhisperResult(result)
-            }
-        } else {
-            debugLog("🛑 Ending Apple Speech transcription")
-            PerformanceMonitor.shared.startTranscription(
-                engine: "Apple Speech",
-                model: "Built-in"
-            )
-            transcriptionEngine.endLiveTranscription()
-        }
-
-        // Update status bar icon
-        if let appDelegate = NSApp.delegate as? AppDelegate,
-           let statusBar = appDelegate.statusBarController {
-            statusBar.updateIcon(for: .processing)
-        }
-
-        // The transcription result will come through the completion handler
-        debugLog("⏳ Waiting for transcription to complete...")
-
-        // Safety timeout: scale with recording duration (min 15s, max 60s)
-        let safetyTimeout = max(15.0, min(60.0, recordingDuration * 2.0))
-        DispatchQueue.main.asyncAfter(deadline: .now() + safetyTimeout) { [weak self] in
-            guard let self = self else { return }
-            if case .processing = self.appState.recordingState {
-                debugLog("⚠️ Safety timeout: state still .processing after \(safetyTimeout)s — forcing reset to .idle")
-                self.appState.recordingState = .idle
-                self.transcriptionEngine.cancelTranscription()
-                if let appDelegate = NSApp.delegate as? AppDelegate,
-                   let statusBar = appDelegate.statusBarController {
-                    statusBar.updateIcon(for: .idle)
-                }
-                self.notificationManager.showNotification(
-                    title: "Transcription Timeout",
-                    body: "Transcription took too long. Please try a shorter recording or check your settings.",
-                    sound: false
-                )
-            }
-        }
-    }
-
-    func toggleDictation() {
-        if appState.recordingState == .recording {
-            // Check if using cloud model to call appropriate stop method
-            if let currentModel = modelManager.currentModel, currentModel.category == .cloud {
-                stopCloudRecording()
-            } else {
-                stopDictation()
-            }
-        } else if appState.recordingState == .idle {
-            startDictation()
-        } else if case .loadingModel(let modelName) = appState.recordingState {
-            // User tried to start recording while model is loading
-            debugLog("⚠️ Model is still loading, please wait...")
-            notificationManager.showNotification(
-                title: "Please Wait",
-                body: "\(modelName) is still loading...",
-                sound: false
-            )
-        }
-    }
-
-    private func canStartDictation() -> Bool {
-        // Check license or trial
-        if !licenseManager.canUsePremiumFeatures() {
-            showTrialExpiredAlert()
-            return false
-        }
-
-        // Increment trial usage
-        if !licenseManager.isLicensed {
-            licenseManager.incrementTrialUsage()
-        }
-
-        // Check microphone permission
-        if !permissionsManager.hasMicrophonePermission {
-            debugLog("❌ Microphone permission required")
-            permissionsManager.requestMicrophonePermission { granted in
-                if granted {
-                    debugLog("✓ Microphone permission granted, ready to record")
-                }
-            }
-            return false
-        }
-
-        // Note: Accessibility permission is only needed for text insertion (Phase 4)
-        // For Phase 2, we just copy to clipboard, so we can proceed without it
-        if !permissionsManager.hasAccessibilityPermission {
-            debugLog("⚠️ Accessibility permission not granted - will copy to clipboard instead")
-        }
-
-        // Only check Apple Speech Recognition authorization when using Apple Speech engine
-        // WhisperKit and cloud models (Groq, etc.) don't need this permission
-        if !useWhisper, let currentModel = modelManager.currentModel,
-           !currentModel.id.contains("groq") && !currentModel.id.contains("deepgram") && currentModel.category != .cloud {
-            if transcriptionEngine.authorizationStatus != .authorized {
-                debugLog("⚠️ Speech recognition not authorized - requesting permission")
-                transcriptionEngine.requestAuthorization { granted in
-                    if granted {
-                        debugLog("✓ Speech recognition authorized")
-                    } else {
-                        debugLog("❌ Speech recognition denied")
-                    }
-                }
-                // Can still proceed - will show error during transcription if denied
-            }
-        }
-
-        return true
-    }
-
-    // MARK: - Transcription
-
-    private func handleWhisperResult(_ result: Result<WhisperTranscriptionResult, WhisperEngine.WhisperError>) {
-        switch result {
-        case .success(let payload):
-            os_log("📝 handleWhisperResult SUCCESS text='%{public}@' len=%d", log: appLog, type: .info, payload.outputText, payload.outputText.count)
-        case .failure(let error):
-            os_log("📝 handleWhisperResult FAILURE error=%{public}@", log: appLog, type: .error, "\(error)")
-        }
-        let recordingDuration = audioManager.getRecordingDuration()
-
-        // Dismiss processing notification
-        notificationManager.dismissProcessingNotification()
-
-        switch result {
-        case .success(let payload):
-            os_log("✅ Whisper success: '%{public}@' words=%d dur=%.1f", log: appLog, type: .info, payload.outputText, payload.outputText.split(separator: " ").count, recordingDuration)
-
-            self.errorLogger.logInfo("Whisper transcription successful", category: "Transcription", context: [
-                "wordCount": "\(payload.outputText.split(separator: " ").count)",
-                "recordingDuration": "\(String(format: "%.2f", recordingDuration))s",
-                "model": self.modelManager.currentModel?.name ?? "unknown",
-                "detectedLanguage": payload.detectedLanguage ?? "unknown",
-                "translated": payload.wasTranslated ? "true" : "false"
-            ])
-
-            processAndInsertText(
-                FinalizedTranscription(
-                    outputText: payload.outputText,
-                    originalText: payload.originalText,
-                    translatedText: payload.translatedText,
-                    detectedLanguage: payload.detectedLanguage
-                ),
-                recordingDuration: recordingDuration
-            )
-
-        case .failure(let error):
-            os_log("❌ Whisper FAILURE: %{public}@", log: appLog, type: .error, "\(error)")
-
-            self.errorLogger.logError(error, category: "Transcription", context: [
-                "recordingDuration": "\(String(format: "%.2f", recordingDuration))s",
-                "model": self.modelManager.currentModel?.name ?? "unknown"
-            ])
-
-            handleTranscriptionError(error.localizedDescription)
-        }
-    }
-
-    private func handleTranscriptionResult(_ result: Result<String, TranscriptionEngine.TranscriptionError>) {
-        let recordingDuration = audioManager.getRecordingDuration()
-
-        // Dismiss processing notification
-        notificationManager.dismissProcessingNotification()
-
-        switch result {
-        case .success(let transcribedText):
-            debugLog("✅ Apple Speech transcription successful: \(transcribedText)")
-
-            self.errorLogger.logInfo("Apple Speech transcription successful", category: "Transcription", context: [
-                "wordCount": "\(transcribedText.split(separator: " ").count)",
-                "recordingDuration": "\(String(format: "%.2f", recordingDuration))s"
-            ])
-
-            processAndInsertText(
-                FinalizedTranscription(
-                    outputText: transcribedText,
-                    originalText: transcribedText,
-                    translatedText: nil,
-                    detectedLanguage: nil
-                ),
-                recordingDuration: recordingDuration
-            )
-
-        case .failure(let error):
-            debugLog("❌ Apple Speech transcription failed: \(error)")
-
-            self.errorLogger.logError(error, category: "Transcription", context: [
-                "recordingDuration": "\(String(format: "%.2f", recordingDuration))s"
-            ])
-
-            handleTranscriptionError(error.localizedDescription)
-        }
-    }
-
-    private func processAndInsertText(_ transcription: FinalizedTranscription, recordingDuration: TimeInterval) {
-        let transcribedText = transcription.outputText
-
-        // Validate transcription - detect silence/hallucinations
-        if isLikelyHallucination(transcribedText, recordingDuration: recordingDuration) {
-            debugLog("⚠️ Detected likely hallucination or silence, not inserting text: '\(transcribedText)'")
-
-            // Show a subtle notification
-            self.notificationManager.showNotification(
-                title: "No Speech Detected",
-                body: "No clear speech was detected in the recording.",
-                sound: false
-            )
-
-            // Reset state
-            self.appState.recordingState = .idle
-
-            // Update status bar
-            if let appDelegate = NSApp.delegate as? AppDelegate,
-               let statusBar = appDelegate.statusBarController {
-                statusBar.updateIcon(for: .idle)
-            }
-
-            return
-        }
-
-        // Apply text processing
-        let processedText = self.processTranscription(transcribedText)
-
-        // Phase 6D: Trigger Word Detection — scan before AI enhancement
-        let triggerResult = AIEnhancementEngine.shared.detectTriggerWords(in: processedText)
-        let textForEnhancement = triggerResult.cleanedTranscript
-        let shouldEnhance = settings.aiEnhancementEnabled || triggerResult.shouldForceAI
-        let overridePrompt = triggerResult.overridePrompt
-
-        if let matched = triggerResult.matchedRule {
-            debugLog("🎯 Trigger word matched: \"\(matched.triggerPhrase)\" → using custom prompt")
-        }
-
-        // Phase 6A: AI Enhancement (if enabled or trigger word forces it)
-        if shouldEnhance {
-            debugLog("🎨 AI Enhancement active\(triggerResult.shouldForceAI ? " (triggered by keyword)" : ""), enhancing transcription...")
-
-            // Get appropriate API key based on selected model
-            let modelString = settings.selectedEnhancementModel
-            guard let model = AIEnhancementEngine.EnhancementModel(rawValue: modelString) else {
-                debugLog("⚠️ Invalid enhancement model: \(modelString)")
-                insertTextWithAutoSend(textForEnhancement, recordingDuration: recordingDuration)
-                return
-            }
-
-            let apiKey = settings.groqAPIKey
-
-            guard !apiKey.isEmpty else {
-                debugLog("⚠️ No API key configured for AI enhancement")
-                notificationManager.showNotification(
-                    title: "AI Enhancement Disabled",
-                    body: "Please add your API key in Settings > Advanced > AI Enhancement",
-                    sound: false
-                )
-                insertTextWithAutoSend(textForEnhancement, recordingDuration: recordingDuration)
-                return
-            }
-
-            // Get dictionary context if available
-            let dictionaryContext = DictionaryManager.shared.correctSpellings.map { $0.word }.joined(separator: ", ")
-
-            // Determine which prompt to use: trigger word prompt overrides custom/default
-            let promptToUse = overridePrompt ?? (settings.customEnhancementPrompt.isEmpty ? nil : settings.customEnhancementPrompt)
-
-            // Enhance asynchronously
-            Task {
-                do {
-                    let enhanced = try await AIEnhancementEngine.shared.enhance(
-                        textForEnhancement,
-                        using: model,
-                        apiKey: apiKey,
-                        customPrompt: promptToUse,
-                        dictionaryContext: dictionaryContext.isEmpty ? nil : dictionaryContext,
-                        screenContext: self.currentScreenContext
-                    )
-
-                    await MainActor.run {
-                        debugLog("✅ AI Enhancement successful")
-                        self.insertTextWithAutoSend(enhanced, recordingDuration: recordingDuration)
-                    }
-                } catch {
-                    await MainActor.run {
-                        debugLog("❌ AI Enhancement failed: \(error.localizedDescription)")
-                        self.notificationManager.showNotification(
-                            title: "Enhancement Failed",
-                            body: "Using original transcription. Error: \(error.localizedDescription)",
-                            sound: false
-                        )
-                        self.insertTextWithAutoSend(textForEnhancement, recordingDuration: recordingDuration)
-                    }
-                }
-            }
-            return
-        }
-
-        // No AI enhancement, insert directly
-        insertTextWithAutoSend(textForEnhancement, recordingDuration: recordingDuration)
-    }
-
-    // Phase 6A: Insert text with optional auto-send
-    private func insertTextWithAutoSend(_ processedText: String, recordingDuration: TimeInterval) {
-        let wordCount = processedText.split(separator: " ").count
-
-        // Save audio file for retention
-        var savedAudioPath: String? = nil
-        if let audioData = self.lastRecordedAudioData, !audioData.isEmpty {
-            let fileId = UUID()
-            savedAudioPath = TranscriptionHistoryManager.shared.saveAudioFile(data: audioData, id: fileId)
-            self.lastRecordedAudioData = nil // Clear after saving
-        }
-
-        // Add to history (with audio file path if saved)
-        TranscriptionHistoryManager.shared.addTranscription(
-            processedText,
-            duration: recordingDuration,
-            audioFilePath: savedAudioPath,
-            originalText: nil,
-            translatedText: nil,
-            detectedLanguage: nil
-        )
-
-        // Insert text directly with performance monitoring
-        PerformanceMonitor.shared.startTextInsertion()
-
-        self.textInsertionManager.insertText(processedText) { result in
-            PerformanceMonitor.shared.endTextInsertion()
-
-            switch result {
-            case .success:
-                self.errorLogger.logInfo("Text inserted directly", category: "TextInsertion")
-
-                // Phase 6A: Auto-Send After Paste (if enabled)
-                if AutoSendService.shared.shouldTriggerAutoSend() {
-                    debugLog("📤 Auto-send enabled for this app, sending...")
-                    AutoSendService.shared.sendAfterDelay(0.2) // 200ms delay
-                }
-
-            case .failure(let error):
-                self.errorLogger.logWarning(error.localizedDescription, category: "TextInsertion")
-                // Fallback to clipboard is already handled in TextInsertionManager
-            }
-
-            // Complete performance monitoring session
-            PerformanceMonitor.shared.completeSession()
-        }
-
-        // Record analytics
-        self.analyticsManager.recordTranscription(
-            duration: recordingDuration,
-            wordCount: wordCount,
-            transcriptionTime: recordingDuration
-        )
-
-        // Record statistics
-        self.recordTranscription(text: processedText)
-
-        // Reset state
-        self.appState.recordingState = .idle
-
-        // Update status bar
-        if let appDelegate = NSApp.delegate as? AppDelegate,
-           let statusBar = appDelegate.statusBarController {
-            statusBar.updateIcon(for: .idle)
-        }
-
-        // Show success notification
-        self.notificationManager.showTranscriptionSuccess(
-            text: processedText,
-            wordCount: wordCount,
-            duration: recordingDuration
-        )
-    }
-
-    private func handleTranscriptionError(_ errorMessage: String) {
-        // Record error in analytics
-        self.analyticsManager.recordError(type: "Transcription", context: errorMessage)
-
-        self.appState.recordingState = .error(errorMessage)
-
-        // Reset state after delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-            self.appState.recordingState = .idle
-        }
-
-        // Update status bar
-        if let appDelegate = NSApp.delegate as? AppDelegate,
-           let statusBar = appDelegate.statusBarController {
-            statusBar.updateIcon(for: .idle)
-        }
-
-        // Show error notification
-        self.notificationManager.showTranscriptionError(error: errorMessage)
-    }
-
-    private func isLikelyHallucination(_ text: String, recordingDuration: TimeInterval) -> Bool {
-        // Trim whitespace
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-
-        // Check 1: Empty or very short text
-        if trimmed.count < 3 {
-            return true
-        }
-
-        // Check 2: Recording was too short (less than 0.3 seconds)
-        // Likely just noise or accidental trigger
-        if recordingDuration < 0.3 {
-            return true
-        }
-
-        // Check 3: Punctuation-only or ellipsis
-        let punctuationOnly = ["...", ".", ". ."]
-        if punctuationOnly.contains(trimmed) {
-            return true
-        }
-
-        // Check 4: For very short recordings (< 1.5s), filter common Whisper hallucination phrases
-        // These appear when Whisper processes near-silence. Longer recordings with the same
-        // words are legitimate dictation (e.g., someone actually saying "thank you").
-        if recordingDuration < 1.5 {
-            let shortRecordingHallucinations = [
-                "thank you", "thanks", "thank you.", "thanks.",
-                "bye", "bye.", "goodbye", "goodbye.",
-                "you", "thank",
-                "thanks for watching", "thanks for watching.",
-                "see you next time", "see you next time."
-            ]
-            if shortRecordingHallucinations.contains(trimmed) {
-                return true
-            }
-        }
-
-        // Check 5: Very short recordings with generic single words
-        if recordingDuration < 1.0 && trimmed.split(separator: " ").count == 1 {
-            let shortWords = ["the", "a", "an", "i", "you", "ok", "okay", "um", "uh", "ah"]
-            if shortWords.contains(trimmed) {
-                return true
-            }
-        }
-
-        // Looks legitimate
-        return false
-    }
-
-    private func processTranscription(_ text: String) -> String {
-        var processed = text
-
-        // Apply dictionary transformations (word replacements + correct spellings)
-        processed = DictionaryManager.shared.process(text: processed)
-
-        // Apply settings
-        if settings.autoPunctuation {
-            // Already handled by Speech framework
-        }
-
-        if settings.smartCapitalization {
-            // Already handled by Speech framework
-        }
-
-        if settings.insertSpaceAfterText {
-            processed += " "
-        }
-
-        return processed
-    }
-
-    private func showTrialExpiredAlert() {
-        let alert = NSAlert()
-        alert.messageText = "Trial Expired"
-        alert.alertStyle = .informational
-
-        #if APPSTORE
-            // App Store build: Show in-app purchase option
-            alert.informativeText = "Your 7-day trial has expired. Buy the one-time Pro unlock to continue using EchoTune with unlimited transcriptions."
-            alert.addButton(withTitle: "Purchase Now")
-            alert.addButton(withTitle: "Later")
-
-            let response = alert.runModal()
-            if response == .alertFirstButtonReturn {
-                DispatchQueue.main.async {
-                    self.presentPurchaseFlow()
-                }
-            }
-        #else
-            // Direct sale build: Show license key option
-            alert.informativeText = "Your 7-day trial has expired. Purchase a one-time EchoTune license, or enter an existing license key, to continue."
-            alert.addButton(withTitle: "Purchase Now")
-            alert.addButton(withTitle: "Enter License Key")
-            alert.addButton(withTitle: "Later")
-
-            let response = alert.runModal()
-            if response == .alertFirstButtonReturn {
-                DispatchQueue.main.async {
-                    self.presentPurchaseFlow()
-                }
-            } else if response == .alertSecondButtonReturn {
-                DispatchQueue.main.async {
-                    self.showLicenseSheet = true
-                }
-            }
-        #endif
-    }
-
-    // MARK: - Re-Transcription
-
-    /// Re-transcribe a saved audio file with the currently selected model
-    func retranscribe(historyItem: TranscriptionHistoryItem, completion: @escaping (String?) -> Void) {
-        guard let audioPath = historyItem.audioFilePath,
-              FileManager.default.fileExists(atPath: audioPath) else {
-            debugLog("❌ Audio file not found for re-transcription")
-            completion(nil)
-            return
-        }
-
-        guard let currentModel = modelManager.currentModel else {
-            debugLog("❌ No model selected for re-transcription")
-            notificationManager.showNotification(
-                title: "Re-Transcription Failed",
-                body: "Please select a transcription model first.",
-                sound: false
-            )
-            completion(nil)
-            return
-        }
-
-        debugLog("🔄 Re-transcribing with model: \(currentModel.name)")
-
-        // Read audio data from file
-        guard let audioData = try? Data(contentsOf: URL(fileURLWithPath: audioPath)) else {
-            debugLog("❌ Failed to read audio file")
-            completion(nil)
-            return
-        }
-
-        // Route to appropriate transcription service
-        if currentModel.category == .cloud {
-            Task {
-                do {
-                    let transcribedText: String
-
-                    if currentModel.id.contains("groq") || currentModel.name.lowercased().contains("groq") {
-                        let apiKey = settings.groqAPIKey
-                        guard !apiKey.isEmpty else {
-                            await MainActor.run { completion(nil) }
-                            return
-                        }
-                        transcribedText = try await GroqTranscriptionService.shared.transcribe(
-                            audioData: audioData,
-                            language: AppSettings.shared.autoDetectLanguage ? nil : settings.preferredLanguage.components(separatedBy: "-").first,
-                            apiKey: apiKey
-                        )
-                    } else if currentModel.id.contains("deepgram") || currentModel.name.lowercased().contains("deepgram") {
-                        let apiKey = settings.deepgramAPIKey
-                        guard !apiKey.isEmpty else {
-                            await MainActor.run { completion(nil) }
-                            return
-                        }
-                        transcribedText = try await DeepgramTranscriptionService.shared.transcribeToText(
-                            audioData: audioData,
-                            model: .nova,
-                            language: AppSettings.shared.autoDetectLanguage ? nil : settings.preferredLanguage.components(separatedBy: "-").first,
-                            apiKey: apiKey
-                        )
-                    } else {
-                        await MainActor.run { completion(nil) }
-                        return
-                    }
-
-                    await MainActor.run {
-                        debugLog("✅ Re-transcription successful: \(transcribedText.prefix(50))...")
-                        notificationManager.showNotification(
-                            title: "Re-Transcription Complete",
-                            body: "Transcription updated with \(currentModel.name).",
-                            sound: false
-                        )
-                        completion(transcribedText)
-                    }
-                } catch {
-                    await MainActor.run {
-                        debugLog("❌ Re-transcription failed: \(error)")
-                        notificationManager.showNotification(
-                            title: "Re-Transcription Failed",
-                            body: error.localizedDescription,
-                            sound: false
-                        )
-                        completion(nil)
-                    }
-                }
-            }
-        } else {
-            // For local Whisper models, load and transcribe
-            if currentModel.category == .local && !currentModel.isBuiltIn {
-                // Load model if needed
-                if !whisperEngine.isAvailable || whisperEngine.loadedModelName != currentModel.name {
-                    whisperEngine.loadModel(currentModel) { [weak self] result in
-                        guard let self = self else { return }
-                        switch result {
-                        case .success:
-                            self.whisperEngine.transcribeAudio(audioData) { result in
-                                switch result {
-                                case .success(let payload):
-                                    debugLog("✅ Re-transcription (Whisper) successful")
-                                    self.notificationManager.showNotification(
-                                        title: "Re-Transcription Complete",
-                                        body: "Transcription updated with \(currentModel.name).",
-                                        sound: false
-                                    )
-                                    completion(payload.outputText)
-                                case .failure(let error):
-                                    debugLog("❌ Re-transcription failed: \(error)")
-                                    self.notificationManager.showNotification(
-                                        title: "Re-Transcription Failed",
-                                        body: error.localizedDescription,
-                                        sound: false
-                                    )
-                                    completion(nil)
-                                }
-                            }
-                        case .failure(let error):
-                            debugLog("❌ Failed to load model for re-transcription: \(error)")
-                            self.notificationManager.showNotification(
-                                title: "Re-Transcription Failed",
-                                body: "Failed to load model: \(error.localizedDescription)",
-                                sound: false
-                            )
-                            completion(nil)
-                        }
-                    }
-                } else {
-                    whisperEngine.transcribeAudio(audioData) { [weak self] result in
-                        switch result {
-                        case .success(let payload):
-                            debugLog("✅ Re-transcription (Whisper) successful")
-                            self?.notificationManager.showNotification(
-                                title: "Re-Transcription Complete",
-                                body: "Transcription updated with \(currentModel.name).",
-                                sound: false
-                            )
-                            completion(payload.outputText)
-                        case .failure(let error):
-                            debugLog("❌ Re-transcription failed: \(error)")
-                            self?.notificationManager.showNotification(
-                                title: "Re-Transcription Failed",
-                                body: error.localizedDescription,
-                                sound: false
-                            )
-                            completion(nil)
-                        }
-                    }
-                }
-            } else {
-                // Built-in Apple Speech — use audio data transcription
-                transcriptionEngine.transcribeAudio(audioData) { [weak self] result in
-                    switch result {
-                    case .success(let text):
-                        debugLog("✅ Re-transcription (Apple Speech) successful")
-                        self?.notificationManager.showNotification(
-                            title: "Re-Transcription Complete",
-                            body: "Transcription updated with Apple Speech.",
-                            sound: false
-                        )
-                        completion(text)
-                    case .failure(let error):
-                        debugLog("❌ Re-transcription failed: \(error)")
-                        self?.notificationManager.showNotification(
-                            title: "Re-Transcription Failed",
-                            body: error.localizedDescription,
-                            sound: false
-                        )
-                        completion(nil)
-                    }
-                }
-            }
-        }
-    }
-
-    // MARK: - Statistics
-
-    func recordTranscription(text: String) {
-        let wordCount = text.split(separator: " ").count
-        appState.incrementTranscriptionCount(wordCount: wordCount)
-        debugLog("📊 Recorded transcription: \(wordCount) words")
-    }
-
-    // MARK: - UI Helpers
-
-    private func showErrorAlert(message: String) {
-        errorLogger.logError(
-            NSError(domain: "com.echotune.app", code: -1, userInfo: [NSLocalizedDescriptionKey: message]),
-            category: "Recording",
-            context: [:]
-        )
-
-        DispatchQueue.main.async {
-            let alert = NSAlert()
-            alert.messageText = "Recording Error"
-            alert.informativeText = message
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
         }
     }
 }

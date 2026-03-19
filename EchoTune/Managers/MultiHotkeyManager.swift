@@ -224,6 +224,16 @@ class MultiHotkeyManager: ObservableObject {
                 } else if !isPressed && wasPressed {
                     // Key released
                     modifierKeyPressed[trigger] = false
+                    debugLog("🎯 Modifier key released: \(trigger.displayName) for \(binding.action.rawValue)")
+                    // Push-to-talk: stop recording on key release
+                    if AppSettings.shared.recordingMode == .pushToTalk && binding.action == .toggleDictation {
+                        DispatchQueue.main.async {
+                            if AppCoordinator.shared.appState.recordingState == .recording {
+                                debugLog("⌨️ Push-to-talk: modifier released, stopping recording")
+                                AppCoordinator.shared.toggleDictation()
+                            }
+                        }
+                    }
                 }
             }
         }

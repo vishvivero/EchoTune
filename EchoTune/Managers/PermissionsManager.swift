@@ -261,7 +261,7 @@ class PermissionsManager: ObservableObject {
         debugLog("🔐 Requesting accessibility permission...")
         UserDefaults.standard.set(true, forKey: "hasRequestedAccessibilityPermission")
 
-        // Check current status first
+        // Check current status first (without triggering any prompt)
         let options: NSDictionary = [
             kAXTrustedCheckOptionPrompt.takeUnretainedValue(): false
         ]
@@ -276,17 +276,10 @@ class PermissionsManager: ObservableObject {
             return
         }
 
-        // Now show the system prompt — this will register the current binary fresh
-        let promptOptions: NSDictionary = [
-            kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true
-        ]
-        let _ = AXIsProcessTrustedWithOptions(promptOptions)
-        debugLog("   ✓ System prompt triggered")
-
-        // Open the exact settings pane so the EchoTune toggle is visible immediately.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-            self.openAccessibilitySettings()
-        }
+        // Go directly to System Settings — no intermediate system prompt dialog.
+        // The settings pane is more useful than a generic "Open System Settings" alert.
+        debugLog("   Opening Accessibility settings directly...")
+        openAccessibilitySettings()
     }
 
     func openAccessibilitySettings() {
@@ -349,30 +342,10 @@ class PermissionsManager: ObservableObject {
     func requestScreenRecordingPermission() {
         debugLog("🔐 Requesting screen recording permission...")
 
-        // macOS 15+: Use CGRequestScreenCaptureAccess() which shows the native system prompt
-        // and registers the app in one step. On older macOS, use CGDisplayCreateImage
-        // (CGWindowListCopyWindowInfo does NOT trigger registration).
-        if #available(macOS 15.0, *) {
-            let granted = CGRequestScreenCaptureAccess()
-            debugLog("   CGRequestScreenCaptureAccess: \(granted)")
-            if granted {
-                DispatchQueue.main.async {
-                    self.hasScreenRecordingPermission = true
-                    self.screenRecordingStatus = .granted
-                }
-                return
-            }
-        } else {
-            // macOS 14 and earlier: Attempt an actual screen capture to trigger registration
-            // This is what forces macOS to add EchoTune to the Screen Recording list
-            if let displayID = CGMainDisplayID() as CGDirectDisplayID? {
-                let _ = CGDisplayCreateImage(displayID)
-                debugLog("   ✓ Triggered CGDisplayCreateImage to register for screen recording")
-            }
-        }
-
-        // Open System Settings directly — the system prompt (macOS 15+) or the capture
-        // attempt (older) already registered the app, user just needs to toggle it on
+        // Go directly to System Settings — no intermediate system prompt dialog.
+        // This avoids the double-dialog issue (system alert + settings pane both appearing).
+        // The settings pane is more useful and the user can toggle EchoTune directly.
+        debugLog("   Opening Screen Recording settings directly...")
         openScreenRecordingSettings()
     }
 

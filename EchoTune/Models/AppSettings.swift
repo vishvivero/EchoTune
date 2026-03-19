@@ -248,7 +248,7 @@ class AppSettings: ObservableObject {
             self.selectedModelSize = .balanced
         }
 
-        self.defaultTranscriptionModel = UserDefaults.standard.string(forKey: "defaultTranscriptionModel") ?? "apple-speech"
+        self.defaultTranscriptionModel = UserDefaults.standard.string(forKey: "defaultTranscriptionModel") ?? "distil-whisper_distil-large-v3_turbo"
 
         self.preferredLanguage = UserDefaults.standard.string(forKey: "preferredLanguage") ?? "en-US"
         self.autoDetectLanguage = UserDefaults.standard.object(forKey: "autoDetectLanguage") as? Bool ?? true
