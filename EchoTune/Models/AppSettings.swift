@@ -118,6 +118,27 @@ class AppSettings: ObservableObject {
         }
     }
 
+    // Meeting Mode Settings
+    @Published var meetingModeEnabled: Bool {
+        didSet { UserDefaults.standard.set(meetingModeEnabled, forKey: "meetingModeEnabled") }
+    }
+
+    @Published var meetingAutoDetect: Bool {
+        didSet { UserDefaults.standard.set(meetingAutoDetect, forKey: "meetingAutoDetect") }
+    }
+
+    @Published var meetingAutoSummarise: Bool {
+        didSet { UserDefaults.standard.set(meetingAutoSummarise, forKey: "meetingAutoSummarise") }
+    }
+
+    @Published var meetingDefaultTemplate: MeetingTemplate {
+        didSet { UserDefaults.standard.set(meetingDefaultTemplate.rawValue, forKey: "meetingDefaultTemplate") }
+    }
+
+    @Published var meetingIncludeMicAudio: Bool {
+        didSet { UserDefaults.standard.set(meetingIncludeMicAudio, forKey: "meetingIncludeMicAudio") }
+    }
+
     // Audio Feedback Settings
     @Published var playSoundOnStartStop: Bool {
         didSet { UserDefaults.standard.set(playSoundOnStartStop, forKey: "playSoundOnStartStop") }
@@ -264,6 +285,18 @@ class AppSettings: ObservableObject {
         } else {
             self.autoCorrection = true // default ON
         }
+        // Meeting Mode
+        self.meetingModeEnabled = UserDefaults.standard.object(forKey: "meetingModeEnabled") as? Bool ?? false
+        self.meetingAutoDetect = UserDefaults.standard.object(forKey: "meetingAutoDetect") as? Bool ?? true
+        self.meetingAutoSummarise = UserDefaults.standard.object(forKey: "meetingAutoSummarise") as? Bool ?? true
+        self.meetingIncludeMicAudio = UserDefaults.standard.object(forKey: "meetingIncludeMicAudio") as? Bool ?? true
+        if let templateRaw = UserDefaults.standard.string(forKey: "meetingDefaultTemplate"),
+           let template = MeetingTemplate(rawValue: templateRaw) {
+            self.meetingDefaultTemplate = template
+        } else {
+            self.meetingDefaultTemplate = .general
+        }
+
         self.showInDock = UserDefaults.standard.bool(forKey: "showInDock")
 
         // Show in menu bar (default ON)

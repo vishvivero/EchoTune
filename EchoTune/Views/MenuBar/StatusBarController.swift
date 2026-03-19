@@ -56,6 +56,21 @@ class StatusBarController {
         recordingItem.target = self
         menu.addItem(recordingItem)
 
+        // Meeting Recording (if meeting mode enabled)
+        if AppSettings.shared.meetingModeEnabled {
+            if #available(macOS 13.0, *) {
+                let meetingManager = MeetingManager.shared
+                let meetingTitle = meetingManager.isRecording ? "⏹ Stop Meeting" : "🎙️ Start Meeting Recording"
+                let meetingItem = NSMenuItem(
+                    title: meetingTitle,
+                    action: #selector(toggleMeetingRecording),
+                    keyEquivalent: ""
+                )
+                meetingItem.target = self
+                menu.addItem(meetingItem)
+            }
+        }
+
         menu.addItem(NSMenuItem.separator())
 
         // SECTION 2: Last Transcript Actions
@@ -316,6 +331,21 @@ class StatusBarController {
 
     @objc private func quickTranscribe() {
         AppCoordinator.shared.toggleDictation()
+    }
+
+    @available(macOS 13.0, *)
+    @objc private func toggleMeetingRecording() {
+        let meetingManager = MeetingManager.shared
+        if meetingManager.isRecording {
+            meetingManager.stopMeeting()
+        } else {
+            let detectedApp = MeetingManager.detectMeetingApp()
+            meetingManager.startMeeting(
+                title: detectedApp.map { "\($0) Meeting" } ?? "",
+                detectedApp: detectedApp
+            )
+        }
+        updateMenu()
     }
 
     @objc private func copyLastTranscript() {

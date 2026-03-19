@@ -13,6 +13,7 @@ import SwiftUI
 
 enum SettingsTab: String, CaseIterable, Identifiable {
     case general = "General"
+    case meetings = "Meetings"
     case aiModels = "AI Models"
     case aiAutomation = "AI & Automation"
     case hotkeys = "Hotkeys"
@@ -24,6 +25,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .general: return "gear"
+        case .meetings: return "video"
         case .aiModels: return "cpu"
         case .aiAutomation: return "sparkles"
         case .hotkeys: return "keyboard"
@@ -35,6 +37,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     var iconColor: Color {
         switch self {
         case .general: return .gray
+        case .meetings: return .green
         case .aiModels: return .blue
         case .aiAutomation: return .purple
         case .hotkeys: return .orange
@@ -97,6 +100,8 @@ struct SettingsView: View {
                 switch selectedTab {
                 case .general:
                     GeneralSettingsView()
+                case .meetings:
+                    MeetingSettingsView()
                 case .aiModels:
                     AIModelsSettingsView()
                 case .aiAutomation:

@@ -107,6 +107,7 @@ struct ModelLoadingToast: View {
 
 enum NavigationItem: String, CaseIterable, Identifiable {
     case home = "Home"
+    case meetings = "Meetings"
     case history = "History"
     case dictionary = "Dictionary"
     case notes = "Notes"
@@ -119,6 +120,7 @@ enum NavigationItem: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .home: return "house.fill"
+        case .meetings: return "video.fill"
         case .history: return "clock.arrow.circlepath"
         case .dictionary: return "book.fill"
         case .notes: return "note.text"
@@ -126,6 +128,16 @@ enum NavigationItem: String, CaseIterable, Identifiable {
         case .share: return "square.and.arrow.up.fill"
         case .helpFeedback: return "questionmark.circle"
         }
+    }
+
+    /// Items to show in sidebar (conditionally includes meetings)
+    static var sidebarItems: [NavigationItem] {
+        var items: [NavigationItem] = [.home]
+        if AppSettings.shared.meetingModeEnabled {
+            items.append(.meetings)
+        }
+        items.append(contentsOf: [.history, .dictionary, .settings, .share, .helpFeedback])
+        return items
     }
 }
 
@@ -226,7 +238,7 @@ struct SidebarView: View {
 
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 4) {
-                        ForEach(NavigationItem.allCases.filter { $0 != .notes }) { item in
+                        ForEach(NavigationItem.sidebarItems) { item in
                             ModernSidebarItem(
                                 item: item,
                                 isSelected: selectedView == item,
@@ -403,6 +415,13 @@ struct DetailView: View {
             switch selectedView {
             case .home:
                 HomeContentView(selectedView: $selectedView)
+            case .meetings:
+                if #available(macOS 13.0, *) {
+                    MeetingView()
+                } else {
+                    Text("Meeting Mode requires macOS 13 or later")
+                        .foregroundColor(.secondary)
+                }
             case .history:
                 HistoryView()
             case .dictionary:
