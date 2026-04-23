@@ -18,6 +18,7 @@ struct AIAutomationSettingsView: View {
 
     @State private var showOpenAIKey = false
     @State private var showClaudeKey = false
+    @State private var showGeminiKey = false
     @State private var testingKey: String?
     @State private var testResult: String?
 
@@ -47,6 +48,19 @@ struct AIAutomationSettingsView: View {
             // MARK: AI API Keys (OpenAI & Anthropic for enhancement)
             Section("AI Enhancement API Keys") {
                 VStack(spacing: 12) {
+                    APIKeyField(
+                        title: "Google Gemini API (recommended free)",
+                        key: $settings.geminiAPIKey,
+                        showKey: $showGeminiKey,
+                        linkURL: "https://aistudio.google.com/app/apikey",
+                        linkText: "Get Free Key",
+                        icon: "sparkles.rectangle.stack",
+                        iconColor: .blue,
+                        isTesting: testingKey == "gemini",
+                        testResult: testingKey == "gemini" ? testResult : nil,
+                        onTest: { testKey("gemini") }
+                    )
+
                     APIKeyField(
                         title: "OpenAI API (for AI Enhancement)",
                         key: $settings.openaiAPIKey,
@@ -97,6 +111,7 @@ struct AIAutomationSettingsView: View {
         testResult = "Testing..."
         let key: String
         switch provider {
+        case "gemini": key = settings.geminiAPIKey
         case "openai": key = settings.openaiAPIKey
         case "anthropic": key = settings.claudeAPIKey
         default: key = ""

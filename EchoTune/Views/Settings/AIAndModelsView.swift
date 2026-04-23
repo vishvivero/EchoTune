@@ -18,6 +18,7 @@ struct AIAndModelsView: View {
     @State private var showOpenAIKey = false
     @State private var showClaudeKey = false
     @State private var showDeepgramKey = false
+    @State private var showGeminiKey = false
     @State private var testingKey: String?
     @State private var testResult: String?
 
@@ -227,6 +228,20 @@ struct AIAndModelsView: View {
                     onTest: { testDeepgramKey() }
                 )
 
+                // Gemini (for AI Enhancement)
+                APIKeyField(
+                    title: "Google Gemini API (recommended free)",
+                    key: $settings.geminiAPIKey,
+                    showKey: $showGeminiKey,
+                    linkURL: "https://aistudio.google.com/app/apikey",
+                    linkText: "Get Free Key",
+                    icon: "sparkles.rectangle.stack",
+                    iconColor: .blue,
+                    isTesting: testingKey == "gemini",
+                    testResult: testingKey == "gemini" ? testResult : nil,
+                    onTest: { testGeminiKey() }
+                )
+
                 // OpenAI (for AI Enhancement)
                 APIKeyField(
                     title: "OpenAI API (for AI Enhancement)",
@@ -368,6 +383,20 @@ struct AIAndModelsView: View {
             testResult = settings.deepgramAPIKey.isEmpty ? "✗ No key" : "✓ Key set"
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                 if testingKey == "deepgram" {
+                    testingKey = nil
+                    testResult = nil
+                }
+            }
+        }
+    }
+
+    private func testGeminiKey() {
+        testingKey = "gemini"
+        testResult = "Testing..."
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            testResult = settings.geminiAPIKey.isEmpty ? "✗ No key" : "✓ Key set"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                if testingKey == "gemini" {
                     testingKey = nil
                     testResult = nil
                 }

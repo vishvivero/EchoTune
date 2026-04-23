@@ -131,6 +131,10 @@ class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(meetingAutoSummarise, forKey: "meetingAutoSummarise") }
     }
 
+    @Published var meetingUseCloudTranscription: Bool {
+        didSet { UserDefaults.standard.set(meetingUseCloudTranscription, forKey: "meetingUseCloudTranscription") }
+    }
+
     @Published var meetingDefaultTemplate: MeetingTemplate {
         didSet { UserDefaults.standard.set(meetingDefaultTemplate.rawValue, forKey: "meetingDefaultTemplate") }
     }
@@ -210,10 +214,30 @@ class AppSettings: ObservableObject {
         }
     }
 
+    @Published var geminiAPIKey: String {
+        didSet {
+            KeychainHelper.save(geminiAPIKey, forKey: "geminiAPIKey")
+            NotificationCenter.default.post(name: NSNotification.Name("APIKeyChanged"), object: nil)
+        }
+    }
+
     // anthropicAPIKey is an alias for claudeAPIKey (they refer to the same provider)
     var anthropicAPIKey: String {
         get { claudeAPIKey }
         set { claudeAPIKey = newValue }
+    }
+
+    func apiKey(for provider: AIEnhancementEngine.EnhancementProvider) -> String {
+        switch provider {
+        case .google:
+            return geminiAPIKey
+        case .openai:
+            return openaiAPIKey
+        case .anthropic:
+            return claudeAPIKey
+        case .groq:
+            return groqAPIKey
+        }
     }
 
     // Phase 6A: Social Share Settings
@@ -286,9 +310,13 @@ class AppSettings: ObservableObject {
             self.autoCorrection = true // default ON
         }
         // Meeting Mode
-        self.meetingModeEnabled = UserDefaults.standard.object(forKey: "meetingModeEnabled") as? Bool ?? false
+        self.meetingModeEnabled = UserDefaults.standard.object(forKey: "meetingModeEnabled") as? Bool ?? true
         self.meetingAutoDetect = UserDefaults.standard.object(forKey: "meetingAutoDetect") as? Bool ?? true
         self.meetingAutoSummarise = UserDefaults.standard.object(forKey: "meetingAutoSummarise") as? Bool ?? true
+        // Default to cloud if user has a Groq API key configured, otherwise local
+        // Groq key is stored in Keychain (migration from UserDefaults may happen later in init)
+        let hasGroqKey = !KeychainHelper.load(forKey: "groqAPIKey").isEmpty || !(UserDefaults.standard.string(forKey: "groqAPIKey") ?? "").isEmpty
+        self.meetingUseCloudTranscription = UserDefaults.standard.object(forKey: "meetingUseCloudTranscription") as? Bool ?? hasGroqKey
         self.meetingIncludeMicAudio = UserDefaults.standard.object(forKey: "meetingIncludeMicAudio") as? Bool ?? true
         if let templateRaw = UserDefaults.standard.string(forKey: "meetingDefaultTemplate"),
            let template = MeetingTemplate(rawValue: templateRaw) {
@@ -344,7 +372,7 @@ class AppSettings: ObservableObject {
             self.aiEnhancementEnabled = false // default OFF (requires API key)
         }
 
-        self.selectedEnhancementModel = UserDefaults.standard.string(forKey: "selectedEnhancementModel") ?? "gpt-4o-mini"
+        self.selectedEnhancementModel = UserDefaults.standard.string(forKey: "selectedEnhancementModel") ?? "gemini-2.5-flash"
         self.customEnhancementPrompt = UserDefaults.standard.string(forKey: "customEnhancementPrompt") ?? ""
 
         // Phase 6A: Initialize API Keys (from Keychain)
@@ -352,6 +380,7 @@ class AppSettings: ObservableObject {
         self.openaiAPIKey = KeychainHelper.load(forKey: "openaiAPIKey")
         self.claudeAPIKey = KeychainHelper.load(forKey: "claudeAPIKey")
         self.deepgramAPIKey = KeychainHelper.load(forKey: "deepgramAPIKey")
+        self.geminiAPIKey = KeychainHelper.load(forKey: "geminiAPIKey")
 
         // Phase 6A: Initialize Social Share Settings
         if UserDefaults.standard.object(forKey: "hasSharedForDiscount") != nil {
@@ -406,7 +435,7 @@ class AppSettings: ObservableObject {
     }
 
     private func migrateAPIKeysToKeychain() {
-        let keys = ["groqAPIKey", "openaiAPIKey", "claudeAPIKey", "deepgramAPIKey", "anthropicAPIKey"]
+        let keys = ["groqAPIKey", "openaiAPIKey", "claudeAPIKey", "deepgramAPIKey", "geminiAPIKey", "anthropicAPIKey"]
         for key in keys {
             if let value = UserDefaults.standard.string(forKey: key), !value.isEmpty {
                 if KeychainHelper.load(forKey: key).isEmpty {
@@ -451,11 +480,13 @@ class AppSettings: ObservableObject {
         KeychainHelper.delete(forKey: "openaiAPIKey")
         KeychainHelper.delete(forKey: "claudeAPIKey")
         KeychainHelper.delete(forKey: "deepgramAPIKey")
+        KeychainHelper.delete(forKey: "geminiAPIKey")
         KeychainHelper.delete(forKey: "anthropicAPIKey")
         self.groqAPIKey = ""
         self.openaiAPIKey = ""
         self.claudeAPIKey = ""
         self.deepgramAPIKey = ""
+        self.geminiAPIKey = ""
     }
 }
 

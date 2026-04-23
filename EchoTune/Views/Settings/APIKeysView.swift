@@ -14,6 +14,7 @@ struct APIKeysView: View {
     @State private var showOpenAIKey = false
     @State private var showClaudeKey = false
     @State private var showDeepgramKey = false
+    @State private var showGeminiKey = false
     @State private var testingGroq = false
     @State private var testResult: String?
 
@@ -86,6 +87,43 @@ struct APIKeysView: View {
                 }
             } header: {
                 Text("Cloud Transcription")
+            }
+
+            // Gemini API Key
+            Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: "sparkles.rectangle.stack")
+                            .foregroundColor(.blue)
+                        Text("Google Gemini API")
+                            .font(.headline)
+
+                        Spacer()
+
+                        Link("Get Free Key", destination: URL(string: "https://aistudio.google.com/app/apikey")!)
+                            .font(.caption)
+                    }
+
+                    Text("Recommended free AI enhancement option with better context cleanup")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    HStack {
+                        if showGeminiKey {
+                            TextField("AIza...", text: $settings.geminiAPIKey)
+                                .textFieldStyle(.roundedBorder)
+                        } else {
+                            SecureField("AIza...", text: $settings.geminiAPIKey)
+                                .textFieldStyle(.roundedBorder)
+                        }
+
+                        Button(action: { showGeminiKey.toggle() }) {
+                            Image(systemName: showGeminiKey ? "eye.slash" : "eye")
+                        }
+                    }
+                }
+            } header: {
+                Text("AI Enhancement")
             }
 
             // OpenAI API Key

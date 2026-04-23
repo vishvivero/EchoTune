@@ -13,6 +13,9 @@ import os.log
 
 extension AppCoordinator {
 
+    // Guard against duplicate transcription callbacks
+    private static var lastTranscriptionId: UUID?
+
     // MARK: - Whisper Result
 
     func handleWhisperResult(_ result: Result<WhisperTranscriptionResult, WhisperEngine.WhisperError>) {
@@ -102,7 +105,16 @@ extension AppCoordinator {
     // MARK: - Text Processing & Insertion
 
     func processAndInsertText(_ transcription: FinalizedTranscription, recordingDuration: TimeInterval) {
-        let transcribedText = transcription.outputText
+        // Guard: only process if we're in .processing state (prevents double-fire)
+        guard case .processing = appState.recordingState else {
+            debugLog("⚠️ processAndInsertText called but state is \(appState.recordingState) — skipping duplicate")
+            return
+        }
+
+        var transcribedText = transcription.outputText
+
+        // Deduplicate repeated Whisper output — Whisper sometimes echoes the transcript
+        transcribedText = deduplicateWhisperOutput(transcribedText)
 
         // Validate transcription - detect silence/hallucinations
         if isLikelyHallucination(transcribedText, recordingDuration: recordingDuration) {
@@ -126,6 +138,13 @@ extension AppCoordinator {
 
             return
         }
+
+        // Post live transcription update for mini recorder
+        NotificationCenter.default.post(
+            name: NSNotification.Name("LiveTranscriptionUpdate"),
+            object: nil,
+            userInfo: ["text": transcribedText]
+        )
 
         // Apply text processing
         let processedText = self.processTranscription(transcribedText)
@@ -152,7 +171,7 @@ extension AppCoordinator {
                 return
             }
 
-            let apiKey = settings.groqAPIKey
+            let apiKey = settings.apiKey(for: model.provider)
 
             guard !apiKey.isEmpty else {
                 debugLog("⚠️ No API key configured for AI enhancement")
@@ -208,6 +227,13 @@ extension AppCoordinator {
 
     // Phase 6A: Insert text with optional auto-send
     func insertTextWithAutoSend(_ processedText: String, recordingDuration: TimeInterval) {
+        // Post final transcription for mini recorder
+        NotificationCenter.default.post(
+            name: NSNotification.Name("TranscriptionComplete"),
+            object: nil,
+            userInfo: ["text": processedText]
+        )
+
         let wordCount = processedText.split(separator: " ").count
 
         // Save audio file for retention
@@ -301,6 +327,43 @@ extension AppCoordinator {
 
         // Show error notification
         self.notificationManager.showTranscriptionError(error: errorMessage)
+    }
+
+    // MARK: - Whisper Deduplication
+
+    /// Detect and remove repeated text blocks from Whisper output.
+    /// Whisper sometimes echoes the entire transcription, producing "Hello world Hello world".
+    /// This checks if the text is approximately a repeated copy of itself and returns just one copy.
+    func deduplicateWhisperOutput(_ text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 20 else { return text } // Too short to be a real duplicate
+
+        // Try splitting at the midpoint and checking if both halves are similar
+        let words = trimmed.split(separator: " ")
+        guard words.count >= 6 else { return text } // Need enough words to detect duplication
+
+        // Check for exact half duplication
+        let halfCount = words.count / 2
+        let firstHalf = words[0..<halfCount].joined(separator: " ").lowercased()
+        let secondHalf = words[halfCount..<min(halfCount * 2, words.count)].joined(separator: " ").lowercased()
+
+        // Calculate similarity (Jaccard-like: shared words / total unique words)
+        let firstWords = Set(firstHalf.split(separator: " "))
+        let secondWords = Set(secondHalf.split(separator: " "))
+        let intersection = firstWords.intersection(secondWords)
+        let union = firstWords.union(secondWords)
+
+        guard !union.isEmpty else { return text }
+        let similarity = Double(intersection.count) / Double(union.count)
+
+        if similarity > 0.75 {
+            // High similarity — take the first half (usually cleaner)
+            let result = words[0..<halfCount].joined(separator: " ")
+            debugLog("🔄 Whisper dedup: detected ~\(Int(similarity * 100))% duplicate, keeping first half (\(halfCount) words)")
+            return result
+        }
+
+        return text
     }
 
     // MARK: - Hallucination Detection

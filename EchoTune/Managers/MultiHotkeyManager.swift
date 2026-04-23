@@ -420,12 +420,7 @@ class MultiHotkeyManager: ObservableObject {
                         return
                     }
 
-                    let apiKey: String
-                    switch model.provider {
-                    case .openai:  apiKey = settings.openaiAPIKey
-                    case .anthropic: apiKey = settings.claudeAPIKey
-                    case .groq: apiKey = settings.groqAPIKey
-                    }
+                    let apiKey = settings.apiKey(for: model.provider)
 
                     guard !apiKey.isEmpty else {
                         await MainActor.run { insertText(textToInsert) }

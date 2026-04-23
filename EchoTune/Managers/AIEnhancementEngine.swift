@@ -18,6 +18,8 @@ class AIEnhancementEngine: ObservableObject {
     // MARK: - Enums
 
     enum EnhancementModel: String, CaseIterable, Identifiable {
+        case gemini25Flash = "gemini-2.5-flash"
+        case gemini25FlashLite = "gemini-2.5-flash-lite"
         case gpt4oMini = "gpt-4o-mini"
         case gpt4o = "gpt-4o"
         case claude35Sonnet = "claude-3-5-sonnet-20241022"
@@ -29,6 +31,8 @@ class AIEnhancementEngine: ObservableObject {
 
         var displayName: String {
             switch self {
+            case .gemini25Flash: return "Gemini 2.5 Flash (Recommended Free)"
+            case .gemini25FlashLite: return "Gemini 2.5 Flash-Lite (Fastest Free)"
             case .gpt4oMini: return "GPT-4o Mini (Fast, Cheap)"
             case .gpt4o: return "GPT-4o (Best Quality)"
             case .claude35Sonnet: return "Claude 3.5 Sonnet (Excellent)"
@@ -40,6 +44,8 @@ class AIEnhancementEngine: ObservableObject {
 
         var provider: EnhancementProvider {
             switch self {
+            case .gemini25Flash, .gemini25FlashLite:
+                return .google
             case .gpt4oMini, .gpt4o:
                 return .openai
             case .claude35Sonnet, .claudeOpus:
@@ -51,6 +57,7 @@ class AIEnhancementEngine: ObservableObject {
     }
 
     enum EnhancementProvider {
+        case google
         case openai
         case anthropic
         case groq
@@ -220,6 +227,8 @@ class AIEnhancementEngine: ObservableObject {
             let enhanced: String
 
             switch model.provider {
+            case .google:
+                enhanced = try await enhanceWithGemini(transcript, model: model, apiKey: apiKey, customPrompt: customPrompt, dictionaryContext: dictionaryContext, screenContext: screenContext)
             case .openai:
                 enhanced = try await enhanceWithOpenAI(transcript, model: model, apiKey: apiKey, customPrompt: customPrompt, dictionaryContext: dictionaryContext, screenContext: screenContext)
             case .anthropic:

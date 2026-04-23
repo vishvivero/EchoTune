@@ -61,6 +61,21 @@ struct AIEnhancementView: View {
 
                             VStack(alignment: .leading, spacing: 4) {
                                 switch model.provider {
+                                case .google:
+                                    Text("Requires: Google Gemini API Key")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+
+                                    if settings.geminiAPIKey.isEmpty {
+                                        Text("⚠️ Not configured")
+                                            .font(.caption2)
+                                            .foregroundColor(.orange)
+                                    } else {
+                                        Text("✅ Configured")
+                                            .font(.caption2)
+                                            .foregroundColor(.green)
+                                    }
+
                                 case .openai:
                                     Text("Requires: OpenAI API Key")
                                         .font(.caption)
@@ -127,7 +142,7 @@ struct AIEnhancementView: View {
                 } header: {
                     Text("Model Selection")
                 } footer: {
-                    Text("Groq Llama is recommended for speed (uses same API key as transcription). GPT-4o and Claude models provide higher quality for complex text.")
+                    Text("Gemini 2.5 Flash is the best free default for most users. Groq stays great when you already use Groq for cloud transcription and want the fastest response.")
                         .font(.caption)
                 }
 
@@ -299,6 +314,8 @@ struct AIEnhancementView: View {
         }
 
         switch model.provider {
+        case .google:
+            return !settings.geminiAPIKey.isEmpty
         case .openai:
             return !settings.openaiAPIKey.isEmpty
         case .anthropic:
@@ -325,15 +342,7 @@ struct AIEnhancementView: View {
                     throw AIEnhancementEngine.EnhancementError.invalidResponse
                 }
 
-                let apiKey: String
-                switch model.provider {
-                case .openai:
-                    apiKey = settings.openaiAPIKey
-                case .anthropic:
-                    apiKey = settings.claudeAPIKey
-                case .groq:
-                    apiKey = settings.groqAPIKey
-                }
+                let apiKey = settings.apiKey(for: model.provider)
 
                 let customPrompt = settings.customEnhancementPrompt.isEmpty ? nil : settings.customEnhancementPrompt
 
