@@ -203,21 +203,10 @@ struct MiniRecorderContentView: View {
 
                 Spacer()
 
-                if isRecording || displayStatusText != nil {
-                    VStack(alignment: .trailing, spacing: 4) {
-                        if isRecording {
-                            Text(formatTime(audioManager.recordingDuration))
-                                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                                .foregroundColor(.white.opacity(0.7))
-                        }
-
-                        if let displayStatusText {
-                            Text(displayStatusText)
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundColor(.white.opacity(0.6))
-                                .lineLimit(1)
-                        }
-                    }
+                if isRecording {
+                    Text(formatTime(audioManager.recordingDuration))
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.7))
                 }
 
                 // Record/Stop button
@@ -288,28 +277,6 @@ struct MiniRecorderContentView: View {
 
     private var isRecording: Bool { appState.recordingState == .recording }
     private var isProcessing: Bool { appState.recordingState == .processing }
-    private var displayStatusText: String? {
-        switch appState.recordingState {
-        case .processing:
-            guard let detail = appState.recordingStatusDetail?.lowercased(), !detail.isEmpty else {
-                return "Processing..."
-            }
-            if detail.contains("enhanc") || detail.contains("clean") {
-                return "Improving text..."
-            }
-            if detail.contains("finalis") {
-                return "Finalising text..."
-            }
-            if detail.contains("transcrib") {
-                return "Transcribing..."
-            }
-            return "Processing..."
-        case .loadingModel:
-            return "Preparing..."
-        default:
-            return nil
-        }
-    }
 
     private func formatTime(_ time: TimeInterval) -> String {
         let m = Int(time) / 60, s = Int(time) % 60, t = Int((time.truncatingRemainder(dividingBy: 1)) * 10)
