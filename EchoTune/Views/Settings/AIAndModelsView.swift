@@ -3,7 +3,7 @@
 //  EchoTune
 //
 //  Consolidated AI & Models Configuration
-//  All AI-related features in one place
+//  Groq-first onboarding with optional Gemini enhancement.
 //
 
 import SwiftUI
@@ -11,13 +11,9 @@ import SwiftUI
 struct AIAndModelsView: View {
     @ObservedObject var settings = AppSettings.shared
     @ObservedObject private var modelManager = ModelManager.shared
-    @ObservedObject private var cloudManager = CloudModelsManager.shared
     @ObservedObject private var aiEngine = AIEnhancementEngine.shared
 
     @State private var showGroqKey = false
-    @State private var showOpenAIKey = false
-    @State private var showClaudeKey = false
-    @State private var showDeepgramKey = false
     @State private var showGeminiKey = false
     @State private var testingKey: String?
     @State private var testResult: String?
@@ -25,38 +21,31 @@ struct AIAndModelsView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
-                // Section A: Active Transcription Model
                 modelSelectionSection
 
                 Divider()
                     .padding(.vertical, 8)
 
-                // Section A.5: Language Settings
                 languageSection
 
                 Divider()
                     .padding(.vertical, 8)
 
-                // Section B: API Keys
                 apiKeysSection
 
                 Divider()
                     .padding(.vertical, 8)
 
-                // Section C: AI Enhancement
                 aiEnhancementSection
 
                 Divider()
                     .padding(.vertical, 8)
 
-                // Section D: Local Model Management
                 localModelsSection
             }
             .padding(.vertical)
         }
     }
-
-    // MARK: - Language Section
 
     private var languageSection: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -106,8 +95,6 @@ struct AIAndModelsView: View {
         }
     }
 
-    // MARK: - Model Selection Section
-
     private var modelSelectionSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
@@ -120,7 +107,6 @@ struct AIAndModelsView: View {
             .padding(.horizontal)
 
             VStack(alignment: .leading, spacing: 12) {
-                // Local Models
                 Text("Local Models (On-Device)")
                     .font(.subheadline)
                     .fontWeight(.semibold)
@@ -129,7 +115,6 @@ struct AIAndModelsView: View {
 
                 localModelsList
 
-                // Cloud Models
                 Text("Cloud Models (Requires API Key)")
                     .font(.subheadline)
                     .fontWeight(.semibold)
@@ -144,7 +129,6 @@ struct AIAndModelsView: View {
 
     private var localModelsList: some View {
         VStack(spacing: 8) {
-            // Apple Speech
             ModelRowView(
                 name: "Apple Speech",
                 description: "Built-in, fast, multilingual",
@@ -155,7 +139,6 @@ struct AIAndModelsView: View {
                 onSetDefault: { settings.defaultTranscriptionModel = "apple-speech" }
             )
 
-            // Whisper Models
             ForEach(["tiny", "base", "small", "medium", "large-v3"], id: \.self) { size in
                 WhisperModelRow(size: size)
             }
@@ -164,29 +147,16 @@ struct AIAndModelsView: View {
 
     private var cloudModelsList: some View {
         VStack(spacing: 8) {
-            // Groq
             CloudModelRow(
                 name: "Groq - Whisper Large v3 Turbo",
-                description: "Ultra-fast cloud transcription",
-                badge: "Fastest",
+                description: "Recommended cloud transcription. Simple key flow and very fast results.",
+                badge: "Recommended",
                 badgeColor: .orange,
                 modelId: "groq-whisper-large-v3-turbo",
                 requiresKey: settings.groqAPIKey.isEmpty
             )
-
-            // Deepgram
-            CloudModelRow(
-                name: "Deepgram - Nova 2",
-                description: "High accuracy, real-time",
-                badge: "Accurate",
-                badgeColor: .blue,
-                modelId: "deepgram-nova-2",
-                requiresKey: settings.deepgramAPIKey.isEmpty
-            )
         }
     }
-
-    // MARK: - API Keys Section
 
     private var apiKeysSection: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -200,9 +170,8 @@ struct AIAndModelsView: View {
             .padding(.horizontal)
 
             VStack(spacing: 16) {
-                // Groq
                 APIKeyField(
-                    title: "Groq API",
+                    title: "Groq API (recommended)",
                     key: $settings.groqAPIKey,
                     showKey: $showGroqKey,
                     linkURL: "https://console.groq.com/keys",
@@ -214,23 +183,8 @@ struct AIAndModelsView: View {
                     onTest: { testGroqKey() }
                 )
 
-                // Deepgram
                 APIKeyField(
-                    title: "Deepgram API",
-                    key: $settings.deepgramAPIKey,
-                    showKey: $showDeepgramKey,
-                    linkURL: "https://console.deepgram.com/signup",
-                    linkText: "Get Free Credits",
-                    icon: "waveform",
-                    iconColor: .blue,
-                    isTesting: testingKey == "deepgram",
-                    testResult: testingKey == "deepgram" ? testResult : nil,
-                    onTest: { testDeepgramKey() }
-                )
-
-                // Gemini (for AI Enhancement)
-                APIKeyField(
-                    title: "Google Gemini API (recommended free)",
+                    title: "Google Gemini API (optional)",
                     key: $settings.geminiAPIKey,
                     showKey: $showGeminiKey,
                     linkURL: "https://aistudio.google.com/app/apikey",
@@ -241,40 +195,10 @@ struct AIAndModelsView: View {
                     testResult: testingKey == "gemini" ? testResult : nil,
                     onTest: { testGeminiKey() }
                 )
-
-                // OpenAI (for AI Enhancement)
-                APIKeyField(
-                    title: "OpenAI API (for AI Enhancement)",
-                    key: $settings.openaiAPIKey,
-                    showKey: $showOpenAIKey,
-                    linkURL: "https://platform.openai.com/api-keys",
-                    linkText: "Get Key",
-                    icon: "sparkles",
-                    iconColor: .green,
-                    isTesting: testingKey == "openai",
-                    testResult: testingKey == "openai" ? testResult : nil,
-                    onTest: { testOpenAIKey() }
-                )
-
-                // Anthropic
-                APIKeyField(
-                    title: "Anthropic API (for AI Enhancement)",
-                    key: $settings.claudeAPIKey,
-                    showKey: $showClaudeKey,
-                    linkURL: "https://console.anthropic.com/",
-                    linkText: "Get Key",
-                    icon: "brain",
-                    iconColor: .purple,
-                    isTesting: testingKey == "anthropic",
-                    testResult: testingKey == "anthropic" ? testResult : nil,
-                    onTest: { testAnthropicKey() }
-                )
             }
             .padding(.horizontal)
         }
     }
-
-    // MARK: - AI Enhancement Section
 
     private var aiEnhancementSection: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -305,6 +229,11 @@ struct AIAndModelsView: View {
                         .pickerStyle(.menu)
                         .padding(.horizontal)
 
+                        Text("Groq is the easiest setup. Gemini stays available as an optional secondary provider for enhancement.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal)
+
                         Text("Features:")
                             .font(.subheadline)
                             .fontWeight(.semibold)
@@ -314,7 +243,7 @@ struct AIAndModelsView: View {
                             FeatureCheckmark(text: "Grammar correction")
                             FeatureCheckmark(text: "Punctuation improvement")
                             FeatureCheckmark(text: "Remove filler words (um, uh, like)")
-                            FeatureCheckmark(text: "Professional tone")
+                            FeatureCheckmark(text: "Safer fallback to original transcript on error")
                         }
                         .padding(.horizontal)
                     }
@@ -322,8 +251,6 @@ struct AIAndModelsView: View {
             }
         }
     }
-
-    // MARK: - Local Models Management
 
     private var localModelsSection: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -342,47 +269,16 @@ struct AIAndModelsView: View {
                 }
             }
             .padding(.horizontal)
-
-            // Storage info - Commented out until storageInfo is added to ModelManager
-            // if let storageInfo = modelManager.storageInfo {
-            //     HStack {
-            //         Image(systemName: "internaldrive")
-            //             .foregroundColor(.secondary)
-            //         Text("Storage Used:")
-            //         Text(ByteCountFormatter.string(fromByteCount: storageInfo.usedSpace, countStyle: .file))
-            //             .fontWeight(.semibold)
-            //         Spacer()
-            //     }
-            //     .font(.caption)
-            //     .foregroundColor(.secondary)
-            //     .padding(.horizontal)
-            // }
         }
     }
-
-    // MARK: - Test Functions
 
     private func testGroqKey() {
         testingKey = "groq"
         testResult = "Testing..."
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-            testResult = settings.groqAPIKey.isEmpty ? "✗ No key" : "✓ Key set"
+            testResult = settings.groqAPIKey.hasPrefix("gsk_") ? "✓ Key looks valid" : "✗ Groq keys should usually start with gsk_"
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                 if testingKey == "groq" {
-                    testingKey = nil
-                    testResult = nil
-                }
-            }
-        }
-    }
-
-    private func testDeepgramKey() {
-        testingKey = "deepgram"
-        testResult = "Testing..."
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            testResult = settings.deepgramAPIKey.isEmpty ? "✗ No key" : "✓ Key set"
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                if testingKey == "deepgram" {
                     testingKey = nil
                     testResult = nil
                 }
@@ -393,38 +289,10 @@ struct AIAndModelsView: View {
     private func testGeminiKey() {
         testingKey = "gemini"
         testResult = "Testing..."
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
             testResult = settings.geminiAPIKey.isEmpty ? "✗ No key" : "✓ Key set"
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                 if testingKey == "gemini" {
-                    testingKey = nil
-                    testResult = nil
-                }
-            }
-        }
-    }
-
-    private func testOpenAIKey() {
-        testingKey = "openai"
-        testResult = "Testing..."
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            testResult = settings.openaiAPIKey.isEmpty ? "✗ No key" : "✓ Key set"
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                if testingKey == "openai" {
-                    testingKey = nil
-                    testResult = nil
-                }
-            }
-        }
-    }
-
-    private func testAnthropicKey() {
-        testingKey = "anthropic"
-        testResult = "Testing..."
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            testResult = settings.claudeAPIKey.isEmpty ? "✗ No key" : "✓ Key set"
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                if testingKey == "anthropic" {
                     testingKey = nil
                     testResult = nil
                 }

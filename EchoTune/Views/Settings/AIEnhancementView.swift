@@ -2,7 +2,7 @@
 //  AIEnhancementView.swift
 //  EchoTune
 //
-//  Phase 6 UI: AI Enhancement Configuration
+//  Groq-first AI enhancement configuration.
 //
 
 import SwiftUI
@@ -11,7 +11,6 @@ struct AIEnhancementView: View {
     @ObservedObject var settings = AppSettings.shared
     @ObservedObject var aiEngine = AIEnhancementEngine.shared
 
-    @State private var showingSampleTest = false
     @State private var sampleInput = "Um, like, I just wanted to say that, uh, the meeting yesterday was really good and, you know, we should definitely do it again."
     @State private var sampleOutput = ""
     @State private var isTesting = false
@@ -19,30 +18,27 @@ struct AIEnhancementView: View {
 
     var body: some View {
         Form {
-            // Header
             Section {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("AI Enhancement")
                         .font(.title2)
                         .fontWeight(.bold)
 
-                    Text("Improve transcription quality using AI to fix grammar, remove fillers, and enhance clarity.")
+                    Text("Improve transcription quality with Groq or Gemini. Groq is the recommended default because it is easier to onboard and already fits EchoTune’s cloud workflow.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
                 .padding(.vertical, 8)
             }
 
-            // Master Toggle
             Section {
                 Toggle("Enable AI Enhancement", isOn: $settings.aiEnhancementEnabled)
                     .toggleStyle(.switch)
             } footer: {
-                Text("When enabled, all transcriptions will be enhanced using the selected AI model before being inserted.")
+                Text("When enabled, transcriptions can be cleaned up before they are inserted, while the original transcript is still preserved in history.")
                     .font(.caption)
             }
 
-            // Model Selection
             if settings.aiEnhancementEnabled {
                 Section {
                     Picker("AI Model", selection: $settings.selectedEnhancementModel) {
@@ -53,7 +49,6 @@ struct AIEnhancementView: View {
                     }
                     .pickerStyle(.menu)
 
-                    // Show which API key is needed
                     if let model = AIEnhancementEngine.EnhancementModel(rawValue: settings.selectedEnhancementModel) {
                         HStack {
                             Image(systemName: "key.fill")
@@ -61,79 +56,33 @@ struct AIEnhancementView: View {
 
                             VStack(alignment: .leading, spacing: 4) {
                                 switch model.provider {
+                                case .groq:
+                                    Text("Requires: Groq API Key")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    Text(settings.groqAPIKey.isEmpty ? "⚠️ Not configured" : "✅ Configured")
+                                        .font(.caption2)
+                                        .foregroundColor(settings.groqAPIKey.isEmpty ? .orange : .green)
                                 case .google:
                                     Text("Requires: Google Gemini API Key")
                                         .font(.caption)
                                         .foregroundColor(.secondary)
-
-                                    if settings.geminiAPIKey.isEmpty {
-                                        Text("⚠️ Not configured")
-                                            .font(.caption2)
-                                            .foregroundColor(.orange)
-                                    } else {
-                                        Text("✅ Configured")
-                                            .font(.caption2)
-                                            .foregroundColor(.green)
-                                    }
-
-                                case .openai:
-                                    Text("Requires: OpenAI API Key")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-
-                                    if settings.openaiAPIKey.isEmpty {
-                                        Text("⚠️ Not configured")
-                                            .font(.caption2)
-                                            .foregroundColor(.orange)
-                                    } else {
-                                        Text("✅ Configured")
-                                            .font(.caption2)
-                                            .foregroundColor(.green)
-                                    }
-
-                                case .anthropic:
-                                    Text("Requires: Anthropic API Key")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-
-                                    if settings.claudeAPIKey.isEmpty {
-                                        Text("⚠️ Not configured")
-                                            .font(.caption2)
-                                            .foregroundColor(.orange)
-                                    } else {
-                                        Text("✅ Configured")
-                                            .font(.caption2)
-                                            .foregroundColor(.green)
-                                    }
-
-                                case .groq:
-                                    Text("Requires: Groq API Key (same as Transcription)")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-
-                                    if settings.groqAPIKey.isEmpty {
-                                        Text("⚠️ Not configured")
-                                            .font(.caption2)
-                                            .foregroundColor(.orange)
-                                    } else {
-                                        Text("✅ Configured (shared with transcription)")
-                                            .font(.caption2)
-                                            .foregroundColor(.green)
-                                    }
+                                    Text(settings.geminiAPIKey.isEmpty ? "⚠️ Not configured" : "✅ Configured")
+                                        .font(.caption2)
+                                        .foregroundColor(settings.geminiAPIKey.isEmpty ? .orange : .green)
                                 }
                             }
 
                             Spacer()
 
                             Button(action: {
-                                // Navigate to API Keys settings
                                 NotificationCenter.default.post(
                                     name: NSNotification.Name("SwitchToSettingsTab"),
                                     object: nil,
                                     userInfo: ["tab": "apikeys"]
                                 )
                             }) {
-                                Text("Add API Keys →")
+                                Text("Manage Keys →")
                                     .font(.caption)
                             }
                             .buttonStyle(.link)
@@ -142,17 +91,16 @@ struct AIEnhancementView: View {
                 } header: {
                     Text("Model Selection")
                 } footer: {
-                    Text("Gemini 2.5 Flash is the best free default for most users. Groq stays great when you already use Groq for cloud transcription and want the fastest response.")
+                    Text("Start with Groq. Keep Gemini available if you want a secondary cleanup model to compare against.")
                         .font(.caption)
                 }
 
-                // Enhancement Features
                 Section {
                     VStack(alignment: .leading, spacing: 12) {
                         Phase6FeatureRow(
                             icon: "text.bubble",
                             title: "Remove Fillers",
-                            description: "Removes um, uh, like, you know",
+                            description: "Cuts um, uh, like, you know",
                             isEnabled: true,
                             isLocked: true
                         )
@@ -162,7 +110,7 @@ struct AIEnhancementView: View {
                         Phase6FeatureRow(
                             icon: "textformat.abc",
                             title: "Fix Grammar & Spelling",
-                            description: "Corrects grammatical errors and typos",
+                            description: "Corrects wording while preserving intent",
                             isEnabled: true,
                             isLocked: true
                         )
@@ -172,7 +120,7 @@ struct AIEnhancementView: View {
                         Phase6FeatureRow(
                             icon: "sparkles",
                             title: "Improve Clarity",
-                            description: "Enhances sentence structure and flow",
+                            description: "Makes dictation easier to read and send",
                             isEnabled: true,
                             isLocked: true
                         )
@@ -180,21 +128,17 @@ struct AIEnhancementView: View {
                         Divider()
 
                         Phase6FeatureRow(
-                            icon: "list.bullet",
-                            title: "Smart Formatting",
-                            description: "Auto-detects and formats lists properly",
+                            icon: "checkmark.shield",
+                            title: "Safe Fallback",
+                            description: "If enhancement fails, EchoTune keeps the original transcript",
                             isEnabled: true,
                             isLocked: true
                         )
                     }
                 } header: {
-                    Text("Features (Always Enabled)")
-                } footer: {
-                    Text("All features are automatically included in AI enhancement.")
-                        .font(.caption)
+                    Text("Always Included")
                 }
 
-                // Custom Prompt
                 Section {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Custom Enhancement Instructions")
@@ -210,7 +154,7 @@ struct AIEnhancementView: View {
                             )
 
                         if settings.customEnhancementPrompt.isEmpty {
-                            Text("Leave blank to use default enhancement prompt")
+                            Text("Leave blank to use EchoTune’s default cleanup prompt")
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                         } else {
@@ -222,18 +166,14 @@ struct AIEnhancementView: View {
                     }
                 } header: {
                     Text("Advanced (Optional)")
-                } footer: {
-                    Text("Add custom instructions for specific use cases. Example: 'Format as technical documentation' or 'Use casual, conversational tone'")
-                        .font(.caption)
                 }
 
-                // Test Enhancement
                 Section {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Test AI Enhancement")
                             .font(.headline)
 
-                        Text("Input (with fillers):")
+                        Text("Input")
                             .font(.caption)
                             .foregroundColor(.secondary)
 
@@ -248,7 +188,7 @@ struct AIEnhancementView: View {
                         if !sampleOutput.isEmpty {
                             Divider()
 
-                            Text("Enhanced Output:")
+                            Text("Enhanced Output")
                                 .font(.caption)
                                 .foregroundColor(.green)
 
@@ -260,8 +200,8 @@ struct AIEnhancementView: View {
                                 .cornerRadius(6)
                         }
 
-                        if let error = testError {
-                            Text("Error: \(error)")
+                        if let testError {
+                            Text("Error: \(testError)")
                                 .font(.caption)
                                 .foregroundColor(.red)
                         }
@@ -285,7 +225,6 @@ struct AIEnhancementView: View {
                 }
             }
 
-            // Help
             Section {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
@@ -295,11 +234,11 @@ struct AIEnhancementView: View {
                     }
                     .font(.caption)
 
-                    Text("• AI enhancement processes your transcription after speech recognition")
+                    Text("• AI enhancement runs after speech recognition, not instead of it")
+                    Text("• Groq is the easiest onboarding path and is recommended first")
+                    Text("• Gemini remains available as a secondary provider")
                     Text("• Original transcription is preserved in history")
-                    Text("• Processing typically takes 1-3 seconds")
-                    Text("• Requires internet connection and valid API key")
-                    Text("• Uses ~100-500 tokens per transcription (very low cost)")
+                    Text("• If AI fails, EchoTune falls back to the original transcript")
                 }
                 .font(.caption2)
                 .foregroundColor(.secondary)
@@ -314,14 +253,10 @@ struct AIEnhancementView: View {
         }
 
         switch model.provider {
-        case .google:
-            return !settings.geminiAPIKey.isEmpty
-        case .openai:
-            return !settings.openaiAPIKey.isEmpty
-        case .anthropic:
-            return !settings.claudeAPIKey.isEmpty
         case .groq:
             return !settings.groqAPIKey.isEmpty
+        case .google:
+            return !settings.geminiAPIKey.isEmpty
         }
     }
 
@@ -343,7 +278,6 @@ struct AIEnhancementView: View {
                 }
 
                 let apiKey = settings.apiKey(for: model.provider)
-
                 let customPrompt = settings.customEnhancementPrompt.isEmpty ? nil : settings.customEnhancementPrompt
 
                 let enhanced = try await aiEngine.enhance(

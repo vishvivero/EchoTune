@@ -18,49 +18,35 @@ class AIEnhancementEngine: ObservableObject {
     // MARK: - Enums
 
     enum EnhancementModel: String, CaseIterable, Identifiable {
-        case gemini25Flash = "gemini-2.5-flash"
-        case gemini25FlashLite = "gemini-2.5-flash-lite"
-        case gpt4oMini = "gpt-4o-mini"
-        case gpt4o = "gpt-4o"
-        case claude35Sonnet = "claude-3-5-sonnet-20241022"
-        case claudeOpus = "claude-3-opus-20240229"
         case groqLlama = "llama-3.3-70b-versatile"
         case groqMixtral = "mixtral-8x7b-32768"
+        case gemini25Flash = "gemini-2.5-flash"
+        case gemini25FlashLite = "gemini-2.5-flash-lite"
 
         var id: String { rawValue }
 
         var displayName: String {
             switch self {
-            case .gemini25Flash: return "Gemini 2.5 Flash (Recommended Free)"
-            case .gemini25FlashLite: return "Gemini 2.5 Flash-Lite (Fastest Free)"
-            case .gpt4oMini: return "GPT-4o Mini (Fast, Cheap)"
-            case .gpt4o: return "GPT-4o (Best Quality)"
-            case .claude35Sonnet: return "Claude 3.5 Sonnet (Excellent)"
-            case .claudeOpus: return "Claude Opus (Premium)"
-            case .groqLlama: return "Groq Llama 3.3 70B (Lightning Fast)"
-            case .groqMixtral: return "Groq Mixtral 8x7B (Fast, Free Tier)"
+            case .groqLlama: return "Groq Llama 3.3 70B (Recommended)"
+            case .groqMixtral: return "Groq Mixtral 8x7B (Fastest)"
+            case .gemini25Flash: return "Gemini 2.5 Flash (Optional Quality Alternative)"
+            case .gemini25FlashLite: return "Gemini 2.5 Flash-Lite (Optional Lightweight)"
             }
         }
 
         var provider: EnhancementProvider {
             switch self {
-            case .gemini25Flash, .gemini25FlashLite:
-                return .google
-            case .gpt4oMini, .gpt4o:
-                return .openai
-            case .claude35Sonnet, .claudeOpus:
-                return .anthropic
             case .groqLlama, .groqMixtral:
                 return .groq
+            case .gemini25Flash, .gemini25FlashLite:
+                return .google
             }
         }
     }
 
     enum EnhancementProvider {
-        case google
-        case openai
-        case anthropic
         case groq
+        case google
     }
 
     enum EnhancementError: Error, LocalizedError {
@@ -227,14 +213,10 @@ class AIEnhancementEngine: ObservableObject {
             let enhanced: String
 
             switch model.provider {
-            case .google:
-                enhanced = try await enhanceWithGemini(transcript, model: model, apiKey: apiKey, customPrompt: customPrompt, dictionaryContext: dictionaryContext, screenContext: screenContext)
-            case .openai:
-                enhanced = try await enhanceWithOpenAI(transcript, model: model, apiKey: apiKey, customPrompt: customPrompt, dictionaryContext: dictionaryContext, screenContext: screenContext)
-            case .anthropic:
-                enhanced = try await enhanceWithClaude(transcript, model: model, apiKey: apiKey, customPrompt: customPrompt, dictionaryContext: dictionaryContext, screenContext: screenContext)
             case .groq:
                 enhanced = try await enhanceWithGroq(transcript, model: model, apiKey: apiKey, customPrompt: customPrompt, dictionaryContext: dictionaryContext, screenContext: screenContext)
+            case .google:
+                enhanced = try await enhanceWithGemini(transcript, model: model, apiKey: apiKey, customPrompt: customPrompt, dictionaryContext: dictionaryContext, screenContext: screenContext)
             }
 
             debugLog("✅ Enhancement successful")

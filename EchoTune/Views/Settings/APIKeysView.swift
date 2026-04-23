@@ -2,7 +2,7 @@
 //  APIKeysView.swift
 //  EchoTune
 //
-//  Phase 6 UI: API Keys Configuration
+//  Groq-first API key onboarding with optional Gemini support.
 //
 
 import SwiftUI
@@ -11,30 +11,25 @@ struct APIKeysView: View {
     @ObservedObject var settings = AppSettings.shared
 
     @State private var showGroqKey = false
-    @State private var showOpenAIKey = false
-    @State private var showClaudeKey = false
-    @State private var showDeepgramKey = false
     @State private var showGeminiKey = false
-    @State private var testingGroq = false
+    @State private var testingProvider: String?
     @State private var testResult: String?
 
     var body: some View {
         Form {
-            // Header
             Section {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("API Keys")
                         .font(.title2)
                         .fontWeight(.bold)
 
-                    Text("Configure API keys for cloud transcription and AI enhancement features.")
+                    Text("Groq is the recommended setup: one key can power cloud transcription, AI enhancement, and meeting summaries. Gemini is optional if you want a second enhancement provider.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
                 .padding(.vertical, 8)
             }
 
-            // Groq API Key
             Section {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
@@ -49,7 +44,7 @@ struct APIKeysView: View {
                             .font(.caption)
                     }
 
-                    Text("Ultra-fast Whisper Large v3 Turbo transcription")
+                    Text("Recommended. Easiest setup for non-technical users. Powers Groq cloud transcription, Groq AI enhancement, and Groq meeting summaries.")
                         .font(.caption)
                         .foregroundColor(.secondary)
 
@@ -65,31 +60,30 @@ struct APIKeysView: View {
                         Button(action: { showGroqKey.toggle() }) {
                             Image(systemName: showGroqKey ? "eye.slash" : "eye")
                         }
+                        .buttonStyle(.borderless)
 
-                        if !settings.groqAPIKey.isEmpty {
-                            Button(action: testGroqConnection) {
-                                if testingGroq {
-                                    ProgressView()
-                                        .scaleEffect(0.7)
-                                } else {
-                                    Image(systemName: "checkmark.circle")
-                                }
+                        Button(action: { testKey("groq") }) {
+                            if testingProvider == "groq" {
+                                ProgressView()
+                                    .scaleEffect(0.7)
+                            } else {
+                                Text("Test")
                             }
-                            .help("Test connection")
                         }
+                        .buttonStyle(.bordered)
+                        .disabled(settings.groqAPIKey.isEmpty || testingProvider == "groq")
                     }
 
-                    if let result = testResult {
-                        Text(result)
+                    if testingProvider == "groq", let testResult {
+                        Text(testResult)
                             .font(.caption)
-                            .foregroundColor(result.contains("✅") ? .green : .red)
+                            .foregroundColor(testResult.contains("✅") ? .green : .red)
                     }
                 }
             } header: {
-                Text("Cloud Transcription")
+                Text("Recommended Setup")
             }
 
-            // Gemini API Key
             Section {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
@@ -104,7 +98,7 @@ struct APIKeysView: View {
                             .font(.caption)
                     }
 
-                    Text("Recommended free AI enhancement option with better context cleanup")
+                    Text("Optional. Keep Gemini available as a secondary enhancement provider when you want to compare cleanup quality or use Google’s models instead of Groq.")
                         .font(.caption)
                         .foregroundColor(.secondary)
 
@@ -120,135 +114,39 @@ struct APIKeysView: View {
                         Button(action: { showGeminiKey.toggle() }) {
                             Image(systemName: showGeminiKey ? "eye.slash" : "eye")
                         }
+                        .buttonStyle(.borderless)
+
+                        Button(action: { testKey("gemini") }) {
+                            if testingProvider == "gemini" {
+                                ProgressView()
+                                    .scaleEffect(0.7)
+                            } else {
+                                Text("Test")
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(settings.geminiAPIKey.isEmpty || testingProvider == "gemini")
+                    }
+
+                    if testingProvider == "gemini", let testResult {
+                        Text(testResult)
+                            .font(.caption)
+                            .foregroundColor(testResult.contains("✅") ? .green : .red)
                     }
                 }
             } header: {
-                Text("AI Enhancement")
+                Text("Optional Secondary Provider")
             }
 
-            // OpenAI API Key
             Section {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Image(systemName: "brain.head.profile")
-                            .foregroundColor(.green)
-                        Text("OpenAI API")
-                            .font(.headline)
-
-                        Spacer()
-
-                        Link("Get Key", destination: URL(string: "https://platform.openai.com/api-keys")!)
-                            .font(.caption)
-                    }
-
-                    Text("GPT-4o and GPT-4o-mini for AI enhancement")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    HStack {
-                        if showOpenAIKey {
-                            TextField("sk-...", text: $settings.openaiAPIKey)
-                                .textFieldStyle(.roundedBorder)
-                        } else {
-                            SecureField("sk-...", text: $settings.openaiAPIKey)
-                                .textFieldStyle(.roundedBorder)
-                        }
-
-                        Button(action: { showOpenAIKey.toggle() }) {
-                            Image(systemName: showOpenAIKey ? "eye.slash" : "eye")
-                        }
-                    }
-                }
-            } header: {
-                Text("AI Enhancement")
-            }
-
-            // Anthropic/Claude API Key
-            Section {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Image(systemName: "sparkles")
-                            .foregroundColor(.purple)
-                        Text("Anthropic API")
-                            .font(.headline)
-
-                        Spacer()
-
-                        Link("Get Key", destination: URL(string: "https://console.anthropic.com/keys")!)
-                            .font(.caption)
-                    }
-
-                    Text("Claude 3.5 Sonnet and Opus for AI enhancement")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    HStack {
-                        if showClaudeKey {
-                            TextField("sk-ant-...", text: $settings.claudeAPIKey)
-                                .textFieldStyle(.roundedBorder)
-                        } else {
-                            SecureField("sk-ant-...", text: $settings.claudeAPIKey)
-                                .textFieldStyle(.roundedBorder)
-                        }
-
-                        Button(action: { showClaudeKey.toggle() }) {
-                            Image(systemName: showClaudeKey ? "eye.slash" : "eye")
-                        }
-                    }
-                }
-            }
-
-            // Deepgram API Key
-            Section {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Image(systemName: "waveform")
-                            .foregroundColor(.blue)
-                        Text("Deepgram API")
-                            .font(.headline)
-
-                        Spacer()
-
-                        Link("Get Free Key", destination: URL(string: "https://console.deepgram.com/signup")!)
-                            .font(.caption)
-                    }
-
-                    Text("Alternative cloud transcription with Nova-2")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    HStack {
-                        if showDeepgramKey {
-                            TextField("Enter Deepgram API key", text: Binding(
-                                get: { "" }, // Deepgram key not in AppSettings yet
-                                set: { _ in }
-                            ))
-                            .textFieldStyle(.roundedBorder)
-                        } else {
-                            SecureField("Enter Deepgram API key", text: Binding(
-                                get: { "" },
-                                set: { _ in }
-                            ))
-                            .textFieldStyle(.roundedBorder)
-                        }
-
-                        Button(action: { showDeepgramKey.toggle() }) {
-                            Image(systemName: showDeepgramKey ? "eye.slash" : "eye")
-                        }
-                    }
-                }
-            }
-
-            // Security Notice
-            Section {
-                HStack {
+                HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "lock.shield")
                         .foregroundColor(.green)
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Secure Storage")
                             .font(.caption)
                             .fontWeight(.semibold)
-                        Text("All API keys are stored securely in your Mac's keychain and never transmitted except to their respective services.")
+                        Text("Keys are stored in your Mac’s keychain. EchoTune only sends them to the provider you choose.")
                             .font(.caption2)
                             .foregroundColor(.secondary)
                     }
@@ -258,32 +156,38 @@ struct APIKeysView: View {
         .formStyle(.grouped)
     }
 
-    // Test Groq connection
-    private func testGroqConnection() {
-        guard !settings.groqAPIKey.isEmpty else { return }
-
-        testingGroq = true
+    private func testKey(_ provider: String) {
+        testingProvider = provider
         testResult = nil
 
         Task {
-            do {
-                // Simple test - just validate key format
-                if settings.groqAPIKey.hasPrefix("gsk_") {
-                    try await Task.sleep(nanoseconds: 1_000_000_000)
-                    await MainActor.run {
-                        testResult = "✅ API key format valid"
-                        testingGroq = false
+            try? await Task.sleep(nanoseconds: 700_000_000)
+            await MainActor.run {
+                switch provider {
+                case "groq":
+                    if settings.groqAPIKey.hasPrefix("gsk_") {
+                        testResult = "✅ Groq key format looks valid"
+                    } else {
+                        testResult = "❌ Groq keys should usually start with gsk_"
                     }
-                } else {
-                    await MainActor.run {
-                        testResult = "❌ Invalid key format (should start with gsk_)"
-                        testingGroq = false
+                case "gemini":
+                    if settings.geminiAPIKey.hasPrefix("AIza") {
+                        testResult = "✅ Gemini key format looks valid"
+                    } else if !settings.geminiAPIKey.isEmpty {
+                        testResult = "✅ Gemini key saved — full validation happens on first use"
+                    } else {
+                        testResult = "❌ Add a Gemini key first"
                     }
+                default:
+                    testResult = "❌ Unknown provider"
                 }
-            } catch {
-                await MainActor.run {
-                    testResult = "❌ Connection failed"
-                    testingGroq = false
+            }
+
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            await MainActor.run {
+                if testingProvider == provider {
+                    testingProvider = nil
+                    testResult = nil
                 }
             }
         }

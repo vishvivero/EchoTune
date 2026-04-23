@@ -229,14 +229,10 @@ class AppSettings: ObservableObject {
 
     func apiKey(for provider: AIEnhancementEngine.EnhancementProvider) -> String {
         switch provider {
-        case .google:
-            return geminiAPIKey
-        case .openai:
-            return openaiAPIKey
-        case .anthropic:
-            return claudeAPIKey
         case .groq:
             return groqAPIKey
+        case .google:
+            return geminiAPIKey
         }
     }
 
@@ -293,7 +289,12 @@ class AppSettings: ObservableObject {
             self.selectedModelSize = .balanced
         }
 
-        self.defaultTranscriptionModel = UserDefaults.standard.string(forKey: "defaultTranscriptionModel") ?? "distil-whisper_distil-large-v3_turbo"
+        let hasGroqKey = !KeychainHelper.load(forKey: "groqAPIKey").isEmpty || !(UserDefaults.standard.string(forKey: "groqAPIKey") ?? "").isEmpty
+
+        self.defaultTranscriptionModel = Self.migratedDefaultTranscriptionModel(
+            UserDefaults.standard.string(forKey: "defaultTranscriptionModel"),
+            hasGroqKey: hasGroqKey
+        )
 
         self.preferredLanguage = UserDefaults.standard.string(forKey: "preferredLanguage") ?? "en-US"
         self.autoDetectLanguage = UserDefaults.standard.object(forKey: "autoDetectLanguage") as? Bool ?? true
@@ -314,8 +315,6 @@ class AppSettings: ObservableObject {
         self.meetingAutoDetect = UserDefaults.standard.object(forKey: "meetingAutoDetect") as? Bool ?? true
         self.meetingAutoSummarise = UserDefaults.standard.object(forKey: "meetingAutoSummarise") as? Bool ?? true
         // Default to cloud if user has a Groq API key configured, otherwise local
-        // Groq key is stored in Keychain (migration from UserDefaults may happen later in init)
-        let hasGroqKey = !KeychainHelper.load(forKey: "groqAPIKey").isEmpty || !(UserDefaults.standard.string(forKey: "groqAPIKey") ?? "").isEmpty
         self.meetingUseCloudTranscription = UserDefaults.standard.object(forKey: "meetingUseCloudTranscription") as? Bool ?? hasGroqKey
         self.meetingIncludeMicAudio = UserDefaults.standard.object(forKey: "meetingIncludeMicAudio") as? Bool ?? true
         if let templateRaw = UserDefaults.standard.string(forKey: "meetingDefaultTemplate"),
@@ -372,7 +371,7 @@ class AppSettings: ObservableObject {
             self.aiEnhancementEnabled = false // default OFF (requires API key)
         }
 
-        self.selectedEnhancementModel = UserDefaults.standard.string(forKey: "selectedEnhancementModel") ?? "gemini-2.5-flash"
+        self.selectedEnhancementModel = Self.migratedEnhancementModelSelection(UserDefaults.standard.string(forKey: "selectedEnhancementModel"))
         self.customEnhancementPrompt = UserDefaults.standard.string(forKey: "customEnhancementPrompt") ?? ""
 
         // Phase 6A: Initialize API Keys (from Keychain)
@@ -449,7 +448,43 @@ class AppSettings: ObservableObject {
         self.openaiAPIKey = KeychainHelper.load(forKey: "openaiAPIKey")
         self.claudeAPIKey = KeychainHelper.load(forKey: "claudeAPIKey")
         self.deepgramAPIKey = KeychainHelper.load(forKey: "deepgramAPIKey")
+        self.geminiAPIKey = KeychainHelper.load(forKey: "geminiAPIKey")
     }
+
+    private static let defaultLocalTranscriptionModel = "distil-whisper_distil-large-v3_turbo"
+    private static let defaultEnhancementModel = AIEnhancementEngine.EnhancementModel.groqLlama.rawValue
+
+    private static func migratedDefaultTranscriptionModel(_ storedValue: String?, hasGroqKey: Bool) -> String {
+        guard let storedValue, !storedValue.isEmpty else {
+            return defaultLocalTranscriptionModel
+        }
+
+        if storedValue.hasPrefix("deepgram-") {
+            return hasGroqKey ? "groq-whisper-large-v3-turbo" : defaultLocalTranscriptionModel
+        }
+
+        return storedValue
+    }
+
+    private static func migratedEnhancementModelSelection(_ storedValue: String?) -> String {
+        guard let storedValue, !storedValue.isEmpty else {
+            return defaultEnhancementModel
+        }
+
+        let retiredModels = [
+            "gpt-4o-mini",
+            "gpt-4o",
+            "claude-3-5-sonnet-20241022",
+            "claude-3-opus-20240229"
+        ]
+
+        if retiredModels.contains(storedValue) {
+            return defaultEnhancementModel
+        }
+
+        return AIEnhancementEngine.EnhancementModel(rawValue: storedValue)?.rawValue ?? defaultEnhancementModel
+    }
+
     
     private func setDefaults() {
         self.launchAtStartup = false

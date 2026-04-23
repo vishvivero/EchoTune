@@ -2,7 +2,8 @@
 //  MeetingSummaryEngine.swift
 //  EchoTune
 //
-//  Generates AI summaries from meeting transcripts.
+//  Generates AI summaries from meeting transcripts using the simplified
+//  Groq-first / Gemini-secondary provider strategy.
 //
 
 import Foundation
@@ -11,7 +12,6 @@ class MeetingSummaryEngine {
 
     static let shared = MeetingSummaryEngine()
 
-    /// Generate a structured meeting summary from the transcript.
     func generateSummary(
         transcript: String,
         template: MeetingTemplate,
@@ -27,19 +27,35 @@ class MeetingSummaryEngine {
 
         let prompt = buildPrompt(transcript: transcript, template: template, userNotes: userNotes)
 
-        // Use Groq for fast summary generation (or fallback to configured AI enhancement model)
-        let apiKey = AppSettings.shared.groqAPIKey
-        guard !apiKey.isEmpty else {
-            debugLog("⚠️ MeetingSummaryEngine: No Groq API key, falling back to basic extraction")
-            let basicResult = extractBasicSummary(from: transcript)
-            completion(.success(basicResult))
+        guard let (model, apiKey) = preferredSummaryModel() else {
+            debugLog("⚠️ MeetingSummaryEngine: No Groq/Gemini API key, falling back to basic extraction")
+            completion(.success(extractBasicSummary(from: transcript)))
             return
         }
 
-        callGroqAPI(prompt: prompt, apiKey: apiKey, completion: completion)
+        callProvider(model: model, prompt: prompt, apiKey: apiKey, transcript: transcript, completion: completion)
     }
 
-    // MARK: - Prompt Builder
+    private func preferredSummaryModel() -> (AIEnhancementEngine.EnhancementModel, String)? {
+        let settings = AppSettings.shared
+
+        if let selected = AIEnhancementEngine.EnhancementModel(rawValue: settings.selectedEnhancementModel) {
+            let key = settings.apiKey(for: selected.provider)
+            if !key.isEmpty {
+                return (selected, key)
+            }
+        }
+
+        if !settings.groqAPIKey.isEmpty {
+            return (.groqLlama, settings.groqAPIKey)
+        }
+
+        if !settings.geminiAPIKey.isEmpty {
+            return (.gemini25Flash, settings.geminiAPIKey)
+        }
+
+        return nil
+    }
 
     private func buildPrompt(transcript: String, template: MeetingTemplate, userNotes: String) -> String {
         var prompt = """
@@ -64,21 +80,38 @@ class MeetingSummaryEngine {
         - Key points should capture the most important information
         - If a field has no content, use an empty array []
         - Title should be concise (5-8 words max)
-
         """
 
         if !userNotes.isEmpty {
-            prompt += "\nUser's own notes during the meeting:\n\(userNotes)\n"
+            prompt += "\n\nUser's own notes during the meeting:\n\(userNotes)\n"
         }
 
-        prompt += "\nMeeting Transcript:\n\(transcript)"
-
+        prompt += "\n\nMeeting Transcript:\n\(transcript)"
         return prompt
     }
 
-    // MARK: - Groq API Call
+    private func callProvider(
+        model: AIEnhancementEngine.EnhancementModel,
+        prompt: String,
+        apiKey: String,
+        transcript: String,
+        completion: @escaping (Result<MeetingSummaryResult, Error>) -> Void
+    ) {
+        switch model.provider {
+        case .groq:
+            callGroqAPI(prompt: prompt, apiKey: apiKey, model: model, transcript: transcript, completion: completion)
+        case .google:
+            callGeminiAPI(prompt: prompt, apiKey: apiKey, model: model, transcript: transcript, completion: completion)
+        }
+    }
 
-    private func callGroqAPI(prompt: String, apiKey: String, completion: @escaping (Result<MeetingSummaryResult, Error>) -> Void) {
+    private func callGroqAPI(
+        prompt: String,
+        apiKey: String,
+        model: AIEnhancementEngine.EnhancementModel,
+        transcript: String,
+        completion: @escaping (Result<MeetingSummaryResult, Error>) -> Void
+    ) {
         guard let url = URL(string: "https://api.groq.com/openai/v1/chat/completions") else {
             completion(.failure(SummaryError.invalidURL))
             return
@@ -89,35 +122,31 @@ class MeetingSummaryEngine {
         request.addValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        // Truncate transcript if too long (Groq context limit)
-        let maxTranscriptLength = 28000  // Leave room for prompt + response
-        let truncatedPrompt: String
-        if prompt.count > maxTranscriptLength {
-            truncatedPrompt = String(prompt.prefix(maxTranscriptLength)) + "\n\n[Transcript truncated due to length]"
-        } else {
-            truncatedPrompt = prompt
-        }
+        let maxPromptLength = 28000
+        let truncatedPrompt = prompt.count > maxPromptLength
+            ? String(prompt.prefix(maxPromptLength)) + "\n\n[Transcript truncated due to length]"
+            : prompt
 
         let body: [String: Any] = [
-            "model": "llama-3.3-70b-versatile",
+            "model": model.rawValue,
             "messages": [
                 ["role": "user", "content": truncatedPrompt]
             ],
-            "temperature": 0.3,
+            "temperature": 0.2,
             "max_tokens": 2000,
             "response_format": ["type": "json_object"]
         ]
 
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            if let error = error {
-                debugLog("❌ MeetingSummaryEngine: API error: \(error)")
+        URLSession.shared.dataTask(with: request) { data, _, error in
+            if let error {
+                debugLog("❌ MeetingSummaryEngine: Groq API error: \(error)")
                 completion(.failure(error))
                 return
             }
 
-            guard let data = data else {
+            guard let data else {
                 completion(.failure(SummaryError.noResponse))
                 return
             }
@@ -127,41 +156,95 @@ class MeetingSummaryEngine {
                 let choices = json?["choices"] as? [[String: Any]]
                 let message = choices?.first?["message"] as? [String: Any]
                 let content = message?["content"] as? String ?? ""
-
-                debugLog("🧠 MeetingSummaryEngine: Got response (\(content.count) chars)")
-
-                // Parse the JSON response
-                guard let responseData = content.data(using: .utf8),
-                      let parsed = try JSONSerialization.jsonObject(with: responseData) as? [String: Any] else {
-                    debugLog("⚠️ MeetingSummaryEngine: Failed to parse JSON, extracting basic summary")
-                    let basic = self.extractBasicSummary(from: content)
-                    completion(.success(basic))
-                    return
-                }
-
-                let result = MeetingSummaryResult(
-                    title: parsed["title"] as? String ?? "Untitled Meeting",
-                    summary: parsed["summary"] as? String ?? "",
-                    actionItems: parsed["actionItems"] as? [String] ?? [],
-                    decisions: parsed["decisions"] as? [String] ?? [],
-                    keyPoints: parsed["keyPoints"] as? [String] ?? [],
-                    participants: parsed["participants"] as? [String] ?? []
-                )
-
-                debugLog("✅ MeetingSummaryEngine: Summary generated - \(result.actionItems.count) action items, \(result.decisions.count) decisions")
-                completion(.success(result))
-
+                completion(.success(self.parseSummaryPayload(content, fallbackTranscript: transcript)))
             } catch {
-                debugLog("❌ MeetingSummaryEngine: Parse error: \(error)")
-                completion(.failure(error))
+                debugLog("❌ MeetingSummaryEngine: Groq parse error: \(error)")
+                completion(.success(self.extractBasicSummary(from: transcript)))
             }
         }.resume()
     }
 
-    // MARK: - Basic Extraction Fallback
+    private func callGeminiAPI(
+        prompt: String,
+        apiKey: String,
+        model: AIEnhancementEngine.EnhancementModel,
+        transcript: String,
+        completion: @escaping (Result<MeetingSummaryResult, Error>) -> Void
+    ) {
+        guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model.rawValue):generateContent") else {
+            completion(.failure(SummaryError.invalidURL))
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 60
+
+        let requestBody: [String: Any] = [
+            "systemInstruction": [
+                "parts": [[
+                    "text": "You are a meeting notes assistant. Always return strict JSON matching the schema requested by the user."
+                ]]
+            ],
+            "contents": [[
+                "role": "user",
+                "parts": [["text": prompt]]
+            ]],
+            "generationConfig": [
+                "temperature": 0.2,
+                "maxOutputTokens": 2000,
+                "responseMimeType": "application/json"
+            ]
+        ]
+
+        request.httpBody = try? JSONSerialization.data(withJSONObject: requestBody)
+
+        URLSession.shared.dataTask(with: request) { data, _, error in
+            if let error {
+                debugLog("❌ MeetingSummaryEngine: Gemini API error: \(error)")
+                completion(.failure(error))
+                return
+            }
+
+            guard let data else {
+                completion(.failure(SummaryError.noResponse))
+                return
+            }
+
+            do {
+                let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+                let candidates = json?["candidates"] as? [[String: Any]]
+                let content = candidates?.first?["content"] as? [String: Any]
+                let parts = content?["parts"] as? [[String: Any]]
+                let text = parts?.first?["text"] as? String ?? ""
+                completion(.success(self.parseSummaryPayload(text, fallbackTranscript: transcript)))
+            } catch {
+                debugLog("❌ MeetingSummaryEngine: Gemini parse error: \(error)")
+                completion(.success(self.extractBasicSummary(from: transcript)))
+            }
+        }.resume()
+    }
+
+    private func parseSummaryPayload(_ content: String, fallbackTranscript: String) -> MeetingSummaryResult {
+        guard let responseData = content.data(using: .utf8),
+              let parsed = try? JSONSerialization.jsonObject(with: responseData) as? [String: Any] else {
+            debugLog("⚠️ MeetingSummaryEngine: Failed to parse JSON payload, using basic extraction")
+            return extractBasicSummary(from: fallbackTranscript)
+        }
+
+        return MeetingSummaryResult(
+            title: parsed["title"] as? String ?? "Untitled Meeting",
+            summary: parsed["summary"] as? String ?? "",
+            actionItems: parsed["actionItems"] as? [String] ?? [],
+            decisions: parsed["decisions"] as? [String] ?? [],
+            keyPoints: parsed["keyPoints"] as? [String] ?? [],
+            participants: parsed["participants"] as? [String] ?? []
+        )
+    }
 
     private func extractBasicSummary(from transcript: String) -> MeetingSummaryResult {
-        // Simple heuristic extraction when no API is available
         let sentences = transcript.components(separatedBy: ". ")
         let keyPoints = Array(sentences.prefix(5)).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
 
@@ -175,8 +258,6 @@ class MeetingSummaryEngine {
         )
     }
 }
-
-// MARK: - Models
 
 struct MeetingSummaryResult {
     let title: String

@@ -262,11 +262,6 @@ struct CloudModelCard: View {
     private var providerColor: Color {
         switch model.provider {
         case .groq: return .orange
-        case .elevenLabs: return .purple
-        case .deepgram: return .green
-        case .mistral: return .red
-        case .google: return .blue
-        case .soniox: return .cyan
         }
     }
 
