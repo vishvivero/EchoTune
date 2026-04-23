@@ -7,6 +7,7 @@ import SwiftUI
 
 struct StatsDetailDialog: View {
     let stats: UsageStatistics
+    @ObservedObject private var appState = AppState.shared
     @Environment(\.dismiss) var dismiss
 
     var body: some View {
@@ -59,18 +60,18 @@ struct StatsDetailDialog: View {
                                     .font(.system(size: 28))
                                     .foregroundColor(.white)
 
-                                Text("\(calculateDaysUsed())")
+                                Text("\(appState.currentStreak)")
                                     .font(.system(size: 20, weight: .bold))
                                     .foregroundColor(.white)
                             }
                         }
 
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Day Streak")
+                            Text("Current Streak")
                                 .font(.title2)
                                 .fontWeight(.bold)
 
-                            Text("You've been using EchoTune for \(calculateDaysUsed()) \(calculateDaysUsed() == 1 ? "day" : "days")!")
+                            Text(streakSummaryText)
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                         }
@@ -178,11 +179,13 @@ struct StatsDetailDialog: View {
         return Int(min(max(calculatedWPM, 80), 300))
     }
 
-    private func calculateDaysUsed() -> Int {
-        let calendar = Calendar.current
-        let startDate = AppState.shared.trialStartDate
-        let components = calendar.dateComponents([.day], from: startDate, to: Date())
-        return max(1, (components.day ?? 0) + 1)
+    private var streakSummaryText: String {
+        let streak = appState.currentStreak
+        let activeDays = max(1, stats.dailyStats.count)
+        if streak > 0 {
+            return "You're on a \(streak)-day streak and have used EchoTune on \(activeDays) \(activeDays == 1 ? "day" : "days") overall."
+        }
+        return "No active streak right now — but you already have \(activeDays) \(activeDays == 1 ? "day" : "days") of usage history."
     }
 
     private func calculateTypingTime(words: Int) -> Double {

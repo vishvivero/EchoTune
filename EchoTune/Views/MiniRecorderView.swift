@@ -138,11 +138,9 @@ class MiniRecorderWindow: NSPanel {
 struct MiniRecorderContentView: View {
     @ObservedObject private var audioManager = AudioManager.shared
     @ObservedObject private var appState = AppState.shared
-    @ObservedObject private var settings = AppSettings.shared
     @State private var phase: Double = 0
     @State private var liveText: String = ""
     @State private var textContentHeight: CGFloat = 0
-    @State private var completedMetadata: TranscriptionProcessingMetadata?
 
     var onHeightChange: ((CGFloat) -> Void)?
     private let barCount = 20
@@ -205,36 +203,18 @@ struct MiniRecorderContentView: View {
 
                 Spacer()
 
-                if isRecording || statusDetailText != nil || !metadataBadges.isEmpty || diagnosticsSummaryText != nil {
+                if isRecording || displayStatusText != nil {
                     VStack(alignment: .trailing, spacing: 4) {
-                        if !metadataBadges.isEmpty {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 6) {
-                                    ForEach(metadataBadges) { badge in
-                                        MiniRecorderMetadataBadge(title: badge.title, color: badge.color, icon: badge.icon)
-                                    }
-                                }
-                            }
-                            .frame(maxWidth: 190, alignment: .trailing)
-                        }
-
                         if isRecording {
                             Text(formatTime(audioManager.recordingDuration))
                                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                                 .foregroundColor(.white.opacity(0.7))
                         }
 
-                        if let statusDetailText {
-                            Text(statusDetailText)
+                        if let displayStatusText {
+                            Text(displayStatusText)
                                 .font(.system(size: 10, weight: .medium))
                                 .foregroundColor(.white.opacity(0.6))
-                                .lineLimit(1)
-                        }
-
-                        if settings.showTranscriptionDiagnostics, let diagnosticsSummaryText {
-                            Text(diagnosticsSummaryText)
-                                .font(.system(size: 9, weight: .medium))
-                                .foregroundColor(.white.opacity(0.5))
                                 .lineLimit(1)
                         }
                     }
@@ -287,15 +267,11 @@ struct MiniRecorderContentView: View {
             if let text = n.userInfo?["text"] as? String {
                 liveText = text
             }
-            if isRecording || isProcessing {
-                completedMetadata = nil
-            }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("TranscriptionComplete"))) { n in
             if let text = n.userInfo?["text"] as? String {
                 liveText = text
             }
-            completedMetadata = metadata(from: n.userInfo)
         }
         .onChange(of: appState.recordingState) { _, newState in
             if newState == .idle {
@@ -303,108 +279,36 @@ struct MiniRecorderContentView: View {
                     if appState.recordingState == .idle {
                         withAnimation {
                             liveText = ""
-                            completedMetadata = nil
                         }
                     }
                 }
-            } else if newState == .recording || newState == .processing {
-                completedMetadata = nil
             }
         }
     }
 
     private var isRecording: Bool { appState.recordingState == .recording }
     private var isProcessing: Bool { appState.recordingState == .processing }
-    private var statusDetailText: String? {
-        guard let detail = appState.recordingStatusDetail, !detail.isEmpty else { return nil }
-        return detail
-    }
-
-    private var activeMetadata: TranscriptionProcessingMetadata? {
-        if isRecording || isProcessing {
-            let metadata = AppCoordinator.shared.currentProcessingMetadata
-            let hasContent = metadata.hasEnhancement ||
-                metadata.transcriptionProvider != nil ||
-                metadata.transcriptionModel != nil ||
-                metadata.transcriptionLatency != nil ||
-                metadata.enhancementLatency != nil ||
-                metadata.totalLatency != nil ||
-                metadata.usedFallback
-            return hasContent ? metadata : nil
+    private var displayStatusText: String? {
+        switch appState.recordingState {
+        case .processing:
+            guard let detail = appState.recordingStatusDetail?.lowercased(), !detail.isEmpty else {
+                return "Processing..."
+            }
+            if detail.contains("enhanc") || detail.contains("clean") {
+                return "Improving text..."
+            }
+            if detail.contains("finalis") {
+                return "Finalising text..."
+            }
+            if detail.contains("transcrib") {
+                return "Transcribing..."
+            }
+            return "Processing..."
+        case .loadingModel:
+            return "Preparing..."
+        default:
+            return nil
         }
-        return completedMetadata
-    }
-
-    private var metadataBadges: [MiniRecorderBadgeItem] {
-        guard let metadata = activeMetadata else { return [] }
-        var badges: [MiniRecorderBadgeItem] = []
-        if let provider = metadata.transcriptionProvider {
-            badges.append(MiniRecorderBadgeItem(title: provider, color: .blue, icon: "waveform.badge.mic"))
-        }
-        if let model = metadata.transcriptionModel {
-            badges.append(MiniRecorderBadgeItem(title: model, color: .gray, icon: "cpu"))
-        }
-        if let enhancementProvider = metadata.enhancementProvider {
-            badges.append(MiniRecorderBadgeItem(title: "Enhanced • \(enhancementProvider)", color: .purple, icon: "sparkles"))
-        }
-        if metadata.usedFallback {
-            badges.append(MiniRecorderBadgeItem(title: "Fallback", color: .orange, icon: "arrow.uturn.backward.circle"))
-        }
-        return badges
-    }
-
-    private var diagnosticsSummaryText: String? {
-        guard let metadata = activeMetadata else { return nil }
-        var parts: [String] = []
-        if let totalLatency = metadata.totalLatency, totalLatency > 0 {
-            parts.append(String(format: "%.1fs total", totalLatency))
-        }
-        if let transcriptionLatency = metadata.transcriptionLatency, transcriptionLatency > 0 {
-            parts.append(String(format: "%.1fs transcribe", transcriptionLatency))
-        }
-        if let enhancementLatency = metadata.enhancementLatency, enhancementLatency > 0 {
-            parts.append(String(format: "%.1fs enhance", enhancementLatency))
-        }
-        if metadata.usedFallback {
-            parts.append(metadata.fallbackReason.map { "fallback: \($0)" } ?? "fallback")
-        }
-        return parts.isEmpty ? nil : parts.joined(separator: " • ")
-    }
-
-    private func metadata(from userInfo: [AnyHashable: Any]?) -> TranscriptionProcessingMetadata? {
-        guard let userInfo else { return nil }
-
-        var metadata = TranscriptionProcessingMetadata()
-
-        if let provider = userInfo["transcriptionProvider"] as? String, !provider.isEmpty {
-            metadata.transcriptionProvider = provider
-        }
-        if let model = userInfo["transcriptionModel"] as? String, !model.isEmpty {
-            metadata.transcriptionModel = model
-        }
-        if let enhancementProvider = userInfo["enhancementProvider"] as? String, !enhancementProvider.isEmpty {
-            metadata.enhancementProvider = enhancementProvider
-        }
-        if let enhancementModel = userInfo["enhancementModel"] as? String, !enhancementModel.isEmpty {
-            metadata.enhancementModel = enhancementModel
-        }
-        if let transcriptionLatency = userInfo["transcriptionLatency"] as? Double, transcriptionLatency > 0 {
-            metadata.transcriptionLatency = transcriptionLatency
-        }
-        if let enhancementLatency = userInfo["enhancementLatency"] as? Double, enhancementLatency > 0 {
-            metadata.enhancementLatency = enhancementLatency
-        }
-        if let totalLatency = userInfo["totalLatency"] as? Double, totalLatency > 0 {
-            metadata.totalLatency = totalLatency
-        }
-        if let usedFallback = userInfo["usedFallback"] as? Bool {
-            metadata.usedFallback = usedFallback
-        }
-        if let fallbackReason = userInfo["fallbackReason"] as? String, !fallbackReason.isEmpty {
-            metadata.fallbackReason = fallbackReason
-        }
-
-        return metadata == TranscriptionProcessingMetadata() ? nil : metadata
     }
 
     private func formatTime(_ time: TimeInterval) -> String {
@@ -428,36 +332,6 @@ struct MiniRecorderContentView: View {
         let wave = 0.5 + 0.5 * sin(Double(index) * 0.5 + phase)
         let dynamic = max(0.1, min(1.0, Double(level) * 0.85 + wave * 0.4))
         return max(2, CGFloat(dynamic) * maxHeight)
-    }
-}
-
-private struct MiniRecorderBadgeItem: Identifiable {
-    let title: String
-    let color: Color
-    let icon: String?
-
-    var id: String { title + (icon ?? "") }
-}
-
-private struct MiniRecorderMetadataBadge: View {
-    let title: String
-    let color: Color
-    let icon: String?
-
-    var body: some View {
-        HStack(spacing: 4) {
-            if let icon {
-                Image(systemName: icon)
-                    .font(.system(size: 8, weight: .semibold))
-            }
-            Text(title)
-                .font(.system(size: 9, weight: .semibold))
-                .lineLimit(1)
-        }
-        .foregroundColor(color.opacity(0.95))
-        .padding(.horizontal, 7)
-        .padding(.vertical, 3)
-        .background(Capsule().fill(color.opacity(0.18)))
     }
 }
 

@@ -10,6 +10,7 @@ struct HomeContentView: View {
     @EnvironmentObject var appCoordinator: AppCoordinator
     @StateObject private var historyManager = TranscriptionHistoryManager.shared
     @ObservedObject private var analyticsManager = AnalyticsManager.shared
+    @ObservedObject private var appState = AppState.shared
     @State private var showStatsDialog = false
     @State private var showReferralSheet = false
 
@@ -26,53 +27,26 @@ struct HomeContentView: View {
                         Text("Welcome back, \(NSFullUserName())")
                             .font(.largeTitle)
                             .fontWeight(.bold)
+
+                        Text("Your daily workspace, without the noisy recorder chrome.")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
                     }
 
                     Spacer()
 
-                    // Quick Stats - Clickable
                     Button(action: {
                         showStatsDialog = true
                     }) {
-                        HStack(spacing: 20) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "flame.fill")
-                                    .foregroundColor(.orange)
-                                Text("\(calculateDaysUsed()) days")
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                    .foregroundColor(.primary)
-                            }
-
-                            HStack(spacing: 6) {
-                                Image(systemName: "doc.text.fill")
-                                    .foregroundColor(.green)
-                                Text("\(stats.totalTranscriptions)")
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                    .foregroundColor(.primary)
-                            }
-
-                            HStack(spacing: 6) {
-                                Image(systemName: "text.word.spacing")
-                                    .foregroundColor(.blue)
-                                Text("\(formatNumber(stats.totalWords))")
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                    .foregroundColor(.primary)
-                            }
-
-                            HStack(spacing: 6) {
-                                Image(systemName: "gauge.high")
-                                    .foregroundColor(.purple)
-                                Text("\(calculateAverageWPM()) WPM")
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                    .foregroundColor(.primary)
-                            }
+                        HStack(spacing: 6) {
+                            Text("View stats")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                            Image(systemName: "chart.bar.xaxis")
+                                .font(.caption)
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
                         .background(Color.gray.opacity(0.1))
                         .cornerRadius(10)
                     }
@@ -81,9 +55,71 @@ struct HomeContentView: View {
                 }
                 .padding(.top, 32)
 
+                Button(action: {
+                    showStatsDialog = true
+                }) {
+                    VStack(alignment: .leading, spacing: 18) {
+                        HStack(alignment: .top, spacing: 16) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Label {
+                                    Text(streakHeadline)
+                                        .font(.title3)
+                                        .fontWeight(.bold)
+                                        .foregroundColor(.primary)
+                                } icon: {
+                                    Image(systemName: "flame.fill")
+                                        .foregroundColor(.orange)
+                                }
+
+                                Text(streakSubheadline)
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                            }
+
+                            Spacer()
+
+                            VStack(alignment: .trailing, spacing: 4) {
+                                Text("\(totalUsageDays)")
+                                    .font(.system(size: 28, weight: .bold))
+                                    .foregroundColor(.primary)
+                                Text(totalUsageDays == 1 ? "active day" : "active days")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+
+                        HStack(spacing: 12) {
+                            KPIChip(icon: "doc.text.fill", title: "Transcriptions", value: "\(stats.totalTranscriptions)", color: .green)
+                            KPIChip(icon: "text.word.spacing", title: "Words", value: formatNumber(stats.totalWords), color: .blue)
+                            KPIChip(icon: "bolt.fill", title: "Time saved", value: formatDetailedTime(calculateTimeSaved()), color: .purple)
+                            KPIChip(icon: "gauge.high", title: "Avg speed", value: "\(calculateAverageWPM()) WPM", color: .orange)
+                        }
+                    }
+                    .padding(24)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 18)
+                            .fill(
+                                LinearGradient(
+                                    gradient: Gradient(colors: [Color.orange.opacity(0.12), Color.blue.opacity(0.08)]),
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 18)
+                            .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+
                 // Referral Banner (Direct sale only - not allowed in App Store)
+                // Hidden for now — set FeatureFlags.showReferralBanner = true to re-enable
                 #if !APPSTORE
-                ReferralBanner(showReferralSheet: $showReferralSheet)
+                if FeatureFlags.showReferralBanner {
+                    ReferralBanner(showReferralSheet: $showReferralSheet)
+                }
                 #endif
 
                 // Collapsible Shortcut Instruction Banner
@@ -109,6 +145,7 @@ struct HomeContentView: View {
 
                     // Calculate dynamic speed factor
                     let speedFactor = speakingWPM / typingWPM
+                    let formattedSpeedFactor = String(format: "%.1fx", speedFactor)
 
                     let typingTimeMinutes = Double(stats.totalWords) / typingWPM
                     let recordingTimeMinutes = stats.totalRecordingTime / 60
@@ -136,11 +173,11 @@ struct HomeContentView: View {
                             }
 
                             VStack(alignment: .leading, spacing: 10) {
-                                Text("You're **\(String(format: "%.1fx", speedFactor))** faster with EchoTune!")
+                                Text("You're \(formattedSpeedFactor) faster with EchoTune!")
                                     .font(.system(size: 24, weight: .bold))
                                     .foregroundColor(.primary)
 
-                                Text("Speaking at **\(Int(speakingWPM)) WPM** vs typing at **\(Int(typingWPM)) WPM**")
+                                Text("Speaking at \(Int(speakingWPM)) WPM vs typing at \(Int(typingWPM)) WPM")
                                     .font(.subheadline)
                                     .foregroundColor(.secondary)
                             }
@@ -150,7 +187,7 @@ struct HomeContentView: View {
                         // Time Breakdown
                         HStack(spacing: 24) {
                             VStack(alignment: .leading, spacing: 6) {
-                                Text("\u{23F1}\u{FE0F} Time Saved")
+                                Text("⏱️ Time Saved")
                                     .font(.caption)
                                     .fontWeight(.medium)
                                     .foregroundColor(.secondary)
@@ -163,7 +200,7 @@ struct HomeContentView: View {
                                 .frame(height: 40)
 
                             VStack(alignment: .leading, spacing: 6) {
-                                Text("\u{2328}\u{FE0F} Typing Would Take")
+                                Text("⌨️ Typing Would Take")
                                     .font(.caption)
                                     .fontWeight(.medium)
                                     .foregroundColor(.secondary)
@@ -176,7 +213,7 @@ struct HomeContentView: View {
                                 .frame(height: 40)
 
                             VStack(alignment: .leading, spacing: 6) {
-                                Text("\u{1F3A4} Recording Time")
+                                Text("🎤 Recording Time")
                                     .font(.caption)
                                     .fontWeight(.medium)
                                     .foregroundColor(.secondary)
@@ -265,7 +302,9 @@ struct HomeContentView: View {
         }
         #if !APPSTORE
         .sheet(isPresented: $showReferralSheet) {
-            ReferralView()
+            if FeatureFlags.showReferralBanner {
+                ReferralView()
+            }
         }
         #endif
     }
@@ -317,6 +356,26 @@ struct HomeContentView: View {
         }
     }
 
+    private var totalUsageDays: Int {
+        analyticsManager.getTotalUsageDays()
+    }
+
+    private var streakHeadline: String {
+        let streak = appState.currentStreak
+        if streak > 0 {
+            return "\(streak)-day streak"
+        }
+        return "Start your next streak"
+    }
+
+    private var streakSubheadline: String {
+        let streak = appState.currentStreak
+        if streak > 0 {
+            return "You’ve used EchoTune on \(totalUsageDays) \(totalUsageDays == 1 ? "day" : "days") so far. Keep the momentum going."
+        }
+        return "Your detailed diagnostics stay in History. The recorder stays focused on the words."
+    }
+
     private func calculateTypingTime(words: Int) -> Double {
         // Average typing speed: 40 WPM
         let wordsPerMinute = 40.0
@@ -335,10 +394,37 @@ struct HomeContentView: View {
         return Int(Double(stats.totalWords) / minutes)
     }
 
-    private func calculateDaysUsed() -> Int {
-        let calendar = Calendar.current
-        let startDate = appCoordinator.appState.trialStartDate
-        let components = calendar.dateComponents([.day], from: startDate, to: Date())
-        return max(1, (components.day ?? 0) + 1) // At least 1 day
+    private func calculateTimeSaved() -> TimeInterval {
+        let typingTimeMinutes = calculateTypingTime(words: stats.totalWords)
+        let recordingTimeMinutes = stats.totalRecordingTime / 60
+        return max(0, (typingTimeMinutes - recordingTimeMinutes) * 60)
+    }
+}
+
+private struct KPIChip: View {
+    let icon: String
+    let title: String
+    let value: String
+    let color: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .foregroundColor(color)
+                Text(title)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Text(value)
+                .font(.headline)
+                .fontWeight(.semibold)
+                .foregroundColor(.primary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(Color.white.opacity(0.55))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
     }
 }
