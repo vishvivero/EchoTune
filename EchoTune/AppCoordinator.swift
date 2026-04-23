@@ -27,6 +27,43 @@ struct FinalizedTranscription {
     let detectedLanguage: String?
 }
 
+enum TranscriptionQualityFeedback: String, CaseIterable, Codable, Identifiable {
+    case better = "Better"
+    case same = "Same"
+    case worse = "Worse"
+
+    var id: String { rawValue }
+
+    var iconName: String {
+        switch self {
+        case .better: return "hand.thumbsup.fill"
+        case .same: return "equal.circle.fill"
+        case .worse: return "hand.thumbsdown.fill"
+        }
+    }
+}
+
+struct TranscriptionProcessingMetadata: Codable, Equatable {
+    var transcriptionProvider: String?
+    var transcriptionModel: String?
+    var enhancementProvider: String?
+    var enhancementModel: String?
+    var audioByteCount: Int?
+    var recordingDuration: TimeInterval?
+    var transcriptionLatency: TimeInterval?
+    var enhancementLatency: TimeInterval?
+    var textInsertionLatency: TimeInterval?
+    var totalLatency: TimeInterval?
+    var usedFallback: Bool = false
+    var fallbackReason: String?
+    var userEdited: Bool = false
+    var qualityFeedback: TranscriptionQualityFeedback?
+
+    var hasEnhancement: Bool {
+        enhancementProvider != nil || enhancementModel != nil
+    }
+}
+
 class AppCoordinator: ObservableObject {
     @Published var showAbout = false
     @Published var showLicenseSheet = false
@@ -71,6 +108,12 @@ class AppCoordinator: ObservableObject {
 
     // Audio retention: store last recorded audio data for saving alongside transcription
     var lastRecordedAudioData: Data?
+
+    // Pipeline audit state for the current transcription run
+    var currentProcessingMetadata = TranscriptionProcessingMetadata()
+    var recordingStartedAt: Date?
+    var transcriptionPhaseStartedAt: Date?
+    var enhancementPhaseStartedAt: Date?
 
     var cancellables = Set<AnyCancellable>()
 
@@ -200,12 +243,18 @@ class AppCoordinator: ObservableObject {
         if modelManager.isReady {
             preloadDefaultModel()
         } else {
-            NotificationCenter.default.addObserver(
+            // Register observer BEFORE checking again to avoid race condition
+            let observer = NotificationCenter.default.addObserver(
                 forName: NSNotification.Name("ModelManagerReady"),
                 object: nil,
                 queue: .main
             ) { [weak self] _ in
                 self?.preloadDefaultModel()
+            }
+            // Double-check: if isReady became true between the first check and observer registration
+            if modelManager.isReady {
+                NotificationCenter.default.removeObserver(observer)
+                preloadDefaultModel()
             }
         }
     }
@@ -229,11 +278,20 @@ class AppCoordinator: ObservableObject {
             return
         }
 
+        // Skip if already loaded (e.g., rapid re-init)
+        if whisperEngine.isAvailable && whisperEngine.loadedModelName == currentModel.name {
+            debugLog("ℹ️ Model \(currentModel.name) already loaded — skipping preload")
+            return
+        }
+
         debugLog("🚀 Pre-loading default model at launch: \(currentModel.name)")
+        debugLog("   Model: \(currentModel.name) (id: \(currentModel.id), category: \(currentModel.category))")
+
         whisperEngine.loadModel(currentModel) { result in
             switch result {
             case .success:
                 debugLog("✅ Model pre-loaded and ready: \(currentModel.name)")
+                debugLog("   whisperEngine.isAvailable=\(self.whisperEngine.isAvailable) loadedModelName=\(self.whisperEngine.loadedModelName ?? "nil")")
             case .failure(let error):
                 debugLog("⚠️ Model preload failed (will retry on first dictation): \(error)")
             }

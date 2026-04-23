@@ -124,6 +124,28 @@ struct WaveformView: View {
     }
 }
 
+struct HistoryMetadataBadge: View {
+    let title: String
+    let color: Color
+    var icon: String? = nil
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if let icon {
+                Image(systemName: icon)
+                    .font(.system(size: 9, weight: .semibold))
+            }
+            Text(title)
+                .font(.system(size: 10, weight: .semibold))
+                .lineLimit(1)
+        }
+        .foregroundColor(color)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Capsule().fill(color.opacity(0.12)))
+    }
+}
+
 // MARK: - History Row
 
 struct TranscriptionHistoryRow: View {
@@ -137,6 +159,7 @@ struct TranscriptionHistoryRow: View {
     let onUpdateText: (String) -> Void
 
     @ObservedObject private var audioPlayerManager = AudioPlayerManager.shared
+    @ObservedObject private var settings = AppSettings.shared
     @State private var isHovering = false
 
     private var hasAudioFile: Bool {
@@ -189,6 +212,25 @@ struct TranscriptionHistoryRow: View {
                         .font(.body)
                         .lineLimit(isExpanded ? nil : 2)
 
+                    if item.transcriptionProviderLabel != nil || item.hasEnhancement || item.usedFallback {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                if let provider = item.transcriptionProviderLabel {
+                                    HistoryMetadataBadge(title: provider, color: .blue, icon: "waveform.badge.mic")
+                                }
+                                if let model = item.transcriptionModelLabel {
+                                    HistoryMetadataBadge(title: model, color: .secondary, icon: "cpu")
+                                }
+                                if let enhancementProvider = item.enhancementProviderLabel {
+                                    HistoryMetadataBadge(title: "Enhanced • \(enhancementProvider)", color: .purple, icon: "sparkles")
+                                }
+                                if item.usedFallback {
+                                    HistoryMetadataBadge(title: "Fallback", color: .orange, icon: "arrow.uturn.backward.circle")
+                                }
+                            }
+                        }
+                    }
+
                     HStack(spacing: 12) {
                         Label(item.formattedDate, systemImage: "calendar")
                         Label("\(item.wordCount) words", systemImage: "textformat")
@@ -200,6 +242,12 @@ struct TranscriptionHistoryRow: View {
                     }
                     .font(.caption)
                     .foregroundColor(.secondary)
+
+                    if settings.showTranscriptionDiagnostics, let diagnosticsLine = item.diagnosticsLine {
+                        Text(diagnosticsLine)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
                 }
                 .contentShape(Rectangle())
                 .onTapGesture {

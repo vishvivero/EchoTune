@@ -34,10 +34,12 @@ extension AppCoordinator {
             // PHASE 6B: Detect and apply Power Mode (context-aware configuration)
             PowerModeManager.shared.detectAndApplyPowerMode()
 
-            // PHASE 6B: Capture screen context (if enabled)
+            // PHASE 6B: Capture screen context (if enabled) — not available in App Store sandbox
+            #if !APPSTORE
             DispatchQueue.main.async {
                 self.currentScreenContext = ScreenContextService.shared.captureCurrentContext()
             }
+            #endif
 
             // PHASE 3: Detect browser context for context-aware transcription
             if let context = BrowserContextDetector.shared.detectContext() {
@@ -75,8 +77,8 @@ extension AppCoordinator {
 
                 // Show notification to user
                 notificationManager.showNotification(
-                    title: "Loading Model",
-                    body: "Loading \(currentModel.name)... This may take a moment for larger models.",
+                    title: "Setting Up Model (One-Time)",
+                    body: "Compiling \(currentModel.name) for your Mac — this takes 1-3 minutes the first time only. Future use will be instant.",
                     sound: false
                 )
 
@@ -134,6 +136,8 @@ extension AppCoordinator {
 
     func beginCloudRecording(model: AIModel) {
         os_log("☁️ beginCloudRecording: %{public}@ (id=%{public}@)", log: appLog, type: .info, model.name, model.id)
+        startRecordingAudit(for: model)
+
         // Start performance monitoring
         PerformanceMonitor.shared.startRecording()
 
@@ -188,8 +192,13 @@ extension AppCoordinator {
         self.lastRecordedAudioData = audioData
 
         os_log("📊 Captured %d bytes for cloud transcription", log: appLog, type: .info, audioData.count)
+        currentProcessingMetadata.audioByteCount = audioData.count
 
         let recordingDuration = audioManager.lastRecordingDuration
+        PerformanceMonitor.shared.endRecording(
+            duration: recordingDuration,
+            bufferCount: 0
+        )
 
         // Restore system output
         if didMuteSystemOutput {
@@ -208,6 +217,8 @@ extension AppCoordinator {
                     sound: false
                 )
                 appState.recordingState = .idle
+                appState.recordingStatusDetail = nil
+                clearCurrentProcessingState()
                 if let appDelegate = NSApp.delegate as? AppDelegate,
                    let statusBar = appDelegate.statusBarController {
                     statusBar.updateIcon(for: .idle)
@@ -238,6 +249,7 @@ extension AppCoordinator {
                     }
 
                     os_log("☁️ Transcribing with Groq... audioSize=%d apiKeyLen=%d", log: appLog, type: .info, audioData.count, apiKey.count)
+                    beginTranscriptionAudit(provider: "Groq", model: "whisper-large-v3-turbo", detail: "Uploading audio to Groq...")
                     PerformanceMonitor.shared.startTranscription(engine: "Groq", model: "whisper-large-v3-turbo")
                     transcribedText = try await GroqTranscriptionService.shared.transcribe(
                         audioData: audioData,
@@ -257,6 +269,7 @@ extension AppCoordinator {
                     }
 
                     debugLog("☁️ Transcribing with Deepgram...")
+                    beginTranscriptionAudit(provider: "Deepgram", model: "nova-2", detail: "Uploading audio to Deepgram...")
                     PerformanceMonitor.shared.startTranscription(engine: "Deepgram", model: "nova-2")
                     transcribedText = try await DeepgramTranscriptionService.shared.transcribeToText(
                         audioData: audioData,
@@ -273,6 +286,7 @@ extension AppCoordinator {
                 }
 
                 await MainActor.run {
+                    self.completeTranscriptionAudit()
                     PerformanceMonitor.shared.endTranscription(wordCount: transcribedText.split(separator: " ").count)
 
                     debugLog("✅ Cloud transcription successful: \(transcribedText)")
@@ -316,6 +330,10 @@ extension AppCoordinator {
 
     func beginRecording() {
         os_log("🔴 beginRecording called, useWhisper=%d", log: appLog, type: .info, useWhisper ? 1 : 0)
+
+        if let currentModel = modelManager.currentModel {
+            startRecordingAudit(for: currentModel)
+        }
 
         // Start performance monitoring
         PerformanceMonitor.shared.startRecording()
@@ -438,6 +456,8 @@ extension AppCoordinator {
 
                 // Reset state
                 self.appState.recordingState = .idle
+                self.appState.recordingStatusDetail = nil
+                self.clearCurrentProcessingState()
 
                 // Update status bar
                 if let appDelegate = NSApp.delegate as? AppDelegate,
@@ -464,12 +484,14 @@ extension AppCoordinator {
         // End transcription based on which engine is being used
         if useWhisper {
             debugLog("🛑 Ending Whisper transcription")
+            beginTranscriptionAudit(detail: "Finalising local Whisper transcript...")
             whisperEngine.endStreamingTranscription { [weak self] result in
                 guard let self = self else { return }
                 self.handleWhisperResult(result)
             }
         } else {
             debugLog("🛑 Ending Apple Speech transcription")
+            beginTranscriptionAudit(provider: "Apple Speech", model: "Built-in", detail: "Transcribing with Apple Speech...")
             PerformanceMonitor.shared.startTranscription(
                 engine: "Apple Speech",
                 model: "Built-in"
@@ -493,7 +515,9 @@ extension AppCoordinator {
             if case .processing = self.appState.recordingState {
                 debugLog("⚠️ Safety timeout: state still .processing after \(safetyTimeout)s — forcing reset to .idle")
                 self.appState.recordingState = .idle
+                self.appState.recordingStatusDetail = nil
                 self.transcriptionEngine.cancelTranscription()
+                self.clearCurrentProcessingState()
                 if let appDelegate = NSApp.delegate as? AppDelegate,
                    let statusBar = appDelegate.statusBarController {
                     statusBar.updateIcon(for: .idle)
@@ -525,6 +549,30 @@ extension AppCoordinator {
                 body: "\(modelName) is still loading...",
                 sound: false
             )
+        } else if case .processing = appState.recordingState {
+            // User pressed toggle while transcription is still processing.
+            // Force-reset to idle so the next press can start fresh.
+            debugLog("⚠️ Toggle pressed during .processing — force-resetting to .idle")
+            appState.recordingState = .idle
+            appState.recordingStatusDetail = nil
+            audioManager.onAudioBuffer = nil
+            clearCurrentProcessingState()
+            transcriptionEngine.cancelTranscription()
+            hideRecorderUI()
+            if let appDelegate = NSApp.delegate as? AppDelegate,
+               let statusBar = appDelegate.statusBarController {
+                statusBar.updateIcon(for: .idle)
+            }
+        } else if case .error(_) = appState.recordingState {
+            // User pressed toggle while in error state — reset to idle
+            debugLog("⚠️ Toggle pressed during .error — resetting to .idle")
+            appState.recordingState = .idle
+            appState.recordingStatusDetail = nil
+            clearCurrentProcessingState()
+            if let appDelegate = NSApp.delegate as? AppDelegate,
+               let statusBar = appDelegate.statusBarController {
+                statusBar.updateIcon(for: .idle)
+            }
         }
     }
 

@@ -16,6 +16,122 @@ extension AppCoordinator {
     // Guard against duplicate transcription callbacks
     private static var lastTranscriptionId: UUID?
 
+    func resetCurrentProcessingState(for model: AIModel? = nil) {
+        currentProcessingMetadata = TranscriptionProcessingMetadata()
+        recordingStartedAt = nil
+        transcriptionPhaseStartedAt = nil
+        enhancementPhaseStartedAt = nil
+        appState.recordingStatusDetail = nil
+
+        guard let model else { return }
+        currentProcessingMetadata.transcriptionProvider = transcriptionProviderName(for: model)
+        currentProcessingMetadata.transcriptionModel = transcriptionModelName(for: model)
+    }
+
+    func startRecordingAudit(for model: AIModel) {
+        resetCurrentProcessingState(for: model)
+        recordingStartedAt = Date()
+        appState.recordingStatusDetail = recordingDetailText(for: model)
+    }
+
+    func beginTranscriptionAudit(provider: String? = nil, model: String? = nil, detail: String) {
+        transcriptionPhaseStartedAt = Date()
+        if let provider { currentProcessingMetadata.transcriptionProvider = provider }
+        if let model { currentProcessingMetadata.transcriptionModel = model }
+        appState.recordingStatusDetail = detail
+    }
+
+    func completeTranscriptionAudit() {
+        if let startedAt = transcriptionPhaseStartedAt {
+            currentProcessingMetadata.transcriptionLatency = Date().timeIntervalSince(startedAt)
+        }
+        if let recordingStartedAt {
+            currentProcessingMetadata.totalLatency = Date().timeIntervalSince(recordingStartedAt)
+        }
+    }
+
+    func beginEnhancementAudit(using model: AIEnhancementEngine.EnhancementModel) {
+        enhancementPhaseStartedAt = Date()
+        currentProcessingMetadata.enhancementProvider = model.provider.displayName
+        currentProcessingMetadata.enhancementModel = model.shortName
+        appState.recordingStatusDetail = "Enhancing with \(model.provider.displayName)..."
+        PerformanceMonitor.shared.startEnhancement(engine: model.provider.displayName, model: model.shortName)
+    }
+
+    func completeEnhancementAudit() {
+        if let startedAt = enhancementPhaseStartedAt {
+            currentProcessingMetadata.enhancementLatency = Date().timeIntervalSince(startedAt)
+        }
+        if let recordingStartedAt {
+            currentProcessingMetadata.totalLatency = Date().timeIntervalSince(recordingStartedAt)
+        }
+        PerformanceMonitor.shared.endEnhancement(
+            fallbackUsed: currentProcessingMetadata.usedFallback,
+            reason: currentProcessingMetadata.fallbackReason
+        )
+    }
+
+    func markEnhancementFallback(reason: String) {
+        currentProcessingMetadata.usedFallback = true
+        currentProcessingMetadata.fallbackReason = reason
+    }
+
+    func finalisedProcessingMetadata(recordingDuration: TimeInterval, audioByteCount: Int?) -> TranscriptionProcessingMetadata {
+        var metadata = currentProcessingMetadata
+        metadata.recordingDuration = recordingDuration
+        if metadata.audioByteCount == nil {
+            metadata.audioByteCount = audioByteCount
+        }
+        if metadata.totalLatency == nil, let recordingStartedAt {
+            metadata.totalLatency = Date().timeIntervalSince(recordingStartedAt)
+        }
+        return metadata
+    }
+
+    func clearCurrentProcessingState() {
+        resetCurrentProcessingState()
+    }
+
+    private func transcriptionProviderName(for model: AIModel) -> String {
+        if model.category == .cloud {
+            if model.id.contains("groq") {
+                return "Groq"
+            } else if model.id.contains("deepgram") {
+                return "Deepgram"
+            }
+            return "Cloud"
+        }
+
+        if model.category == .local && !model.isBuiltIn {
+            return "Local Whisper"
+        }
+
+        return "Apple Speech"
+    }
+
+    private func transcriptionModelName(for model: AIModel) -> String {
+        if model.id == "groq-whisper-large-v3-turbo" {
+            return "whisper-large-v3-turbo"
+        }
+        if model.id.contains("deepgram") {
+            return "nova-2"
+        }
+        return model.name
+    }
+
+    private func recordingDetailText(for model: AIModel) -> String {
+        switch transcriptionProviderName(for: model) {
+        case "Groq":
+            return "Recording for Groq Whisper..."
+        case "Deepgram":
+            return "Recording for Deepgram..."
+        case "Local Whisper":
+            return "Recording locally with \(model.name)..."
+        default:
+            return "Recording with Apple Speech..."
+        }
+    }
+
     // MARK: - Whisper Result
 
     func handleWhisperResult(_ result: Result<WhisperTranscriptionResult, WhisperEngine.WhisperError>) {
@@ -32,6 +148,8 @@ extension AppCoordinator {
 
         switch result {
         case .success(let payload):
+            completeTranscriptionAudit()
+            PerformanceMonitor.shared.endTranscription(wordCount: payload.outputText.split(separator: " ").count)
             os_log("✅ Whisper success: '%{public}@' words=%d dur=%.1f", log: appLog, type: .info, payload.outputText, payload.outputText.split(separator: " ").count, recordingDuration)
 
             self.errorLogger.logInfo("Whisper transcription successful", category: "Transcription", context: [
@@ -74,6 +192,8 @@ extension AppCoordinator {
 
         switch result {
         case .success(let transcribedText):
+            completeTranscriptionAudit()
+            PerformanceMonitor.shared.endTranscription(wordCount: transcribedText.split(separator: " ").count)
             debugLog("✅ Apple Speech transcription successful: \(transcribedText)")
 
             self.errorLogger.logInfo("Apple Speech transcription successful", category: "Transcription", context: [
@@ -129,6 +249,7 @@ extension AppCoordinator {
 
             // Reset state
             self.appState.recordingState = .idle
+            self.appState.recordingStatusDetail = nil
 
             // Update status bar
             if let appDelegate = NSApp.delegate as? AppDelegate,
@@ -136,6 +257,7 @@ extension AppCoordinator {
                 statusBar.updateIcon(for: .idle)
             }
 
+            clearCurrentProcessingState()
             return
         }
 
@@ -146,6 +268,8 @@ extension AppCoordinator {
             userInfo: ["text": transcribedText]
         )
 
+        appState.recordingStatusDetail = "Cleaning transcript..."
+
         // Apply text processing
         let processedText = self.processTranscription(transcribedText)
 
@@ -154,6 +278,7 @@ extension AppCoordinator {
         let textForEnhancement = triggerResult.cleanedTranscript
         let shouldEnhance = settings.aiEnhancementEnabled || triggerResult.shouldForceAI
         let overridePrompt = triggerResult.overridePrompt
+        let rawTranscriptionText = textForEnhancement
 
         if let matched = triggerResult.matchedRule {
             debugLog("🎯 Trigger word matched: \"\(matched.triggerPhrase)\" → using custom prompt")
@@ -167,7 +292,15 @@ extension AppCoordinator {
             let modelString = settings.selectedEnhancementModel
             guard let model = AIEnhancementEngine.EnhancementModel(rawValue: modelString) else {
                 debugLog("⚠️ Invalid enhancement model: \(modelString)")
-                insertTextWithAutoSend(textForEnhancement, recordingDuration: recordingDuration)
+                markEnhancementFallback(reason: "Invalid enhancement model")
+                insertTextWithAutoSend(
+                    textForEnhancement,
+                    recordingDuration: recordingDuration,
+                    originalText: transcription.originalText,
+                    translatedText: transcription.translatedText,
+                    detectedLanguage: transcription.detectedLanguage,
+                    rawTranscriptionText: rawTranscriptionText
+                )
                 return
             }
 
@@ -175,12 +308,20 @@ extension AppCoordinator {
 
             guard !apiKey.isEmpty else {
                 debugLog("⚠️ No API key configured for AI enhancement")
+                markEnhancementFallback(reason: "Missing \(model.provider.displayName) API key")
                 notificationManager.showNotification(
                     title: "AI Enhancement Disabled",
                     body: "Please add your API key in Settings > Advanced > AI Enhancement",
                     sound: false
                 )
-                insertTextWithAutoSend(textForEnhancement, recordingDuration: recordingDuration)
+                insertTextWithAutoSend(
+                    textForEnhancement,
+                    recordingDuration: recordingDuration,
+                    originalText: transcription.originalText,
+                    translatedText: transcription.translatedText,
+                    detectedLanguage: transcription.detectedLanguage,
+                    rawTranscriptionText: rawTranscriptionText
+                )
                 return
             }
 
@@ -189,6 +330,8 @@ extension AppCoordinator {
 
             // Determine which prompt to use: trigger word prompt overrides custom/default
             let promptToUse = overridePrompt ?? (settings.customEnhancementPrompt.isEmpty ? nil : settings.customEnhancementPrompt)
+
+            beginEnhancementAudit(using: model)
 
             // Enhance asynchronously
             Task {
@@ -204,17 +347,34 @@ extension AppCoordinator {
 
                     await MainActor.run {
                         debugLog("✅ AI Enhancement successful")
-                        self.insertTextWithAutoSend(enhanced, recordingDuration: recordingDuration)
+                        self.completeEnhancementAudit()
+                        self.insertTextWithAutoSend(
+                            enhanced,
+                            recordingDuration: recordingDuration,
+                            originalText: transcription.originalText,
+                            translatedText: transcription.translatedText,
+                            detectedLanguage: transcription.detectedLanguage,
+                            rawTranscriptionText: rawTranscriptionText
+                        )
                     }
                 } catch {
                     await MainActor.run {
                         debugLog("❌ AI Enhancement failed: \(error.localizedDescription)")
+                        self.markEnhancementFallback(reason: error.localizedDescription)
+                        self.completeEnhancementAudit()
                         self.notificationManager.showNotification(
                             title: "Enhancement Failed",
                             body: "Using original transcription. Error: \(error.localizedDescription)",
                             sound: false
                         )
-                        self.insertTextWithAutoSend(textForEnhancement, recordingDuration: recordingDuration)
+                        self.insertTextWithAutoSend(
+                            textForEnhancement,
+                            recordingDuration: recordingDuration,
+                            originalText: transcription.originalText,
+                            translatedText: transcription.translatedText,
+                            detectedLanguage: transcription.detectedLanguage,
+                            rawTranscriptionText: rawTranscriptionText
+                        )
                     }
                 }
             }
@@ -222,19 +382,51 @@ extension AppCoordinator {
         }
 
         // No AI enhancement, insert directly
-        insertTextWithAutoSend(textForEnhancement, recordingDuration: recordingDuration)
+        insertTextWithAutoSend(
+            textForEnhancement,
+            recordingDuration: recordingDuration,
+            originalText: transcription.originalText,
+            translatedText: transcription.translatedText,
+            detectedLanguage: transcription.detectedLanguage,
+            rawTranscriptionText: rawTranscriptionText
+        )
     }
 
     // Phase 6A: Insert text with optional auto-send
-    func insertTextWithAutoSend(_ processedText: String, recordingDuration: TimeInterval) {
+    func insertTextWithAutoSend(
+        _ processedText: String,
+        recordingDuration: TimeInterval,
+        originalText: String? = nil,
+        translatedText: String? = nil,
+        detectedLanguage: String? = nil,
+        rawTranscriptionText: String? = nil
+    ) {
+        appState.recordingStatusDetail = "Finalising text..."
+
+        let wordCount = processedText.split(separator: " ").count
+        let audioByteCount = self.lastRecordedAudioData?.count
+        let processingMetadata = finalisedProcessingMetadata(
+            recordingDuration: recordingDuration,
+            audioByteCount: audioByteCount
+        )
+
         // Post final transcription for mini recorder
         NotificationCenter.default.post(
             name: NSNotification.Name("TranscriptionComplete"),
             object: nil,
-            userInfo: ["text": processedText]
+            userInfo: [
+                "text": processedText,
+                "transcriptionProvider": processingMetadata.transcriptionProvider ?? "",
+                "transcriptionModel": processingMetadata.transcriptionModel ?? "",
+                "enhancementProvider": processingMetadata.enhancementProvider ?? "",
+                "enhancementModel": processingMetadata.enhancementModel ?? "",
+                "transcriptionLatency": processingMetadata.transcriptionLatency ?? 0,
+                "enhancementLatency": processingMetadata.enhancementLatency ?? 0,
+                "totalLatency": processingMetadata.totalLatency ?? 0,
+                "usedFallback": processingMetadata.usedFallback,
+                "fallbackReason": processingMetadata.fallbackReason ?? ""
+            ]
         )
-
-        let wordCount = processedText.split(separator: " ").count
 
         // Save audio file for retention
         var savedAudioPath: String? = nil
@@ -245,20 +437,35 @@ extension AppCoordinator {
         }
 
         // Add to history (with audio file path if saved)
-        TranscriptionHistoryManager.shared.addTranscription(
+        let historyItem = TranscriptionHistoryManager.shared.addTranscription(
             processedText,
             duration: recordingDuration,
             audioFilePath: savedAudioPath,
-            originalText: nil,
-            translatedText: nil,
-            detectedLanguage: nil
+            originalText: originalText,
+            translatedText: translatedText,
+            detectedLanguage: detectedLanguage,
+            rawTranscriptionText: rawTranscriptionText,
+            processingMetadata: processingMetadata
         )
 
         // Insert text directly with performance monitoring
+        let insertionStartedAt = Date()
         PerformanceMonitor.shared.startTextInsertion()
 
         self.textInsertionManager.insertText(processedText) { result in
             PerformanceMonitor.shared.endTextInsertion()
+
+            let insertionLatency = Date().timeIntervalSince(insertionStartedAt)
+            TranscriptionHistoryManager.shared.updateProcessingMetadata(for: historyItem.id) { metadata in
+                metadata.textInsertionLatency = insertionLatency
+                if let recordingStartedAt = self.recordingStartedAt {
+                    metadata.totalLatency = Date().timeIntervalSince(recordingStartedAt)
+                } else if let existingTotal = metadata.totalLatency {
+                    metadata.totalLatency = existingTotal + insertionLatency
+                } else {
+                    metadata.totalLatency = insertionLatency
+                }
+            }
 
             switch result {
             case .success:
@@ -277,13 +484,14 @@ extension AppCoordinator {
 
             // Complete performance monitoring session
             PerformanceMonitor.shared.completeSession()
+            self.clearCurrentProcessingState()
         }
 
         // Record analytics
         self.analyticsManager.recordTranscription(
             duration: recordingDuration,
             wordCount: wordCount,
-            transcriptionTime: recordingDuration
+            transcriptionTime: processingMetadata.totalLatency ?? recordingDuration
         )
 
         // Record statistics
@@ -291,6 +499,7 @@ extension AppCoordinator {
 
         // Reset state
         self.appState.recordingState = .idle
+        self.appState.recordingStatusDetail = nil
 
         // Update status bar
         if let appDelegate = NSApp.delegate as? AppDelegate,
@@ -313,6 +522,8 @@ extension AppCoordinator {
         self.analyticsManager.recordError(type: "Transcription", context: errorMessage)
 
         self.appState.recordingState = .error(errorMessage)
+        self.appState.recordingStatusDetail = nil
+        clearCurrentProcessingState()
 
         // Reset state after delay
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {

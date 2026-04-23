@@ -20,8 +20,12 @@ struct TranscriptionDetailView: View {
     let onUpdateText: (String) -> Void
 
     @ObservedObject private var audioPlayerManager = AudioPlayerManager.shared
+    @ObservedObject private var settings = AppSettings.shared
     @State private var editableText: String
     @State private var isEditing = false
+    @State private var selectedFeedback: TranscriptionQualityFeedback?
+
+    private let historyManager = TranscriptionHistoryManager.shared
 
     init(item: TranscriptionHistoryItem, isRetranscribing: Bool, onDelete: @escaping () -> Void, onRetranscribe: @escaping () -> Void, onDeleteAudio: @escaping () -> Void, onUpdateText: @escaping (String) -> Void) {
         self.item = item
@@ -31,6 +35,7 @@ struct TranscriptionDetailView: View {
         self.onDeleteAudio = onDeleteAudio
         self.onUpdateText = onUpdateText
         self._editableText = State(initialValue: item.text)
+        self._selectedFeedback = State(initialValue: item.processingMetadata?.qualityFeedback)
     }
 
     private var hasAudioFile: Bool {
@@ -95,7 +100,7 @@ struct TranscriptionDetailView: View {
             // Transcription text
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("Transcription")
+                    Text(item.rawTranscriptionText != nil && item.rawTranscriptionText != item.text ? "Inserted / Enhanced Text" : "Transcription")
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .textCase(.uppercase)
@@ -142,9 +147,29 @@ struct TranscriptionDetailView: View {
                 }
             }
 
-            if let originalText = item.originalText, originalText != item.text {
+            if let rawTranscriptionText = item.rawTranscriptionText,
+               rawTranscriptionText != item.text {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Original")
+                    Text("Raw Transcript")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .textCase(.uppercase)
+
+                    ScrollView {
+                        Text(rawTranscriptionText)
+                            .font(.body)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(minHeight: 40, maxHeight: 120)
+                }
+            }
+
+            if let originalText = item.originalText,
+               originalText != item.text,
+               originalText != item.rawTranscriptionText {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(item.translatedText != nil ? "Original Spoken Text" : "Original")
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .textCase(.uppercase)
@@ -157,6 +182,86 @@ struct TranscriptionDetailView: View {
                     }
                     .frame(minHeight: 40, maxHeight: 120)
                 }
+            }
+
+            if settings.showTranscriptionDiagnostics, let metadata = item.processingMetadata {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Diagnostics")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .textCase(.uppercase)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        if let provider = metadata.transcriptionProvider {
+                            MetadataGridRow(label: "Transcribed with", value: provider)
+                        }
+                        if let model = metadata.transcriptionModel {
+                            MetadataGridRow(label: "Model", value: model)
+                        }
+                        if let enhancementProvider = metadata.enhancementProvider {
+                            MetadataGridRow(label: "Enhanced with", value: enhancementProvider)
+                        }
+                        if let enhancementModel = metadata.enhancementModel {
+                            MetadataGridRow(label: "Enhancement model", value: enhancementModel)
+                        }
+                        if let recordingDuration = metadata.recordingDuration {
+                            MetadataGridRow(label: "Recording duration", value: String(format: "%.2fs", recordingDuration))
+                        }
+                        if let transcriptionLatency = metadata.transcriptionLatency {
+                            MetadataGridRow(label: "Transcription latency", value: String(format: "%.2fs", transcriptionLatency))
+                        }
+                        if let enhancementLatency = metadata.enhancementLatency {
+                            MetadataGridRow(label: "Enhancement latency", value: String(format: "%.2fs", enhancementLatency))
+                        }
+                        if let textInsertionLatency = metadata.textInsertionLatency {
+                            MetadataGridRow(label: "Insertion latency", value: String(format: "%.2fs", textInsertionLatency))
+                        }
+                        if let totalLatency = metadata.totalLatency {
+                            MetadataGridRow(label: "Total latency", value: String(format: "%.2fs", totalLatency))
+                        }
+                        if let audioByteCount = metadata.audioByteCount {
+                            MetadataGridRow(label: "Audio size", value: ByteCountFormatter.string(fromByteCount: Int64(audioByteCount), countStyle: .file))
+                        }
+                        MetadataGridRow(label: "Fallback used", value: metadata.usedFallback ? (metadata.fallbackReason.map { "Yes — \($0)" } ?? "Yes") : "No")
+                        MetadataGridRow(label: "Edited after insert", value: metadata.userEdited ? "Yes" : "No")
+                    }
+                    .padding(12)
+                    .background(Color(NSColor.controlBackgroundColor).opacity(0.45))
+                    .cornerRadius(10)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Quality Feedback")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .textCase(.uppercase)
+
+                HStack(spacing: 8) {
+                    ForEach(TranscriptionQualityFeedback.allCases) { feedback in
+                        Button {
+                            let newValue: TranscriptionQualityFeedback? = selectedFeedback == feedback ? nil : feedback
+                            selectedFeedback = newValue
+                            historyManager.updateQualityFeedback(for: item, feedback: newValue)
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: feedback.iconName)
+                                    .font(.caption)
+                                Text(feedback.rawValue)
+                                    .font(.caption)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Capsule().fill(selectedFeedback == feedback ? Color.accentColor.opacity(0.16) : Color.secondary.opacity(0.12)))
+                            .foregroundColor(selectedFeedback == feedback ? .accentColor : .secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                Text("Useful when comparing Groq-only output against Groq + enhancement over time.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
             }
 
             // Metadata
@@ -252,6 +357,9 @@ struct TranscriptionDetailView: View {
                 editableText = newValue
             }
         }
+        .onChange(of: item.processingMetadata?.qualityFeedback) { newValue in
+            selectedFeedback = newValue
+        }
     }
 
     private func copyToClipboard() {
@@ -278,5 +386,26 @@ struct TranscriptionDetailView: View {
 
     private func languageName(for code: String) -> String {
         LanguageManager.shared.language(for: code)?.name ?? code.uppercased()
+    }
+}
+
+private struct MetadataGridRow: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text(label)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .frame(width: 120, alignment: .leading)
+
+            Text(value)
+                .font(.caption)
+                .foregroundColor(.primary)
+                .textSelection(.enabled)
+
+            Spacer(minLength: 0)
+        }
     }
 }

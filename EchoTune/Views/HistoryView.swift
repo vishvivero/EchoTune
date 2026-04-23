@@ -19,62 +19,66 @@ struct HistoryView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header
-            VStack(alignment: .leading, spacing: 12) {
+            // Header + Search
+            VStack(spacing: 12) {
                 HStack {
-                    Text("History")
-                        .font(.largeTitle)
-                        .fontWeight(.bold)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("History")
+                            .font(.title2)
+                            .fontWeight(.bold)
+
+                        HStack(spacing: 8) {
+                            Text("\(historyManager.transcriptions.count) transcriptions")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+
+                            let totalAudioSize = historyManager.totalAudioStorageSize()
+                            if totalAudioSize > 0 {
+                                Text("· \(AudioCleanupManager.shared.formatFileSize(totalAudioSize))")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
 
                     Spacer()
 
                     if !historyManager.transcriptions.isEmpty {
-                        Button("Clear All") {
-                            clearAllHistory()
+                        Button(role: .destructive, action: { clearAllHistory() }) {
+                            Text("Clear All")
+                                .font(.caption)
                         }
-                        .foregroundColor(.red)
                     }
                 }
 
-                HStack(spacing: 16) {
-                    Text("\(historyManager.transcriptions.count) transcriptions")
-                        .font(.subheadline)
+                // Search bar
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
                         .foregroundColor(.secondary)
+                        .font(.caption)
+                    TextField("Search transcriptions…", text: $searchText)
+                        .textFieldStyle(.plain)
+                        .font(.subheadline)
 
-                    let totalAudioSize = historyManager.totalAudioStorageSize()
-                    if totalAudioSize > 0 {
-                        Text("Audio: \(AudioCleanupManager.shared.formatFileSize(totalAudioSize))")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
+                    if !searchText.isEmpty {
+                        Button(action: { searchText = "" }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
+                .padding(8)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color(NSColor.textBackgroundColor))
+                )
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(24)
-            .background(Color(NSColor.controlBackgroundColor))
+            .padding(.horizontal, 20)
+            .padding(.vertical, 14)
 
             Divider()
-
-            // Search bar
-            HStack {
-                Image(systemName: "magnifyingglass")
-                    .foregroundColor(.secondary)
-                TextField("Search transcriptions...", text: $searchText)
-                    .textFieldStyle(.plain)
-
-                if !searchText.isEmpty {
-                    Button(action: { searchText = "" }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(12)
-            .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
-            .cornerRadius(8)
-            .padding(.horizontal, 24)
-            .padding(.vertical, 12)
 
             // Transcription List
             if filteredTranscriptions.isEmpty {
@@ -173,11 +177,16 @@ struct HistoryView: View {
 
         retranscribingItemId = item.id
 
-        AppCoordinator.shared.retranscribe(historyItem: item) { newText in
+        AppCoordinator.shared.retranscribe(historyItem: item) { result in
             DispatchQueue.main.async {
                 retranscribingItemId = nil
-                if let newText = newText {
-                    historyManager.updateTranscriptionText(for: item, newText: newText)
+                if let result = result {
+                    historyManager.updateTranscriptionDetails(
+                        for: item,
+                        newText: result.text,
+                        rawTranscriptionText: result.rawTranscriptionText,
+                        processingMetadata: result.processingMetadata
+                    )
                 }
             }
         }

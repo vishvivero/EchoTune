@@ -11,6 +11,7 @@ struct CompactTranscriptionRow: View {
     let item: TranscriptionHistoryItem
     let onDelete: (() -> Void)?
     var onTap: (() -> Void)? = nil
+    @ObservedObject private var settings = AppSettings.shared
     @State private var isHovering = false
 
     var body: some View {
@@ -23,6 +24,25 @@ struct CompactTranscriptionRow: View {
                         .foregroundColor(.primary)
                         .lineLimit(isHovering ? nil : 3)
                         .animation(.easeInOut, value: isHovering)
+
+                    if item.transcriptionProviderLabel != nil || item.hasEnhancement || item.usedFallback {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                if let provider = item.transcriptionProviderLabel {
+                                    HistoryMetadataBadge(title: provider, color: .blue, icon: "waveform.badge.mic")
+                                }
+                                if let model = item.transcriptionModelLabel {
+                                    HistoryMetadataBadge(title: model, color: .secondary, icon: "cpu")
+                                }
+                                if let enhancementProvider = item.enhancementProviderLabel {
+                                    HistoryMetadataBadge(title: "Enhanced • \(enhancementProvider)", color: .purple, icon: "sparkles")
+                                }
+                                if item.usedFallback {
+                                    HistoryMetadataBadge(title: "Fallback", color: .orange, icon: "arrow.uturn.backward.circle")
+                                }
+                            }
+                        }
+                    }
 
                     // Time and word count
                     HStack(spacing: 12) {
@@ -52,6 +72,12 @@ struct CompactTranscriptionRow: View {
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
+                    }
+
+                    if settings.showTranscriptionDiagnostics, let diagnosticsLine = item.diagnosticsLine {
+                        Text(diagnosticsLine)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
                     }
                 }
 

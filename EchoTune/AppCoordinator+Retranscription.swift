@@ -7,12 +7,18 @@
 
 import Foundation
 
+struct RetranscriptionResult {
+    let text: String
+    let rawTranscriptionText: String
+    let processingMetadata: TranscriptionProcessingMetadata
+}
+
 // MARK: - Re-Transcription
 
 extension AppCoordinator {
 
     /// Re-transcribe a saved audio file with the currently selected model
-    func retranscribe(historyItem: TranscriptionHistoryItem, completion: @escaping (String?) -> Void) {
+    func retranscribe(historyItem: TranscriptionHistoryItem, completion: @escaping (RetranscriptionResult?) -> Void) {
         guard let audioPath = historyItem.audioFilePath,
               FileManager.default.fileExists(atPath: audioPath) else {
             debugLog("❌ Audio file not found for re-transcription")
@@ -40,11 +46,27 @@ extension AppCoordinator {
             return
         }
 
+        let startTime = Date()
+
+        func buildMetadata(provider: String, model: String) -> TranscriptionProcessingMetadata {
+            var metadata = TranscriptionProcessingMetadata()
+            metadata.transcriptionProvider = provider
+            metadata.transcriptionModel = model
+            metadata.audioByteCount = audioData.count
+            metadata.recordingDuration = historyItem.duration
+            let latency = Date().timeIntervalSince(startTime)
+            metadata.transcriptionLatency = latency
+            metadata.totalLatency = latency
+            metadata.qualityFeedback = historyItem.processingMetadata?.qualityFeedback
+            return metadata
+        }
+
         // Route to appropriate transcription service
         if currentModel.category == .cloud {
             Task {
                 do {
                     let transcribedText: String
+                    let metadata: TranscriptionProcessingMetadata
 
                     if currentModel.id.contains("groq") || currentModel.name.lowercased().contains("groq") {
                         let apiKey = settings.groqAPIKey
@@ -57,6 +79,7 @@ extension AppCoordinator {
                             language: AppSettings.shared.autoDetectLanguage ? nil : settings.preferredLanguage.components(separatedBy: "-").first,
                             apiKey: apiKey
                         )
+                        metadata = buildMetadata(provider: "Groq", model: "whisper-large-v3-turbo")
                     } else if currentModel.id.contains("deepgram") || currentModel.name.lowercased().contains("deepgram") {
                         let apiKey = settings.deepgramAPIKey
                         guard !apiKey.isEmpty else {
@@ -69,6 +92,7 @@ extension AppCoordinator {
                             language: AppSettings.shared.autoDetectLanguage ? nil : settings.preferredLanguage.components(separatedBy: "-").first,
                             apiKey: apiKey
                         )
+                        metadata = buildMetadata(provider: "Deepgram", model: "nova-2")
                     } else {
                         await MainActor.run { completion(nil) }
                         return
@@ -81,7 +105,13 @@ extension AppCoordinator {
                             body: "Transcription updated with \(currentModel.name).",
                             sound: false
                         )
-                        completion(transcribedText)
+                        completion(
+                            RetranscriptionResult(
+                                text: transcribedText,
+                                rawTranscriptionText: transcribedText,
+                                processingMetadata: metadata
+                            )
+                        )
                     }
                 } catch {
                     await MainActor.run {
@@ -98,6 +128,33 @@ extension AppCoordinator {
         } else {
             // For local Whisper models, load and transcribe
             if currentModel.category == .local && !currentModel.isBuiltIn {
+                let finishLocal: (WhisperTranscriptionResult) -> Void = { payload in
+                    let metadata = buildMetadata(provider: "Local Whisper", model: currentModel.name)
+                    debugLog("✅ Re-transcription (Whisper) successful")
+                    self.notificationManager.showNotification(
+                        title: "Re-Transcription Complete",
+                        body: "Transcription updated with \(currentModel.name).",
+                        sound: false
+                    )
+                    completion(
+                        RetranscriptionResult(
+                            text: payload.outputText,
+                            rawTranscriptionText: payload.outputText,
+                            processingMetadata: metadata
+                        )
+                    )
+                }
+
+                let failLocal: (Error) -> Void = { error in
+                    debugLog("❌ Re-transcription failed: \(error)")
+                    self.notificationManager.showNotification(
+                        title: "Re-Transcription Failed",
+                        body: error.localizedDescription,
+                        sound: false
+                    )
+                    completion(nil)
+                }
+
                 // Load model if needed
                 if !whisperEngine.isAvailable || whisperEngine.loadedModelName != currentModel.name {
                     whisperEngine.loadModel(currentModel) { [weak self] result in
@@ -107,21 +164,9 @@ extension AppCoordinator {
                             self.whisperEngine.transcribeAudio(audioData) { result in
                                 switch result {
                                 case .success(let payload):
-                                    debugLog("✅ Re-transcription (Whisper) successful")
-                                    self.notificationManager.showNotification(
-                                        title: "Re-Transcription Complete",
-                                        body: "Transcription updated with \(currentModel.name).",
-                                        sound: false
-                                    )
-                                    completion(payload.outputText)
+                                    finishLocal(payload)
                                 case .failure(let error):
-                                    debugLog("❌ Re-transcription failed: \(error)")
-                                    self.notificationManager.showNotification(
-                                        title: "Re-Transcription Failed",
-                                        body: error.localizedDescription,
-                                        sound: false
-                                    )
-                                    completion(nil)
+                                    failLocal(error)
                                 }
                             }
                         case .failure(let error):
@@ -136,23 +181,12 @@ extension AppCoordinator {
                     }
                 } else {
                     whisperEngine.transcribeAudio(audioData) { [weak self] result in
+                        guard let self = self else { return }
                         switch result {
                         case .success(let payload):
-                            debugLog("✅ Re-transcription (Whisper) successful")
-                            self?.notificationManager.showNotification(
-                                title: "Re-Transcription Complete",
-                                body: "Transcription updated with \(currentModel.name).",
-                                sound: false
-                            )
-                            completion(payload.outputText)
+                            finishLocal(payload)
                         case .failure(let error):
-                            debugLog("❌ Re-transcription failed: \(error)")
-                            self?.notificationManager.showNotification(
-                                title: "Re-Transcription Failed",
-                                body: error.localizedDescription,
-                                sound: false
-                            )
-                            completion(nil)
+                            failLocal(error)
                         }
                     }
                 }
@@ -161,13 +195,20 @@ extension AppCoordinator {
                 transcriptionEngine.transcribeAudio(audioData) { [weak self] result in
                     switch result {
                     case .success(let text):
+                        let metadata = buildMetadata(provider: "Apple Speech", model: "Built-in")
                         debugLog("✅ Re-transcription (Apple Speech) successful")
                         self?.notificationManager.showNotification(
                             title: "Re-Transcription Complete",
                             body: "Transcription updated with Apple Speech.",
                             sound: false
                         )
-                        completion(text)
+                        completion(
+                            RetranscriptionResult(
+                                text: text,
+                                rawTranscriptionText: text,
+                                processingMetadata: metadata
+                            )
+                        )
                     case .failure(let error):
                         debugLog("❌ Re-transcription failed: \(error)")
                         self?.notificationManager.showNotification(

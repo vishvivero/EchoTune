@@ -53,14 +53,17 @@ class TranscriptionHistoryManager: ObservableObject {
         }
     }
 
+    @discardableResult
     func addTranscription(
         _ text: String,
         duration: TimeInterval,
         audioFilePath: String? = nil,
         originalText: String? = nil,
         translatedText: String? = nil,
-        detectedLanguage: String? = nil
-    ) {
+        detectedLanguage: String? = nil,
+        rawTranscriptionText: String? = nil,
+        processingMetadata: TranscriptionProcessingMetadata? = nil
+    ) -> TranscriptionHistoryItem {
         let item = TranscriptionHistoryItem(
             text: text,
             date: Date(),
@@ -68,30 +71,90 @@ class TranscriptionHistoryManager: ObservableObject {
             audioFilePath: audioFilePath,
             originalText: originalText,
             translatedText: translatedText,
-            detectedLanguage: detectedLanguage
+            detectedLanguage: detectedLanguage,
+            rawTranscriptionText: rawTranscriptionText,
+            processingMetadata: processingMetadata
         )
 
         transcriptions.insert(item, at: 0) // Most recent first
         saveHistory()
 
-        debugLog("📝 Added to history: \(text.prefix(50))... (audio: \(audioFilePath != nil ? "yes" : "no"))")
+        let audioStatus = audioFilePath != nil ? "yes" : "no"
+        debugLog("📝 Added to history: \(text.prefix(50))... (audio: \(audioStatus))")
+        return item
     }
 
     func updateTranscriptionText(for item: TranscriptionHistoryItem, newText: String) {
-        if let index = transcriptions.firstIndex(where: { $0.id == item.id }) {
-            transcriptions[index] = TranscriptionHistoryItem(
-                id: item.id,
-                text: newText,
-                date: item.date,
-                duration: item.duration,
-                audioFilePath: item.audioFilePath,
-                originalText: item.originalText,
-                translatedText: item.translatedText,
-                detectedLanguage: item.detectedLanguage
-            )
-            saveHistory()
-            debugLog("📝 Updated transcription text for \(item.id)")
+        guard let index = transcriptions.firstIndex(where: { $0.id == item.id }) else { return }
+
+        var updatedMetadata = transcriptions[index].processingMetadata ?? item.processingMetadata ?? TranscriptionProcessingMetadata()
+        if newText != item.text {
+            updatedMetadata.userEdited = true
         }
+
+        transcriptions[index] = TranscriptionHistoryItem(
+            id: item.id,
+            text: newText,
+            date: item.date,
+            duration: item.duration,
+            audioFilePath: item.audioFilePath,
+            originalText: item.originalText,
+            translatedText: item.translatedText,
+            detectedLanguage: item.detectedLanguage,
+            rawTranscriptionText: item.rawTranscriptionText,
+            processingMetadata: updatedMetadata
+        )
+        saveHistory()
+        debugLog("📝 Updated transcription text for \(item.id)")
+    }
+
+    func updateTranscriptionDetails(
+        for item: TranscriptionHistoryItem,
+        newText: String,
+        rawTranscriptionText: String?,
+        processingMetadata: TranscriptionProcessingMetadata
+    ) {
+        guard let index = transcriptions.firstIndex(where: { $0.id == item.id }) else { return }
+
+        var mergedMetadata = processingMetadata
+        mergedMetadata.qualityFeedback = item.processingMetadata?.qualityFeedback
+        mergedMetadata.userEdited = false
+
+        transcriptions[index] = TranscriptionHistoryItem(
+            id: item.id,
+            text: newText,
+            date: item.date,
+            duration: item.duration,
+            audioFilePath: item.audioFilePath,
+            originalText: item.originalText,
+            translatedText: item.translatedText,
+            detectedLanguage: item.detectedLanguage,
+            rawTranscriptionText: rawTranscriptionText,
+            processingMetadata: mergedMetadata
+        )
+        saveHistory()
+        debugLog("📝 Updated transcription details for \(item.id)")
+    }
+
+    func updateQualityFeedback(for item: TranscriptionHistoryItem, feedback: TranscriptionQualityFeedback?) {
+        guard let index = transcriptions.firstIndex(where: { $0.id == item.id }) else { return }
+
+        var metadata = transcriptions[index].processingMetadata ?? TranscriptionProcessingMetadata()
+        metadata.qualityFeedback = feedback
+        transcriptions[index].processingMetadata = metadata
+        saveHistory()
+
+        let feedbackLabel = feedback?.rawValue ?? "cleared"
+        debugLog("🧪 Updated transcription feedback for \(item.id): \(feedbackLabel)")
+    }
+
+    func updateProcessingMetadata(for itemId: UUID, transform: (inout TranscriptionProcessingMetadata) -> Void) {
+        guard let index = transcriptions.firstIndex(where: { $0.id == itemId }) else { return }
+
+        var metadata = transcriptions[index].processingMetadata ?? TranscriptionProcessingMetadata()
+        transform(&metadata)
+        transcriptions[index].processingMetadata = metadata
+        saveHistory()
     }
 
     func deleteTranscription(_ item: TranscriptionHistoryItem) {
@@ -126,7 +189,9 @@ class TranscriptionHistoryManager: ObservableObject {
                 audioFilePath: nil,
                 originalText: item.originalText,
                 translatedText: item.translatedText,
-                detectedLanguage: item.detectedLanguage
+                detectedLanguage: item.detectedLanguage,
+                rawTranscriptionText: item.rawTranscriptionText,
+                processingMetadata: item.processingMetadata
             )
             saveHistory()
         }
@@ -212,7 +277,9 @@ class TranscriptionHistoryManager: ObservableObject {
                 audioFilePath: nil,
                 originalText: item.originalText,
                 translatedText: item.translatedText,
-                detectedLanguage: item.detectedLanguage
+                detectedLanguage: item.detectedLanguage,
+                rawTranscriptionText: item.rawTranscriptionText,
+                processingMetadata: item.processingMetadata
             )
             saveHistory()
         }

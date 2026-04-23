@@ -18,6 +18,8 @@ struct TranscriptionHistoryItem: Identifiable, Codable {
     var originalText: String?
     var translatedText: String?
     var detectedLanguage: String?
+    var rawTranscriptionText: String?
+    var processingMetadata: TranscriptionProcessingMetadata?
 
     init(
         text: String,
@@ -26,7 +28,9 @@ struct TranscriptionHistoryItem: Identifiable, Codable {
         audioFilePath: String? = nil,
         originalText: String? = nil,
         translatedText: String? = nil,
-        detectedLanguage: String? = nil
+        detectedLanguage: String? = nil,
+        rawTranscriptionText: String? = nil,
+        processingMetadata: TranscriptionProcessingMetadata? = nil
     ) {
         self.id = UUID()
         self.text = text
@@ -36,6 +40,8 @@ struct TranscriptionHistoryItem: Identifiable, Codable {
         self.originalText = originalText
         self.translatedText = translatedText
         self.detectedLanguage = detectedLanguage
+        self.rawTranscriptionText = rawTranscriptionText
+        self.processingMetadata = processingMetadata
     }
 
     init(
@@ -46,7 +52,9 @@ struct TranscriptionHistoryItem: Identifiable, Codable {
         audioFilePath: String? = nil,
         originalText: String? = nil,
         translatedText: String? = nil,
-        detectedLanguage: String? = nil
+        detectedLanguage: String? = nil,
+        rawTranscriptionText: String? = nil,
+        processingMetadata: TranscriptionProcessingMetadata? = nil
     ) {
         self.id = id
         self.text = text
@@ -56,6 +64,8 @@ struct TranscriptionHistoryItem: Identifiable, Codable {
         self.originalText = originalText
         self.translatedText = translatedText
         self.detectedLanguage = detectedLanguage
+        self.rawTranscriptionText = rawTranscriptionText
+        self.processingMetadata = processingMetadata
     }
 
     var wordCount: Int {
@@ -72,5 +82,63 @@ struct TranscriptionHistoryItem: Identifiable, Codable {
     var hasAudioFile: Bool {
         guard let path = audioFilePath else { return false }
         return FileManager.default.fileExists(atPath: path)
+    }
+
+    var transcriptionProviderLabel: String? {
+        processingMetadata?.transcriptionProvider
+    }
+
+    var transcriptionModelLabel: String? {
+        processingMetadata?.transcriptionModel
+    }
+
+    var enhancementProviderLabel: String? {
+        processingMetadata?.enhancementProvider
+    }
+
+    var enhancementModelLabel: String? {
+        processingMetadata?.enhancementModel
+    }
+
+    var hasEnhancement: Bool {
+        processingMetadata?.hasEnhancement == true
+    }
+
+    var usedFallback: Bool {
+        processingMetadata?.usedFallback == true
+    }
+
+    var fallbackReason: String? {
+        processingMetadata?.fallbackReason
+    }
+
+    var hasDiagnostics: Bool {
+        processingMetadata?.transcriptionLatency != nil ||
+        processingMetadata?.enhancementLatency != nil ||
+        processingMetadata?.textInsertionLatency != nil ||
+        processingMetadata?.totalLatency != nil ||
+        processingMetadata?.audioByteCount != nil ||
+        processingMetadata?.usedFallback == true
+    }
+
+    var diagnosticsLine: String? {
+        guard let metadata = processingMetadata else { return nil }
+        var parts: [String] = []
+        if let totalLatency = metadata.totalLatency {
+            parts.append(String(format: "%.1fs total", totalLatency))
+        }
+        if let transcriptionLatency = metadata.transcriptionLatency {
+            parts.append(String(format: "%.1fs transcribe", transcriptionLatency))
+        }
+        if let enhancementLatency = metadata.enhancementLatency {
+            parts.append(String(format: "%.1fs enhance", enhancementLatency))
+        }
+        if let textInsertionLatency = metadata.textInsertionLatency {
+            parts.append(String(format: "%.1fs insert", textInsertionLatency))
+        }
+        if metadata.usedFallback {
+            parts.append(metadata.fallbackReason.map { "fallback: \($0)" } ?? "fallback")
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " • ")
     }
 }

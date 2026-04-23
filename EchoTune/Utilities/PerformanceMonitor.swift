@@ -26,6 +26,14 @@ class PerformanceMonitor {
         var transcriptionEndTime: Date?
         var transcriptionProcessingTime: TimeInterval = 0
 
+        var enhancementStartTime: Date?
+        var enhancementEndTime: Date?
+        var enhancementProcessingTime: TimeInterval = 0
+        var enhancementEngine: String = ""
+        var enhancementModel: String = ""
+        var fallbackUsed: Bool = false
+        var fallbackReason: String?
+
         var textInsertionStartTime: Date?
         var textInsertionEndTime: Date?
         var textInsertionTime: TimeInterval = 0
@@ -146,6 +154,31 @@ class PerformanceMonitor {
         }
     }
 
+    // MARK: - Enhancement Phase
+
+    func startEnhancement(engine: String, model: String) {
+        guard isEnabled else { return }
+
+        currentMetrics.enhancementStartTime = Date()
+        currentMetrics.enhancementEngine = engine
+        currentMetrics.enhancementModel = model
+
+        debugLog("📊 [Performance] Enhancement started (\(engine) - \(model))")
+    }
+
+    func endEnhancement(fallbackUsed: Bool = false, reason: String? = nil) {
+        guard isEnabled else { return }
+
+        currentMetrics.enhancementEndTime = Date()
+        currentMetrics.fallbackUsed = fallbackUsed
+        currentMetrics.fallbackReason = reason
+
+        if let startTime = currentMetrics.enhancementStartTime {
+            currentMetrics.enhancementProcessingTime = Date().timeIntervalSince(startTime)
+            debugLog("📊 [Performance] Enhancement completed: \(String(format: "%.3f", currentMetrics.enhancementProcessingTime))s")
+        }
+    }
+
     // MARK: - Text Insertion Phase
 
     func startTextInsertion() {
@@ -199,12 +232,21 @@ class PerformanceMonitor {
         debugLog("📊 Recording Duration:    \(String(format: "%6.2f", m.recordingDuration))s")
         debugLog("📊 Audio Conversion:      \(String(format: "%6.3f", m.audioConversionTime))s")
         debugLog("📊 Transcription:         \(String(format: "%6.3f", m.transcriptionProcessingTime))s")
+        if m.enhancementProcessingTime > 0 {
+            debugLog("📊 Enhancement:          \(String(format: "%6.3f", m.enhancementProcessingTime))s")
+        }
         debugLog("📊 Text Insertion:        \(String(format: "%6.3f", m.textInsertionTime))s")
         debugLog("📊 ───────────────────────────────────────────────────────")
         debugLog("📊 Total Latency:         \(String(format: "%6.3f", m.totalLatency))s")
         debugLog("📊 ═══════════════════════════════════════════════════════")
         debugLog("📊 Real-Time Factor:      \(String(format: "%6.2f", m.realTimeFactor))x")
         debugLog("📊 Words Generated:       \(m.wordCount) words")
+        if !m.enhancementEngine.isEmpty {
+            debugLog("📊 Enhancement Model:     \(m.enhancementEngine) (\(m.enhancementModel))")
+        }
+        if m.fallbackUsed {
+            debugLog("📊 Fallback Used:         yes\(m.fallbackReason.map { " — \($0)" } ?? "")")
+        }
         debugLog("📊 Audio Data Size:       \(formatBytes(m.audioDataSize))")
         debugLog("📊 Buffers Processed:     \(m.bufferCount)")
         if m.bufferCount > 0 {
@@ -247,7 +289,7 @@ class PerformanceMonitor {
     }
 
     func exportMetrics() -> String {
-        var csv = "Session,Engine,Model,Recording(s),Conversion(s),Transcription(s),Insertion(s),Total(s),RTF,Words,Buffers\n"
+        var csv = "Session,Engine,Model,Recording(s),Conversion(s),Transcription(s),Enhancement(s),Insertion(s),Total(s),RTF,Words,Buffers,EnhancementEngine,EnhancementModel,FallbackUsed,FallbackReason\n"
 
         for (index, m) in sessionMetrics.enumerated() {
             csv += "\(index + 1),"
@@ -256,11 +298,16 @@ class PerformanceMonitor {
             csv += "\(String(format: "%.2f", m.recordingDuration)),"
             csv += "\(String(format: "%.3f", m.audioConversionTime)),"
             csv += "\(String(format: "%.3f", m.transcriptionProcessingTime)),"
+            csv += "\(String(format: "%.3f", m.enhancementProcessingTime)),"
             csv += "\(String(format: "%.3f", m.textInsertionTime)),"
             csv += "\(String(format: "%.3f", m.totalLatency)),"
             csv += "\(String(format: "%.2f", m.realTimeFactor)),"
             csv += "\(m.wordCount),"
-            csv += "\(m.bufferCount)\n"
+            csv += "\(m.bufferCount),"
+            csv += "\(m.enhancementEngine),"
+            csv += "\(m.enhancementModel),"
+            csv += "\(m.fallbackUsed),"
+            csv += "\((m.fallbackReason ?? "").replacingOccurrences(of: ",", with: ";"))\n"
         }
 
         return csv
