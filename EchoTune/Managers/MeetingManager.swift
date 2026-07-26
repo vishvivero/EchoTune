@@ -27,6 +27,12 @@ class MeetingManager: ObservableObject {
     @Published var pastMeetings: [MeetingSession] = []
     /// User-typed notes for the meeting currently being recorded (Granola-style).
     @Published var userNotes: String = ""
+    /// Non-fatal live-transcription problem (model loading/failing) — shown as a banner.
+    @Published var transcriptionWarning: String?
+    /// Summary problem or degraded-summary notice — shown in the detail panel next to Regenerate.
+    @Published var summaryIssue: String?
+    /// True when recording mic-only because Screen Recording permission is missing/failed.
+    @Published var systemAudioUnavailable = false
 
     private enum AudioCaptureSource {
         case mic
@@ -99,18 +105,13 @@ class MeetingManager: ObservableObject {
 
     // MARK: - Start Meeting
 
-    func startMeeting(title: String = "", template: MeetingTemplate = .general, detectedApp: String? = nil) {
+    func startMeeting(title: String = "", template: MeetingTemplate = .general, detectedApp: String? = nil, isAutoDetected: Bool = false) {
         guard !isRecording else {
             debugLog("⚠️ MeetingManager: Already recording a meeting")
             return
         }
 
-        // Check permission
-        guard SystemAudioCapture.hasPermission() else {
-            debugLog("❌ MeetingManager: Screen Recording permission required")
-            SystemAudioCapture.requestPermission()
-            return
-        }
+        guard prepareMeetingStart(isAutoDetected: isAutoDetected) else { return }
 
         let session = MeetingSession(
             title: title.isEmpty ? "Meeting \(DateFormatter.localizedString(from: Date(), dateStyle: .short, timeStyle: .short))" : title,
@@ -119,7 +120,9 @@ class MeetingManager: ObservableObject {
         )
 
         currentSession = session
-        activeDetectionContext = MeetingManager.detectMeetingContext()
+        // Only auto-detected sessions carry a detection context — a manually
+        // started meeting must never be auto-stopped by app-focus heuristics.
+        activeDetectionContext = isAutoDetected ? MeetingManager.detectMeetingContext() : nil
         inactiveDetectionPassCount = 0
         pendingMeetingFinalisation = nil
         liveTranscript = ""
@@ -148,6 +151,7 @@ class MeetingManager: ObservableObject {
                     debugLog("✅ MeetingManager: System audio capture also started")
                 } catch {
                     debugLog("⚠️ MeetingManager: System audio capture failed (mic still active): \(error)")
+                    await MainActor.run { self.systemAudioUnavailable = true }
                 }
             }
         }
@@ -163,18 +167,14 @@ class MeetingManager: ObservableObject {
             return
         }
 
-        // Check permission
-        guard SystemAudioCapture.hasPermission() else {
-            debugLog("❌ MeetingManager: Screen Recording permission required")
-            SystemAudioCapture.requestPermission()
-            return
-        }
+        guard prepareMeetingStart(isAutoDetected: false) else { return }
 
         var activeSession = session
         activeSession.startTime = Date() // Reset start time to now
         currentSession = activeSession
-        
-        activeDetectionContext = MeetingManager.detectMeetingContext()
+
+        // Scheduled meetings are user-intended: no auto-stop detection context.
+        activeDetectionContext = nil
         inactiveDetectionPassCount = 0
         pendingMeetingFinalisation = nil
         liveTranscript = ""
@@ -203,6 +203,7 @@ class MeetingManager: ObservableObject {
                     debugLog("✅ MeetingManager: System audio capture also started")
                 } catch {
                     debugLog("⚠️ MeetingManager: System audio capture failed (mic still active): \(error)")
+                    await MainActor.run { self.systemAudioUnavailable = true }
                 }
             }
         }
@@ -210,6 +211,99 @@ class MeetingManager: ObservableObject {
         self.isRecording = true
         self.startTimers()
         debugLog("✅ MeetingManager: Scheduled meeting recording started")
+    }
+
+    // MARK: - Start Preflight
+
+    /// Common gate for every meeting start. Returns false when the meeting must
+    /// not start (no audio source, or no way to transcribe). Never blocks on a
+    /// missing Screen Recording permission alone — mic-only is fully supported.
+    private func prepareMeetingStart(isAutoDetected: Bool) -> Bool {
+        transcriptionWarning = nil
+        summaryIssue = nil
+
+        // Meetings transcribe locally with WhisperKit only. A meeting that can
+        // never transcribe must not start silently (it would record a red badge
+        // for an hour and produce an empty transcript).
+        if WhisperEngine.shared.whisperKitRef == nil {
+            let localModel: AIModel?
+            if let current = ModelManager.shared.currentModel, current.category == .local, current.isInstalled {
+                localModel = current
+            } else {
+                localModel = ModelManager.shared.installedModels.first(where: { $0.category == .local })
+            }
+
+            guard let model = localModel else {
+                let message = "No local transcription model is installed. Download a model in Settings → AI Models, then start the meeting again."
+                debugLog("❌ MeetingManager: Start blocked — no local model for transcription")
+                if isAutoDetected {
+                    NotificationManager.shared.showNotification(title: "Meeting Not Started", body: message, sound: true)
+                } else {
+                    let alert = NSAlert()
+                    alert.messageText = "Can't Start Meeting Recording"
+                    alert.informativeText = message
+                    alert.runModal()
+                }
+                return false
+            }
+
+            // Model installed but not loaded yet — load it now. Audio buffers
+            // accumulate (and failed chunks are re-queued) until it's ready.
+            transcriptionWarning = "Preparing the transcription model — the transcript will begin once it's ready."
+            WhisperEngine.shared.loadModel(model) { [weak self] result in
+                DispatchQueue.main.async {
+                    switch result {
+                    case .success:
+                        self?.transcriptionWarning = nil
+                    case .failure(let error):
+                        self?.transcriptionWarning = "Transcription model failed to load: \(error.localizedDescription)"
+                    }
+                }
+            }
+        }
+
+        // Screen Recording permission: missing ≠ can't record. Proceed mic-only,
+        // tell the user, and deep-link to the settings pane. Only block when
+        // there is literally no audio source (mic disabled AND no system audio).
+        let hasScreenPermission = SystemAudioCapture.hasPermission()
+        systemAudioUnavailable = !hasScreenPermission
+
+        if !hasScreenPermission {
+            SystemAudioCapture.requestPermission() // shows the system prompt at most once per app lifetime
+
+            guard AppSettings.shared.meetingIncludeMicAudio else {
+                let message = "Microphone capture is off in Meeting settings and Screen Recording permission is missing — there is no audio source to record."
+                debugLog("❌ MeetingManager: Start blocked — no capturable audio source")
+                if isAutoDetected {
+                    NotificationManager.shared.showNotification(title: "Meeting Not Started", body: message, sound: true)
+                } else {
+                    let alert = NSAlert()
+                    alert.messageText = "Can't Start Meeting Recording"
+                    alert.informativeText = message + " Enable the microphone in Settings → Meetings, or grant Screen Recording permission."
+                    alert.addButton(withTitle: "OK")
+                    alert.addButton(withTitle: "Open System Settings")
+                    if alert.runModal() == .alertSecondButtonReturn,
+                       let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+                return false
+            }
+
+            if !isAutoDetected {
+                let alert = NSAlert()
+                alert.messageText = "System Audio Unavailable"
+                alert.informativeText = "Recording will continue with your microphone only. To also capture the other participants, grant Screen Recording permission in System Settings and restart the meeting."
+                alert.addButton(withTitle: "Continue Mic-Only")
+                alert.addButton(withTitle: "Open System Settings")
+                if alert.runModal() == .alertSecondButtonReturn,
+                   let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+        }
+
+        return true
     }
 
     // MARK: - Stop Meeting
@@ -247,6 +341,8 @@ class MeetingManager: ObservableObject {
         activeDetectionContext = nil
         micBuffers.removeAll()
         systemBuffers.removeAll()
+        transcriptionWarning = nil
+        systemAudioUnavailable = false
 
         guard var session = currentSession else { return }
         session.endTime = Date()
@@ -289,13 +385,25 @@ class MeetingManager: ObservableObject {
                     updatedSession.decisions = summary.decisions
                     updatedSession.keyPoints = summary.keyPoints
                     updatedSession.participants = summary.participants
-                    self.currentSession = updatedSession
+                    // Only touch the live session if it IS this session —
+                    // regenerating an old meeting must never clobber a new
+                    // recording in progress (its transcript would be saved
+                    // into the old meeting's file).
+                    if self.currentSession?.id == session.id {
+                        self.currentSession = updatedSession
+                    }
                     self.saveMeeting(updatedSession)
+                    self.summaryIssue = summary.isDegraded
+                        ? "No AI API key configured — this is a basic text extract, not an AI summary. Add a key in Settings → AI Enhancement, then use Regenerate Summary."
+                        : nil
                     debugLog("✅ MeetingManager: Summary generated for '\(updatedSession.title)'")
 
                 case .failure(let error):
                     debugLog("❌ MeetingManager: Summary failed: \(error)")
-                    self.currentSession = session
+                    self.summaryIssue = "Summary generation failed: \(error.localizedDescription) Use Regenerate Summary to retry."
+                    if self.currentSession?.id == session.id {
+                        self.currentSession = session
+                    }
                 }
             }
         }
@@ -308,6 +416,7 @@ class MeetingManager: ObservableObject {
         if let template = template {
             meeting.templateUsed = template
         }
+        summaryIssue = nil
         isGeneratingSummary = true
         generateSummary(for: meeting)
     }
@@ -688,6 +797,7 @@ class MeetingManager: ObservableObject {
 
                 await MainActor.run {
                     self.isWhisperTranscribing = false
+                    self.transcriptionWarning = nil // transcription is working again
                     self.handleMeetingTranscription(text, speakerLabel: speakerLabel)
 
                     // Re-evaluate if more buffers arrived while we were transcribing
@@ -713,6 +823,24 @@ class MeetingManager: ObservableObject {
                 await MainActor.run {
                     self.isWhisperTranscribing = false
                     debugLog("⚠️ MeetingManager: Transcription failed: \(error)")
+
+                    // The snapshot was destructively taken from the buffer
+                    // arrays — put it back (at the front, preserving order) so
+                    // the audio is retried instead of silently destroyed.
+                    // Capped so a persistent failure can't grow RAM forever.
+                    let requeueCap = 12_000 // ≈ 15–20 min of buffers
+                    objc_sync_enter(self)
+                    self.micBuffers.insert(contentsOf: segmentMic, at: 0)
+                    self.systemBuffers.insert(contentsOf: segmentSystem, at: 0)
+                    if self.micBuffers.count > requeueCap {
+                        self.micBuffers.removeFirst(self.micBuffers.count - requeueCap)
+                    }
+                    if self.systemBuffers.count > requeueCap {
+                        self.systemBuffers.removeFirst(self.systemBuffers.count - requeueCap)
+                    }
+                    objc_sync_exit(self)
+
+                    self.transcriptionWarning = "Live transcription is failing (\(error.localizedDescription)). Audio is being kept and retried."
 
                     if let autoSummarise = self.pendingMeetingFinalisation {
                         self.finaliseMeeting(autoSummarise: autoSummarise)
@@ -909,7 +1037,9 @@ class MeetingManager: ObservableObject {
             encoder.dateEncodingStrategy = .iso8601
             encoder.outputFormatting = .prettyPrinted
             let data = try encoder.encode(session)
-            try data.write(to: filePath)
+            // .atomic: a crash mid-write must not corrupt the previous good
+            // snapshot — this file IS the crash-safety net.
+            try data.write(to: filePath, options: .atomic)
 
             // Update past meetings list
             if let index = pastMeetings.firstIndex(where: { $0.id == session.id }) {
@@ -1024,6 +1154,14 @@ class MeetingManager: ObservableObject {
             return false
         }
 
+        // The meeting app lost frontmost status — but the user may just be
+        // taking notes in another app while the call continues. Losing focus
+        // alone is NEVER grounds to stop; require sustained silence too.
+        if silenceDuration < 30 {
+            inactiveDetectionPassCount = 0
+            return false
+        }
+
         inactiveDetectionPassCount += 1
 
         if isSilentCallStyleMeeting, silenceDuration > 20 {
@@ -1031,7 +1169,11 @@ class MeetingManager: ObservableObject {
             return true
         }
 
-        return inactiveDetectionPassCount >= 2
+        if inactiveDetectionPassCount >= 2 {
+            debugLog("🛑 MeetingManager: Auto-stopping — context gone and \(Int(silenceDuration))s of silence")
+            return true
+        }
+        return false
     }
 
     private var isSilentCallStyleMeeting: Bool {

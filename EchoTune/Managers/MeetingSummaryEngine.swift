@@ -154,10 +154,16 @@ class MeetingSummaryEngine {
 
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
-        URLSession.shared.dataTask(with: request) { data, _, error in
+        URLSession.shared.dataTask(with: request) { data, response, error in
             if let error {
                 debugLog("❌ MeetingSummaryEngine: Groq API error: \(error)")
                 completion(.failure(error))
+                return
+            }
+
+            if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+                debugLog("❌ MeetingSummaryEngine: Groq HTTP \(http.statusCode)")
+                completion(.failure(SummaryError.httpError(http.statusCode)))
                 return
             }
 
@@ -171,10 +177,15 @@ class MeetingSummaryEngine {
                 let choices = json?["choices"] as? [[String: Any]]
                 let message = choices?.first?["message"] as? [String: Any]
                 let content = message?["content"] as? String ?? ""
-                completion(.success(self.parseSummaryPayload(content, fallbackTranscript: transcript)))
+                if let summary = self.parseSummaryPayload(content) {
+                    completion(.success(summary))
+                } else {
+                    debugLog("❌ MeetingSummaryEngine: Groq returned no usable summary payload")
+                    completion(.failure(SummaryError.parseError))
+                }
             } catch {
                 debugLog("❌ MeetingSummaryEngine: Groq parse error: \(error)")
-                completion(.success(self.extractBasicSummary(from: transcript)))
+                completion(.failure(SummaryError.parseError))
             }
         }.resume()
     }
@@ -212,10 +223,16 @@ class MeetingSummaryEngine {
 
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
-        URLSession.shared.dataTask(with: request) { data, _, error in
+        URLSession.shared.dataTask(with: request) { data, response, error in
             if let error {
                 debugLog("❌ MeetingSummaryEngine: OpenAI API error: \(error)")
                 completion(.failure(error))
+                return
+            }
+
+            if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+                debugLog("❌ MeetingSummaryEngine: OpenAI HTTP \(http.statusCode)")
+                completion(.failure(SummaryError.httpError(http.statusCode)))
                 return
             }
 
@@ -229,10 +246,15 @@ class MeetingSummaryEngine {
                 let choices = json?["choices"] as? [[String: Any]]
                 let message = choices?.first?["message"] as? [String: Any]
                 let content = message?["content"] as? String ?? ""
-                completion(.success(self.parseSummaryPayload(content, fallbackTranscript: transcript)))
+                if let summary = self.parseSummaryPayload(content) {
+                    completion(.success(summary))
+                } else {
+                    debugLog("❌ MeetingSummaryEngine: OpenAI returned no usable summary payload")
+                    completion(.failure(SummaryError.parseError))
+                }
             } catch {
                 debugLog("❌ MeetingSummaryEngine: OpenAI parse error: \(error)")
-                completion(.success(self.extractBasicSummary(from: transcript)))
+                completion(.failure(SummaryError.parseError))
             }
         }.resume()
     }
@@ -274,10 +296,16 @@ class MeetingSummaryEngine {
 
         request.httpBody = try? JSONSerialization.data(withJSONObject: requestBody)
 
-        URLSession.shared.dataTask(with: request) { data, _, error in
+        URLSession.shared.dataTask(with: request) { data, response, error in
             if let error {
                 debugLog("❌ MeetingSummaryEngine: Gemini API error: \(error)")
                 completion(.failure(error))
+                return
+            }
+
+            if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+                debugLog("❌ MeetingSummaryEngine: Gemini HTTP \(http.statusCode)")
+                completion(.failure(SummaryError.httpError(http.statusCode)))
                 return
             }
 
@@ -292,19 +320,26 @@ class MeetingSummaryEngine {
                 let content = candidates?.first?["content"] as? [String: Any]
                 let parts = content?["parts"] as? [[String: Any]]
                 let text = parts?.first?["text"] as? String ?? ""
-                completion(.success(self.parseSummaryPayload(text, fallbackTranscript: transcript)))
+                if let summary = self.parseSummaryPayload(text) {
+                    completion(.success(summary))
+                } else {
+                    debugLog("❌ MeetingSummaryEngine: Gemini returned no usable summary payload")
+                    completion(.failure(SummaryError.parseError))
+                }
             } catch {
                 debugLog("❌ MeetingSummaryEngine: Gemini parse error: \(error)")
-                completion(.success(self.extractBasicSummary(from: transcript)))
+                completion(.failure(SummaryError.parseError))
             }
         }.resume()
     }
 
-    private func parseSummaryPayload(_ content: String, fallbackTranscript: String) -> MeetingSummaryResult {
-        guard let responseData = content.data(using: .utf8),
+    /// nil = the provider's payload was empty or not the expected JSON — the
+    /// caller must report a failure, never dress a junk payload up as success.
+    private func parseSummaryPayload(_ content: String) -> MeetingSummaryResult? {
+        guard !content.isEmpty,
+              let responseData = content.data(using: .utf8),
               let parsed = try? JSONSerialization.jsonObject(with: responseData) as? [String: Any] else {
-            debugLog("⚠️ MeetingSummaryEngine: Failed to parse JSON payload, using basic extraction")
-            return extractBasicSummary(from: fallbackTranscript)
+            return nil
         }
 
         return MeetingSummaryResult(
@@ -327,7 +362,8 @@ class MeetingSummaryEngine {
             actionItems: [],
             decisions: [],
             keyPoints: keyPoints,
-            participants: []
+            participants: [],
+            isDegraded: true
         )
     }
 }
@@ -339,6 +375,8 @@ struct MeetingSummaryResult {
     let decisions: [String]
     let keyPoints: [String]
     let participants: [String]
+    /// True when this is the no-API-key basic text extract, not a real AI summary.
+    var isDegraded: Bool = false
 }
 
 enum SummaryError: LocalizedError {
@@ -346,13 +384,22 @@ enum SummaryError: LocalizedError {
     case invalidURL
     case noResponse
     case parseError
+    case httpError(Int)
 
     var errorDescription: String? {
         switch self {
-        case .emptyTranscript: return "No transcript content to summarise"
-        case .invalidURL: return "Invalid API URL"
-        case .noResponse: return "No response from AI service"
-        case .parseError: return "Failed to parse summary response"
+        case .emptyTranscript: return "No transcript content to summarise."
+        case .invalidURL: return "Invalid API URL."
+        case .noResponse: return "No response from the AI service."
+        case .parseError: return "The AI service returned an unreadable response."
+        case .httpError(let code):
+            if code == 401 || code == 403 {
+                return "The AI service rejected the request (HTTP \(code)) — check your API key."
+            }
+            if code == 429 {
+                return "The AI service is rate-limiting requests (HTTP 429) — try again shortly."
+            }
+            return "The AI service returned HTTP \(code)."
         }
     }
 }

@@ -32,7 +32,8 @@ final class MeetingAutoDetectionCoordinator {
         MeetingManager.shared.startMeeting(
             title: title,
             template: AppSettings.shared.meetingDefaultTemplate,
-            detectedApp: detectedApp
+            detectedApp: detectedApp,
+            isAutoDetected: true
         )
     }
 
@@ -99,7 +100,8 @@ final class MeetingAutoDetectionCoordinator {
             MeetingManager.shared.startMeeting(
                 title: context.defaultMeetingTitle,
                 template: settings.meetingDefaultTemplate,
-                detectedApp: context.appName
+                detectedApp: context.appName,
+                isAutoDetected: true
             )
             NotificationManager.shared.showNotification(
                 title: "Recording started",

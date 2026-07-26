@@ -251,6 +251,20 @@ struct LiveMeetingTranscriptionPanel: View {
             }
             .padding([.top, .horizontal], 20)
 
+            if meetingManager.systemAudioUnavailable {
+                MeetingIssueBanner(
+                    icon: "speaker.slash",
+                    tint: .yellow,
+                    text: "System audio unavailable — recording your microphone only. Grant Screen Recording permission in System Settings to capture other participants."
+                )
+                .padding(.horizontal, 20)
+            }
+
+            if let warning = meetingManager.transcriptionWarning {
+                MeetingIssueBanner(icon: "exclamationmark.triangle", tint: .orange, text: warning)
+                    .padding(.horizontal, 20)
+            }
+
             Divider()
 
             // Your Notes — editable during the meeting, merged into the AI summary at the end
@@ -391,7 +405,13 @@ struct MeetingDetailPanel: View {
                 .help("Delete Meeting")
             }
             .padding(20)
-            
+
+            if let issue = meetingManager.summaryIssue {
+                MeetingIssueBanner(icon: "exclamationmark.triangle", tint: .orange, text: issue)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 12)
+            }
+
             Divider()
             
             // Picker tab
@@ -489,6 +509,28 @@ struct MeetingDetailPanel: View {
         let mins = Int(offset / 60)
         let secs = Int(offset.truncatingRemainder(dividingBy: 60))
         return String(format: "[%02d:%02d]", mins, secs)
+    }
+}
+
+// MARK: - Issue Banner
+/// Inline warning strip for meeting problems (missing system audio,
+/// transcription failures, summary errors).
+struct MeetingIssueBanner: View {
+    let icon: String
+    let tint: Color
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: icon)
+                .foregroundColor(tint)
+            Text(text)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 8).fill(tint.opacity(0.1)))
     }
 }
 
