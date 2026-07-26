@@ -56,7 +56,6 @@ struct GeneralSettingsView: View {
 
 // MARK: - Hotkey Settings
 struct HotkeySettingsView: View {
-    @StateObject private var hotkeyManager = MultiHotkeyManager.shared
     @EnvironmentObject var coordinator: AppCoordinator
 
     var body: some View {
@@ -84,61 +83,8 @@ struct HotkeySettingsView: View {
             }
             .padding(.vertical, 4)
 
-            Text("More Actions")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .padding(.top, 4)
-
-            List {
-                ForEach(hotkeyManager.hotkeyBindings) { binding in
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(binding.action.rawValue)
-                                .fontWeight(.medium)
-                            if let desc = binding.action.defaultShortcut {
-                                Text("Default: \(desc)")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                        
-                        Spacer()
-                        
-                        if binding.isModifierOnlyBinding, let trigger = binding.modifierTrigger {
-                            Text("Modifier: \(trigger.displayName)")
-                                .font(.caption)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Capsule().fill(Color.accentColor.opacity(0.1)))
-                                .foregroundColor(.accentColor)
-                        } else if let display = binding.displayString {
-                            Text(display)
-                                .font(.subheadline)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(RoundedRectangle(cornerRadius: 4).fill(Color.primary.opacity(0.06)))
-                        } else {
-                            Text("Not Configured")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        
-                        Toggle("", isOn: Binding(
-                            get: { binding.isEnabled },
-                            set: { hotkeyManager.enableBinding(for: binding.action, enabled: $0) }
-                        ))
-                        .toggleStyle(.switch)
-                        .labelsHidden()
-                    }
-                    .padding(.vertical, 4)
-                }
-            }
-            .cornerRadius(8)
-            
-            Button("Reset to Defaults") {
-                hotkeyManager.resetToDefaults()
-            }
-            .buttonStyle(.bordered)
+            // "More Actions" hotkey list removed for 4.0.0 — those bindings were
+            // display-only (no delivery path existed) and misled users.
         }
     }
 }

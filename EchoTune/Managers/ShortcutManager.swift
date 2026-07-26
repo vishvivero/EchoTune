@@ -28,6 +28,9 @@ class ShortcutManager: NSObject {
     // Flag to track if shortcut is currently pressed
     private var isShortcutPressed = false
 
+    /// Whether the dictation shortcut is physically held right now (read-only).
+    var isCurrentlyPressed: Bool { isShortcutPressed }
+
     override init() {
         super.init()
         loadCustomShortcut()

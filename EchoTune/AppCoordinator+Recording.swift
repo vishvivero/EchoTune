@@ -79,6 +79,7 @@ extension AppCoordinator {
                     sound: false
                 )
 
+                let loadStartedAt = Date()
                 whisperEngine.loadModel(currentModel) { [weak self] result in
                     guard let self = self else { return }
 
@@ -87,18 +88,33 @@ extension AppCoordinator {
 
                     switch result {
                     case .success:
-                        debugLog("✅ Whisper model loaded, starting dictation")
-
-                        // Show success notification
-                        self.notificationManager.showNotification(
-                            title: "Model Ready",
-                            body: "\(currentModel.name) loaded successfully!",
-                            sound: false
-                        )
-
-                        // Reset state and start recording
                         self.appState.recordingState = .idle
-                        self.beginRecording()
+
+                        // Don't turn the mic on unprompted: a cold load can take
+                        // minutes and the user may have walked away. Only start
+                        // if the intent is clearly still live — PTT key still
+                        // held, or a quick load in toggle mode.
+                        let stillHeld = self.shortcutManager.isCurrentlyPressed
+                        let loadDuration = Date().timeIntervalSince(loadStartedAt)
+                        let shouldStart = AppSettings.shared.recordingMode == .pushToTalk
+                            ? stillHeld
+                            : loadDuration < 10
+
+                        if shouldStart {
+                            debugLog("✅ Whisper model loaded, starting dictation")
+                            self.beginRecording()
+                        } else {
+                            debugLog("✅ Whisper model loaded after \(Int(loadDuration))s — not auto-starting")
+                            if let appDelegate = NSApp.delegate as? AppDelegate,
+                               let statusBar = appDelegate.statusBarController {
+                                statusBar.updateIcon(for: .idle)
+                            }
+                            self.notificationManager.showNotification(
+                                title: "Model Ready",
+                                body: "\(currentModel.name) is ready — press your shortcut to dictate.",
+                                sound: false
+                            )
+                        }
 
                     case .failure(let error):
                         debugLog("❌ Failed to load Whisper model: \(error)")

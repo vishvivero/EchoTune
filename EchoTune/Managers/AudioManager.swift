@@ -159,6 +159,7 @@ class AudioManager: NSObject, ObservableObject {
         // Reset VAD state for new recording
         VADManager.shared.resetState()
         recordedBuffers.removeAll()
+        recordedVADHistory.removeAll()
 
         // Reset growing buffer storage
         audioChunks.removeAll()
@@ -271,6 +272,10 @@ class AudioManager: NSObject, ObservableObject {
 
             // VAD: Detect speech in this buffer
             let vadResult = VADManager.shared.detectSpeech(in: safeCopy)
+
+            // Record for post-recording analysis — hasSignificantSpeech() reads
+            // this after stop; without it every recording is rejected as silent.
+            self.recordedVADHistory.append(vadResult)
 
             // Update published properties on main thread
             DispatchQueue.main.async {

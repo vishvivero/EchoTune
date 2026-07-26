@@ -117,7 +117,6 @@ class MultiHotkeyManager: ObservableObject {
     }
 
     @Published var hotkeyBindings: [HotkeyBinding] = []
-    private var eventHandlers: [EventHotKeyRef?] = []
 
     // Modifier-key monitoring via CGEvent tap
     private var modifierEventTap: CFMachPort?
@@ -315,49 +314,17 @@ class MultiHotkeyManager: ObservableObject {
 
     // MARK: - Hotkey Registration (for non-modifier bindings)
 
+    // Carbon RegisterEventHotKey registration removed for 4.0.0: there was
+    // never an InstallEventHandler, so registered combos could not be
+    // delivered — and the OSType/UInt32(hashValue) conversions would trap.
+    // Modifier-only bindings still work via the CGEvent tap above.
+
     private func registerAllHotkeys() {
-        for binding in hotkeyBindings where binding.isEnabled && !binding.isModifierOnlyBinding {
-            guard let keyCode = binding.keyCode,
-                  let modifiers = binding.modifiers else {
-                continue
-            }
-            registerHotkey(binding: binding)
-        }
-    }
-
-    private func registerHotkey(binding: HotkeyBinding) {
-        guard let keyCode = binding.keyCode,
-              let modifiers = binding.modifiers else {
-            return
-        }
-
-        var hotKeyRef: EventHotKeyRef?
-        let hotKeyID = EventHotKeyID(signature: OSType(binding.action.rawValue.hashValue), id: UInt32(binding.id.hashValue))
-
-        let status = RegisterEventHotKey(
-            keyCode,
-            modifiers,
-            hotKeyID,
-            GetApplicationEventTarget(),
-            0,
-            &hotKeyRef
-        )
-
-        if status == noErr {
-            eventHandlers.append(hotKeyRef)
-            debugLog("⌨️ Registered hotkey: \(binding.displayString ?? "Unknown") for \(binding.action.rawValue)")
-        } else {
-            debugLog("❌ Failed to register hotkey for \(binding.action.rawValue)")
-        }
+        // Intentionally empty — see note above.
     }
 
     private func unregisterAllHotkeys() {
-        for handler in eventHandlers {
-            if let handler = handler {
-                UnregisterEventHotKey(handler)
-            }
-        }
-        eventHandlers.removeAll()
+        // Intentionally empty — see note above.
     }
 
     // MARK: - Action Handlers

@@ -427,13 +427,14 @@ extension AppCoordinator {
             ]
         )
 
-        // Save audio file for retention
+        // Save audio file for retention — only when the user opted in.
         var savedAudioPath: String? = nil
-        if let audioData = self.lastRecordedAudioData, !audioData.isEmpty {
+        if AppSettings.shared.keepAudioHistory,
+           let audioData = self.lastRecordedAudioData, !audioData.isEmpty {
             let fileId = UUID()
             savedAudioPath = TranscriptionHistoryManager.shared.saveAudioFile(data: audioData, id: fileId)
-            self.lastRecordedAudioData = nil // Clear after saving
         }
+        self.lastRecordedAudioData = nil // Always clear — never hold audio the user didn't ask to keep
 
         // Add to history (with audio file path if saved)
         let historyItem = TranscriptionHistoryManager.shared.addTranscription(

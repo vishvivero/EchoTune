@@ -49,12 +49,10 @@ class AudioCleanupManager: ObservableObject {
 
     // MARK: - Retention Sweep
 
-    /// Deletes archived audio older than the retention window. No-op unless
-    /// the user has audio archiving turned on — with archiving off, dictation
-    /// audio is never written in the first place, so there is nothing to prune.
+    /// Deletes archived audio older than the retention window. Runs regardless
+    /// of the archiving toggle so recordings written while it was on (or by
+    /// older builds that archived unconditionally) still get pruned.
     private func sweepExpiredAudio() {
-        guard AppSettings.shared.keepAudioHistory else { return }
-
         let days = max(AppSettings.shared.audioRetentionDays, 1)
         let expiryThreshold = Date().addingTimeInterval(-Double(days) * 86400)
 
