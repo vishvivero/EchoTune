@@ -182,6 +182,16 @@ class ShortcutManager: NSObject {
     }
     
     private func handleEvent(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+        // macOS disables a tap it considers slow (sleep, heavy load, debugger).
+        // Re-enable or the hotkey is dead until app relaunch.
+        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            if let tap = eventTap {
+                CGEvent.tapEnable(tap: tap, enable: true)
+                debugLog("♻️ Event tap re-enabled after \(type == .tapDisabledByTimeout ? "timeout" : "user input")")
+            }
+            return nil
+        }
+
         // Special handling for single modifier keys (Control=59, Option=58)
         let isSingleModifierShortcut = (shortcutKeyCode == 63 || shortcutKeyCode == 59 || shortcutKeyCode == 58)
 

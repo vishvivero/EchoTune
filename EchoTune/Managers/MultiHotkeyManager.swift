@@ -193,6 +193,15 @@ class MultiHotkeyManager: ObservableObject {
 
     /// Handles flagsChanged CGEvents to detect single modifier key presses/releases
     private func handleModifierEvent(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+        // Re-enable the tap if macOS disabled it (timeout/user input),
+        // otherwise the hotkey silently dies until relaunch.
+        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            if let tap = modifierEventTap {
+                CGEvent.tapEnable(tap: tap, enable: true)
+                debugLog("♻️ Modifier event tap re-enabled after disable event")
+            }
+            return nil
+        }
         guard type == .flagsChanged else { return Unmanaged.passRetained(event) }
 
         let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))

@@ -177,6 +177,19 @@ class AudioManager: NSObject, ObservableObject {
         // Use the hardware's native input format instead of forcing a specific sample rate
         let hardwareFormat = inputNode.inputFormat(forBus: 0)
 
+        // With no working input device (Bluetooth headset off, USB mic unplugged)
+        // the format comes back 0 Hz / 0 ch — building AVAudioFormat from it
+        // returns nil and installTap would throw. Bail out with a clear message.
+        guard hardwareFormat.sampleRate > 0, hardwareFormat.channelCount > 0 else {
+            debugLog("❌ No valid audio input device (format: \(hardwareFormat))")
+            NotificationManager.shared.showNotification(
+                title: "No Microphone Available",
+                body: "Connect a microphone and try again.",
+                sound: false
+            )
+            return
+        }
+
         debugLog("🎤 Recording with hardware format: \(hardwareFormat)")
         debugLog("   Sample rate: \(hardwareFormat.sampleRate) Hz")
         debugLog("   Channels: \(hardwareFormat.channelCount)")

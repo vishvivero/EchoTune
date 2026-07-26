@@ -188,14 +188,17 @@ extension AudioManager {
                     var inputConsumed = false
                     let inputBlock: AVAudioConverterInputBlock = { _, outStatus in
                         if inputConsumed {
-                            outStatus.pointee = .endOfStream
+                            // .noDataNow, not .endOfStream — ending the stream here
+                            // finalizes the converter and every later loop pass
+                            // converts zero frames (truncates upload to one chunk).
+                            outStatus.pointee = .noDataNow
                             return nil
                         }
                         inputConsumed = true
                         outStatus.pointee = .haveData
                         return inputBuffer
                     }
-                    
+
                     var convError: NSError?
                     let convStatus = converter.convert(to: outputBuffer, error: &convError, withInputFrom: inputBlock)
                     if convStatus == .error {

@@ -177,6 +177,13 @@ extension AppCoordinator {
         // Hide recording indicator (all styles)
         hideRecorderUI()
 
+        // Restore system output first — must happen even if capturing failed,
+        // or a failed stop leaves the user's Mac muted permanently.
+        if didMuteSystemOutput {
+            SystemAudioManager.shared.restoreSystemOutput()
+            didMuteSystemOutput = false
+        }
+
         // Stop audio recording and get audio data as proper WAV for cloud services
         let engineType: AudioManager.AudioEngine = .cloud
         guard let audioData = audioManager.stopRecording(forEngine: engineType) else {
@@ -197,11 +204,7 @@ extension AppCoordinator {
             bufferCount: 0
         )
 
-        // Restore system output
-        if didMuteSystemOutput {
-            SystemAudioManager.shared.restoreSystemOutput()
-            didMuteSystemOutput = false
-        }
+        // (System output already restored above, before the capture guard.)
 
         // VAD: Check if there's significant speech
         if VADManager.shared.config.enabled {
@@ -256,7 +259,7 @@ extension AppCoordinator {
                         language: AppSettings.shared.autoDetectLanguage ? nil : settings.preferredLanguage.components(separatedBy: "-").first,
                         apiKey: apiKey
                     )
-                    os_log("✅ %{public}@ returned: '%{public}@'", log: appLog, type: .info, providerName, transcribedText)
+                    os_log("✅ %{public}@ returned: '%@'", log: appLog, type: .info, providerName, transcribedText)
 
                 } else if currentModel.id.contains("deepgram") || currentModel.name.lowercased().contains("deepgram") {
                     // Use Deepgram

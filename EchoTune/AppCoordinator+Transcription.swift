@@ -137,7 +137,7 @@ extension AppCoordinator {
     func handleWhisperResult(_ result: Result<WhisperTranscriptionResult, WhisperEngine.WhisperError>) {
         switch result {
         case .success(let payload):
-            os_log("📝 handleWhisperResult SUCCESS text='%{public}@' len=%d", log: appLog, type: .info, payload.outputText, payload.outputText.count)
+            os_log("📝 handleWhisperResult SUCCESS text='%@' len=%d", log: appLog, type: .info, payload.outputText, payload.outputText.count)
         case .failure(let error):
             os_log("📝 handleWhisperResult FAILURE error=%{public}@", log: appLog, type: .error, "\(error)")
         }
@@ -150,7 +150,7 @@ extension AppCoordinator {
         case .success(let payload):
             completeTranscriptionAudit()
             PerformanceMonitor.shared.endTranscription(wordCount: payload.outputText.split(separator: " ").count)
-            os_log("✅ Whisper success: '%{public}@' words=%d dur=%.1f", log: appLog, type: .info, payload.outputText, payload.outputText.split(separator: " ").count, recordingDuration)
+            os_log("✅ Whisper success: '%@' words=%d dur=%.1f", log: appLog, type: .info, payload.outputText, payload.outputText.split(separator: " ").count, recordingDuration)
 
             self.errorLogger.logInfo("Whisper transcription successful", category: "Transcription", context: [
                 "wordCount": "\(payload.outputText.split(separator: " ").count)",

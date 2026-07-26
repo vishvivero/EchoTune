@@ -186,7 +186,7 @@ extension WhisperEngine {
                 // Transcribe directly from audio array
                 os_log("🎙️ Calling whisperKit.transcribe(audioArray:)...", log: wLog, type: .info)
                 let transcriptionResult = try await self.transcribeWithCurrentSettings(audioArray: audioArray, whisperKit: whisperKit)
-                os_log("📝 Transcription: '%{public}@' (%d words)", log: wLog, type: .info, transcriptionResult.outputText, transcriptionResult.outputText.split(separator: " ").count)
+                os_log("📝 Transcription: '%@' (%d words)", log: wLog, type: .info, transcriptionResult.outputText, transcriptionResult.outputText.split(separator: " ").count)
 
                 await MainActor.run {
                     // End performance monitoring with word count
@@ -196,7 +196,7 @@ extension WhisperEngine {
 
                     self.currentText = transcriptionResult.outputText
                     self.isProcessing = false
-                    os_log("✅ Final cleaned: '%{public}@'", log: wLog, type: .info, transcriptionResult.outputText)
+                    os_log("✅ Final cleaned: '%@'", log: wLog, type: .info, transcriptionResult.outputText)
                     completion(.success(transcriptionResult))
                 }
             } catch {
