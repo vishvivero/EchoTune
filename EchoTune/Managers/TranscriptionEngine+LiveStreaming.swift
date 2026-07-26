@@ -144,6 +144,12 @@ extension TranscriptionEngine {
                     self.currentSessionText = ""
                 }
 
+                // Stopping: deliver immediately instead of waiting out the 3s timeout
+                if !isActive {
+                    self.finishLiveTranscription(reason: "error after stop")
+                    return
+                }
+
                 // Only fire completion if we're still the active handler (isActive)
                 if isActive {
                     if !self.accumulatedTranscriptions.isEmpty {
@@ -157,6 +163,9 @@ extension TranscriptionEngine {
                         self.isProcessing = false
                         self.liveCompletion?(.failure(.recognitionError(error)))
                     }
+                    // Consumed — a later stop must not fire it a second time.
+                    self.liveCompletion = nil
+                    self.stopCompletionFired = true
                 }
                 return
             }
@@ -180,6 +189,10 @@ extension TranscriptionEngine {
                         self.sessionRestartCount += 1
                         debugLog("🔄 Session ended, auto-restarting (session \(self.sessionRestartCount))...")
                         self.startRecognitionSession()
+                    } else {
+                        // Stopping: deliver the finalized text now — don't make
+                        // the user wait out the 3s fallback timeout.
+                        self.finishLiveTranscription(reason: "isFinal after stop")
                     }
                 }
             }
@@ -277,55 +290,50 @@ extension TranscriptionEngine {
         audioConverter = nil
         targetFormat = nil
 
-        // Capture everything we need BEFORE clearing state
-        let existingAccumulated = accumulatedTranscriptions
-        let existingCurrent = currentSessionText
-        let existingCompletion = liveCompletion
-
-        // Mark that we're stopping — the recognition task handler checks this
-        // But DON'T nil the completion yet — the timeout block needs it
+        // Mark that we're stopping — the recognition task handler sees this and
+        // calls finishLiveTranscription() as soon as the final result arrives.
         isTranscribing = false
         liveInputFormat = nil
+        stopCompletionFired = false
 
-        // Use a flag to track if the recognition task's own handler fires the completion
-        var completionFired = false
-
-        // Give the recognition task a moment to finalize with isFinal result
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-            guard !completionFired else { return }
-            completionFired = true
-
-            debugLog("⏱️ Recognition didn't finalize in time — returning accumulated text")
-
-            var allParts = existingAccumulated
-            if !existingCurrent.isEmpty {
-                allParts.append(existingCurrent)
-            }
-
-            if !allParts.isEmpty {
-                let merged = AudioChunker.mergeTranscriptions(allParts)
-                let processedText = self.processText(merged)
-                self.isProcessing = false
-                existingCompletion?(.success(processedText))
-            } else {
-                // No text at all — return empty success rather than hanging forever
-                self.isProcessing = false
-                existingCompletion?(.success(""))
-            }
-
-            // Clean up the recognition task
-            self.recognitionTask?.cancel()
-            self.recognitionTask = nil
-            self.recognitionRequest = nil
+        // Fallback only: if the recognizer never finalizes, deliver what we have.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+            self?.finishLiveTranscription(reason: "timeout")
         }
+    }
 
-        // Also hook into the recognition task's own completion to fire faster if possible
-        // The existing recognitionTask handler in startRecognitionSession checks isTranscribing
-        // and since we set it to false above, when the task handler fires with isFinal or error,
-        // it will try to use liveCompletion. But we already captured it above.
-        // So we need a different approach: override the completion in the task handler.
+    /// Delivers the stop-completion exactly once, from live state — called by
+    /// the recognition handler on isFinal/error after stop, or by the timeout.
+    func finishLiveTranscription(reason: String) {
+        guard !stopCompletionFired else { return }
+        // A new session may have started while the old timeout was pending —
+        // never deliver stale text into it.
+        guard !isTranscribing else { return }
+        stopCompletionFired = true
 
-        // Clear liveCompletion so the session handler doesn't also fire it
+        debugLog("🏁 Finalizing live transcription (\(reason))")
+
+        var allParts = accumulatedTranscriptions
+        if !currentSessionText.isEmpty {
+            allParts.append(currentSessionText)
+        }
+        accumulatedTranscriptions = []
+        currentSessionText = ""
+
+        let completion = liveCompletion
         liveCompletion = nil
+        isProcessing = false
+
+        recognitionTask?.cancel()
+        recognitionTask = nil
+        recognitionRequest = nil
+
+        if !allParts.isEmpty {
+            let merged = AudioChunker.mergeTranscriptions(allParts)
+            completion?(.success(processText(merged)))
+        } else {
+            // No text at all — return empty success rather than hanging forever
+            completion?(.success(""))
+        }
     }
 }

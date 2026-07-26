@@ -44,14 +44,13 @@ class TranscriptionEngine: NSObject, ObservableObject {
         }
     }
 
-    // MARK: - Formatting Options
-
-    var autoPunctuation = true
-    var smartCapitalization = true
-
     // Task state tracking to prevent multiple simultaneous tasks
     // Internal for cross-file extension access (TranscriptionEngine+LiveStreaming)
     var isTranscribing = false
+
+    // Guards the stop-completion so the recognizer's final callback and the
+    // stop timeout can't both deliver a result (see endLiveTranscription).
+    var stopCompletionFired = false
 
     // MARK: - Live Streaming Properties
     // Stored properties must remain in the class definition (Swift extensions cannot have stored properties).
@@ -264,8 +263,8 @@ class TranscriptionEngine: NSObject, ObservableObject {
             processedText = cleanTranscript(processedText)
         }
 
-        if smartCapitalization {
-            // Apply smart capitalization
+        // Read the user's setting, not a local flag — the toggle must work.
+        if AppSettings.shared.smartCapitalization {
             processedText = applySentenceCapitalization(processedText)
         }
 

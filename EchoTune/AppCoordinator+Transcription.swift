@@ -636,15 +636,7 @@ extension AppCoordinator {
         // Apply dictionary transformations (word replacements + correct spellings)
         processed = DictionaryManager.shared.process(text: processed)
 
-        // Apply settings
-        if settings.autoPunctuation {
-            // Already handled by Speech framework
-        }
-
-        if settings.smartCapitalization {
-            // Already handled by Speech framework
-        }
-
+        // Apply settings (capitalization is handled in TranscriptionEngine.processText)
         if settings.insertSpaceAfterText {
             processed += " "
         }

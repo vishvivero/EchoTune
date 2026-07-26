@@ -23,9 +23,8 @@ struct GeneralSettingsView: View {
             .padding(.bottom, 8)
 
             Section("Transcription Output") {
-                Toggle("Auto-Punctuation", isOn: $settings.autoPunctuation)
-                    .help("Automatically format punctuation in transcription output.")
-                
+                // Auto-Punctuation toggle removed for 4.0.0 — it never did
+                // anything (punctuation is whatever the model emits).
                 Toggle("Smart Capitalization", isOn: $settings.smartCapitalization)
                     .help("Capitalize the start of sentences and proper nouns automatically.")
                 

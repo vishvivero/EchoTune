@@ -12,8 +12,10 @@ class RecordingIndicatorWindow: NSPanel {
     static let shared = RecordingIndicatorWindow()
 
     private init() {
-        let screen = NSScreen.main ?? NSScreen.screens.first!
-        let screenFrame = screen.frame
+        // screens can be empty (clamshell/display reconfigure) — fall back to a
+        // fixed frame instead of crashing; the panel is repositioned on show.
+        let screenFrame = (NSScreen.main ?? NSScreen.screens.first)?.frame
+            ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         let windowWidth: CGFloat = 200
         let windowHeight: CGFloat = 40
 

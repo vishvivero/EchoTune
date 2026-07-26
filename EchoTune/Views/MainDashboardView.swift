@@ -350,7 +350,6 @@ struct SidebarView: View {
         Current Settings:
         - Default Model: \(modelManager.currentModel?.name ?? "None")
         - Installed Models: \(modelManager.installedModels.map { $0.name }.joined(separator: ", "))
-        - Auto Punctuation: \(settings.autoPunctuation ? "On" : "Off")
         - Smart Capitalization: \(settings.smartCapitalization ? "On" : "Off")
         - Insert Space After Text: \(settings.insertSpaceAfterText ? "On" : "Off")
         """
