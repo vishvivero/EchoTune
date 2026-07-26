@@ -47,25 +47,22 @@ class LicenseManager {
     private let serviceName = "com.echotune.app"
     private let trialDuration: TimeInterval = 7 * 24 * 60 * 60 // 7 days
 
-    // Bump this version string whenever a new trial reset is needed (e.g., major release).
-    // Users who installed an older version get a fresh 7-day trial on first launch of the new version.
-    private let trialVersion = "1.0.2"
-
     private init() {
-        // Reset trial if this is a new version (covers users who had old expired trials)
-        let lastTrialVersion = UserDefaults.standard.string(forKey: "trialVersion")
-        if lastTrialVersion != trialVersion {
-            debugLog("🔄 New trial version detected (\(lastTrialVersion ?? "none") → \(trialVersion)) — resetting trial")
-            let startDate = Date()
-            UserDefaults.standard.set(startDate, forKey: "trialStartDate")
-            UserDefaults.standard.set(trialVersion, forKey: "trialVersion")
-            trialExpiryDate = startDate.addingTimeInterval(trialDuration)
-        } else if let savedTrialStart = UserDefaults.standard.object(forKey: "trialStartDate") as? Date {
-            trialExpiryDate = savedTrialStart.addingTimeInterval(trialDuration)
+        // The trial clock is anchored in the Keychain so deleting UserDefaults
+        // can't restart it. The anchor is set exactly once: from an existing
+        // UserDefaults start date (upgrade path) or from "now" on first launch.
+        trialExpiryDate = .distantFuture // placeholder; resolved below
+
+        let anchorFormatter = ISO8601DateFormatter()
+        if let anchorString = getFromKeychain("trialStartAnchor"),
+           let anchorDate = anchorFormatter.date(from: anchorString) {
+            trialExpiryDate = anchorDate.addingTimeInterval(trialDuration)
+            // Keep the UserDefaults copy in sync for consumers that read it.
+            UserDefaults.standard.set(anchorDate, forKey: "trialStartDate")
         } else {
-            let startDate = Date()
+            let startDate = (UserDefaults.standard.object(forKey: "trialStartDate") as? Date) ?? Date()
+            saveToKeychain("trialStartAnchor", value: anchorFormatter.string(from: startDate))
             UserDefaults.standard.set(startDate, forKey: "trialStartDate")
-            UserDefaults.standard.set(trialVersion, forKey: "trialVersion")
             trialExpiryDate = startDate.addingTimeInterval(trialDuration)
         }
 
@@ -82,10 +79,13 @@ class LicenseManager {
         #if APPSTORE
         debugLog("⏳ App Store build — no license key check")
         #else
+        // Must match storeLicense's .iso8601 date encoding or the decode always fails.
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
         guard let _ = getFromKeychain("licenseKey"),
               let licenseDataString = getFromKeychain("licenseData"),
               let licenseData = licenseDataString.data(using: .utf8),
-              let storedInfo = try? JSONDecoder().decode(LicenseInfo.self, from: licenseData) else {
+              let storedInfo = try? decoder.decode(LicenseInfo.self, from: licenseData) else {
             debugLog("⏳ No stored license found")
             return
         }
@@ -303,6 +303,15 @@ class LicenseManager {
                 }
             } else {
                 debugLog("✓ Polar re-validation passed")
+            }
+        } catch PolarLookupError.unknownKey {
+            // Definitive server verdict (key deleted, e.g. after a refund) —
+            // not a network blip. Remove the cached license.
+            await MainActor.run {
+                debugLog("❌ Polar reports license key no longer exists — deactivating")
+                self.isLicensed = false
+                self.licenseInfo = nil
+                self.clearStoredLicense()
             }
         } catch {
             debugLog("⚠️ Polar re-validation unavailable — keeping cached license")

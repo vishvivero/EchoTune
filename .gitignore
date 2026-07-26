@@ -155,3 +155,5 @@ generate_license_key.sh
 .env.*
 *.xcarchive
 V4_RELEASE_PLAN.md
+BUG-AUDIT.md
+FIX-SUMMARY.md
