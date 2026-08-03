@@ -203,6 +203,25 @@ class WhisperEngine: ObservableObject {
                 debugLog("📂 Model folder: \(modelFolderPath)")
                 debugLog("   Exists: \(modelExists)")
 
+                // P3: Check for pre-compiled CoreML models bundled in the app.
+                // Symlink them into the WhisperKit models directory to skip compilation.
+                if let compiledDir = Bundle.main.resourceURL?.appendingPathComponent("CompiledModels") {
+                    if FileManager.default.fileExists(atPath: compiledDir.path) {
+                        debugLog("⚡ Found pre-compiled CoreML models in bundle")
+                        let destCompiledDir = modelFolderPath + "/compiled"
+                        try? FileManager.default.createDirectory(atPath: destCompiledDir, withIntermediateDirectories: true)
+                        if let entries = try? FileManager.default.contentsOfDirectory(atPath: compiledDir.path) {
+                            for entry in entries {
+                                let src = compiledDir.appendingPathComponent(entry)
+                                let dst = URL(fileURLWithPath: destCompiledDir).appendingPathComponent(entry)
+                                try? FileManager.default.removeItem(at: dst)
+                                try? FileManager.default.linkItem(at: src, to: dst)
+                            }
+                            debugLog("   Symlinked \(entries.count) compiled models → skipping CoreML compilation")
+                        }
+                    }
+                }
+
                 await MainActor.run {
                     self.loadingProgress = 0.3
                     self.loadingStage = modelExists ? "Loading model files..." : "Downloading model..."
