@@ -100,7 +100,7 @@ if [ ! -f "${EXPORT_OPTIONS_PLIST}" ]; then
     <key>method</key>
     <string>developer-id</string>
     <key>teamID</key>
-    <string>YOUR_TEAM_ID</string>
+    <string>VYPVWG69P8</string>
     <key>uploadSymbols</key>
     <true/>
 </dict>
@@ -166,7 +166,7 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
     xcrun notarytool submit "${NOTARIZE_ZIP}" \
         --apple-id "${APPLE_ID}" \
         --password "${APP_PASSWORD}" \
-        --team-id "YOUR_TEAM_ID" \
+        --team-id "VYPVWG69P8" \
         --wait
 
     if [ $? -eq 0 ]; then
