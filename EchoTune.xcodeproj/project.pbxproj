@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		6A7ACFC92EAE9C0200D8C6EE /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 6A7ACFC82EAE9C0200D8C6EE /* WhisperKit */; };
 		A1B2C3D42EAF000100D8C6EE /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D32EAF000100D8C6EE /* Sentry */; };
+		B2C3D4E62EAF000200D8C6EE /* FluidAudio in Frameworks */ = {isa = PBXBuildFile; productRef = B2C3D4E52EAF000200D8C6EE /* FluidAudio */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -72,6 +73,7 @@
 			files = (
 				6A7ACFC92EAE9C0200D8C6EE /* WhisperKit in Frameworks */,
 				A1B2C3D42EAF000100D8C6EE /* Sentry in Frameworks */,
+				B2C3D4E62EAF000200D8C6EE /* FluidAudio in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -142,6 +144,7 @@
 			packageProductDependencies = (
 				6A7ACFC82EAE9C0200D8C6EE /* WhisperKit */,
 				A1B2C3D32EAF000100D8C6EE /* Sentry */,
+				B2C3D4E52EAF000200D8C6EE /* FluidAudio */,
 			);
 			productName = EchoTune;
 			productReference = 6A7ACEA62EAD27FB00D8C6EE /* EchoTune.app */;
@@ -228,6 +231,7 @@
 			packageReferences = (
 				6A7ACFC42EAE9ABA00D8C6EE /* XCRemoteSwiftPackageReference "WhisperKit" */,
 				A1B2C3D12EAF000100D8C6EE /* XCRemoteSwiftPackageReference "sentry-cocoa" */,
+				B2C3D4E42EAF000200D8C6EE /* XCRemoteSwiftPackageReference "FluidAudio" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 6A7ACEA72EAD27FB00D8C6EE /* Products */;
@@ -655,6 +659,14 @@
 				minimumVersion = 8.37.0;
 			};
 		};
+		B2C3D4E42EAF000200D8C6EE /* XCRemoteSwiftPackageReference "FluidAudio" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/FluidInference/FluidAudio.git";
+			requirement = {
+				kind = upToNextMinorVersion;
+				minimumVersion = 0.15.5;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -667,6 +679,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A1B2C3D12EAF000100D8C6EE /* XCRemoteSwiftPackageReference "sentry-cocoa" */;
 			productName = Sentry;
+		};
+		B2C3D4E52EAF000200D8C6EE /* FluidAudio */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B2C3D4E42EAF000200D8C6EE /* XCRemoteSwiftPackageReference "FluidAudio" */;
+			productName = FluidAudio;
+		};
+		F1D0A0D22F00000100D8C6EE /* FluidAudio */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F1D0A0D12F00000100D8C6EE /* XCRemoteSwiftPackageReference "FluidAudio" */;
+			productName = FluidAudio;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
