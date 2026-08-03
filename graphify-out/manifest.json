@@ -1,0 +1,537 @@
+{
+  "EchoTune/App/AppDelegate.swift": {
+    "mtime": 1783371721.9095547,
+    "ast_hash": "3e25425f81cd6e240b5e3599237a5f26",
+    "semantic_hash": "3e25425f81cd6e240b5e3599237a5f26"
+  },
+  "EchoTune/AppCoordinator+Recording.swift": {
+    "mtime": 1785052082.9212916,
+    "ast_hash": "8395501e62618b8508620a1de5b8067b",
+    "semantic_hash": "8395501e62618b8508620a1de5b8067b"
+  },
+  "EchoTune/AppCoordinator+Retranscription.swift": {
+    "mtime": 1781314826.0,
+    "ast_hash": "12ce148360577d662326af6b586dd4a8",
+    "semantic_hash": "12ce148360577d662326af6b586dd4a8"
+  },
+  "EchoTune/AppCoordinator+Transcription.swift": {
+    "mtime": 1785052356.7332273,
+    "ast_hash": "b8c925ceab496f07a48fde56a2f58c31",
+    "semantic_hash": "b8c925ceab496f07a48fde56a2f58c31"
+  },
+  "EchoTune/AppCoordinator.swift": {
+    "mtime": 1783399784.7072537,
+    "ast_hash": "6153c999a2a5052897ac90dfa3b65e5b",
+    "semantic_hash": "6153c999a2a5052897ac90dfa3b65e5b"
+  },
+  "EchoTune/Assets.xcassets/AccentColor.colorset/Contents.json": {
+    "mtime": 1773044540.0,
+    "ast_hash": "55019f7265dde0a78318b0807f98e847",
+    "semantic_hash": "55019f7265dde0a78318b0807f98e847"
+  },
+  "EchoTune/Assets.xcassets/AppIcon.appiconset/Contents.json": {
+    "mtime": 1773044540.0,
+    "ast_hash": "5010e5f771e1bdcaf209e885af3995d4",
+    "semantic_hash": "5010e5f771e1bdcaf209e885af3995d4"
+  },
+  "EchoTune/Assets.xcassets/Contents.json": {
+    "mtime": 1773044540.0,
+    "ast_hash": "9deb2ada1cc834bbebf8bbad9c8978a1",
+    "semantic_hash": "9deb2ada1cc834bbebf8bbad9c8978a1"
+  },
+  "EchoTune/Assets.xcassets/MenuBarIcon.imageset/Contents.json": {
+    "mtime": 1773044540.0,
+    "ast_hash": "f978d95ef72c42ed558efa565fec258a",
+    "semantic_hash": "f978d95ef72c42ed558efa565fec258a"
+  },
+  "EchoTune/EchoTuneApp.swift": {
+    "mtime": 1783371664.8609722,
+    "ast_hash": "3680f17216869149a715831715d52215",
+    "semantic_hash": "3680f17216869149a715831715d52215"
+  },
+  "EchoTune/Managers/AIEnhancementEngine+Providers.swift": {
+    "mtime": 1783370379.4997025,
+    "ast_hash": "f8960d565f67f0034734cec1f41d0c6e",
+    "semantic_hash": "f8960d565f67f0034734cec1f41d0c6e"
+  },
+  "EchoTune/Managers/AIEnhancementEngine.swift": {
+    "mtime": 1783370346.9807863,
+    "ast_hash": "55f0f4ebf3fbd264f2230210bf2b4543",
+    "semantic_hash": "55f0f4ebf3fbd264f2230210bf2b4543"
+  },
+  "EchoTune/Managers/AnalyticsManager.swift": {
+    "mtime": 1773044558.0,
+    "ast_hash": "2a0124b37abefc4989a0c86737fb194f",
+    "semantic_hash": "2a0124b37abefc4989a0c86737fb194f"
+  },
+  "EchoTune/Managers/AudioCleanupManager.swift": {
+    "mtime": 1785052098.1975324,
+    "ast_hash": "349aa14f633de684533086779510b3c8",
+    "semantic_hash": "349aa14f633de684533086779510b3c8"
+  },
+  "EchoTune/Managers/AudioManager+AudioConversion.swift": {
+    "mtime": 1785051903.0883784,
+    "ast_hash": "7adf3ec80eb4f3c2823625cc3247c4cd",
+    "semantic_hash": "7adf3ec80eb4f3c2823625cc3247c4cd"
+  },
+  "EchoTune/Managers/AudioManager+DeviceSelection.swift": {
+    "mtime": 1773919266.0,
+    "ast_hash": "880730e01416565d78f6842ff6bfde18",
+    "semantic_hash": "880730e01416565d78f6842ff6bfde18"
+  },
+  "EchoTune/Managers/AudioManager+VADIntegration.swift": {
+    "mtime": 1779283620.0,
+    "ast_hash": "86ff2552e3f26c7f5c4b5f285c44b9ea",
+    "semantic_hash": "86ff2552e3f26c7f5c4b5f285c44b9ea"
+  },
+  "EchoTune/Managers/AudioManager.swift": {
+    "mtime": 1785052041.3036237,
+    "ast_hash": "3c51477522f0bf14e3277ff98cd573e5",
+    "semantic_hash": "3c51477522f0bf14e3277ff98cd573e5"
+  },
+  "EchoTune/Managers/AutoSendService.swift": {
+    "mtime": 1773044558.0,
+    "ast_hash": "e32537171a75e361a9d705ddd679304a",
+    "semantic_hash": "e32537171a75e361a9d705ddd679304a"
+  },
+  "EchoTune/Managers/DeepgramTranscriptionService.swift": {
+    "mtime": 1781314788.0,
+    "ast_hash": "583a5155fd2cf3aad3d89744f2644fea",
+    "semantic_hash": "583a5155fd2cf3aad3d89744f2644fea"
+  },
+  "EchoTune/Managers/DictionaryManager.swift": {
+    "mtime": 1773044558.0,
+    "ast_hash": "44d0d01429dc0d07d4a8038ec2131d2f",
+    "semantic_hash": "44d0d01429dc0d07d4a8038ec2131d2f"
+  },
+  "EchoTune/Managers/ErrorLogger.swift": {
+    "mtime": 1773044558.0,
+    "ast_hash": "f17006e2500d5064cc51d99d6351a779",
+    "semantic_hash": "f17006e2500d5064cc51d99d6351a779"
+  },
+  "EchoTune/Managers/GroqTranscriptionService.swift": {
+    "mtime": 1777655328.0,
+    "ast_hash": "fd01570eabbcd3fee23994d9fc2aabf2",
+    "semantic_hash": "fd01570eabbcd3fee23994d9fc2aabf2"
+  },
+  "EchoTune/Managers/LaunchAtLoginManager.swift": {
+    "mtime": 1773044558.0,
+    "ast_hash": "3d18654e58366ae45d0a622f7edac586",
+    "semantic_hash": "3d18654e58366ae45d0a622f7edac586"
+  },
+  "EchoTune/Managers/LicenseManager.swift": {
+    "mtime": 1785051848.456401,
+    "ast_hash": "057d718b35de5fb25f2ee9406c3a36cf",
+    "semantic_hash": "057d718b35de5fb25f2ee9406c3a36cf"
+  },
+  "EchoTune/Managers/MeetingAutoDetectionCoordinator.swift": {
+    "mtime": 1785053232.9583275,
+    "ast_hash": "311d60ebfcf51ee60eddaffc9fbeb187",
+    "semantic_hash": "311d60ebfcf51ee60eddaffc9fbeb187"
+  },
+  "EchoTune/Managers/MeetingManager.swift": {
+    "mtime": 1785053150.1999667,
+    "ast_hash": "79a9dd6ba9510c81da83fedc0f014a86",
+    "semantic_hash": "79a9dd6ba9510c81da83fedc0f014a86"
+  },
+  "EchoTune/Managers/MeetingSummaryEngine.swift": {
+    "mtime": 1785053204.7076938,
+    "ast_hash": "3ddf4e6081d2d8a946f972ad1ef1bd4c",
+    "semantic_hash": "3ddf4e6081d2d8a946f972ad1ef1bd4c"
+  },
+  "EchoTune/Managers/ModelManager+CloudAPI.swift": {
+    "mtime": 1779334970.0,
+    "ast_hash": "c470c60bddf482ff47bb7a53b61f31df",
+    "semantic_hash": "c470c60bddf482ff47bb7a53b61f31df"
+  },
+  "EchoTune/Managers/ModelManager+ModelCatalog.swift": {
+    "mtime": 1783371447.5655482,
+    "ast_hash": "198f2fcdf51e3bc2a21faadc9b7489be",
+    "semantic_hash": "198f2fcdf51e3bc2a21faadc9b7489be"
+  },
+  "EchoTune/Managers/ModelManager.swift": {
+    "mtime": 1783371450.533644,
+    "ast_hash": "632b993f6b89e7419aed84ff0ec5377b",
+    "semantic_hash": "632b993f6b89e7419aed84ff0ec5377b"
+  },
+  "EchoTune/Managers/MultiHotkeyManager.swift": {
+    "mtime": 1785052168.5679457,
+    "ast_hash": "338cca1469e9f3a35fbaea5749bc6778",
+    "semantic_hash": "338cca1469e9f3a35fbaea5749bc6778"
+  },
+  "EchoTune/Managers/NotesManager.swift": {
+    "mtime": 1773044540.0,
+    "ast_hash": "a1838549d6d737645d8fc545d7704ed9",
+    "semantic_hash": "a1838549d6d737645d8fc545d7704ed9"
+  },
+  "EchoTune/Managers/NotificationManager.swift": {
+    "mtime": 1776987718.0,
+    "ast_hash": "6e6524808aa3339d9d206e5bb3be6d5d",
+    "semantic_hash": "6e6524808aa3339d9d206e5bb3be6d5d"
+  },
+  "EchoTune/Managers/PermissionsManager.swift": {
+    "mtime": 1783372203.2784092,
+    "ast_hash": "46ee8958717c330a9f35e40f0d7b8313",
+    "semantic_hash": "46ee8958717c330a9f35e40f0d7b8313"
+  },
+  "EchoTune/Managers/PowerModeManager.swift": {
+    "mtime": 1783370603.9213483,
+    "ast_hash": "9872a2a547c7e93c34d491ed90fb95ca",
+    "semantic_hash": "9872a2a547c7e93c34d491ed90fb95ca"
+  },
+  "EchoTune/Managers/ReferralManager.swift": {
+    "mtime": 1781344831.0,
+    "ast_hash": "04d12aaf151c8f6697d1140c30c6f24c",
+    "semantic_hash": "04d12aaf151c8f6697d1140c30c6f24c"
+  },
+  "EchoTune/Managers/ShortcutManager.swift": {
+    "mtime": 1785052075.6261182,
+    "ast_hash": "ec6eb99ae03a5e87c1b2372418341a19",
+    "semantic_hash": "ec6eb99ae03a5e87c1b2372418341a19"
+  },
+  "EchoTune/Managers/SileroVADEngine.swift": {
+    "mtime": 1779334986.0,
+    "ast_hash": "c6978a9d3a116240066f6de2aa9539be",
+    "semantic_hash": "c6978a9d3a116240066f6de2aa9539be"
+  },
+  "EchoTune/Managers/SoundManager.swift": {
+    "mtime": 1773044558.0,
+    "ast_hash": "6ab3b3564514300dc21f165fd7127d56",
+    "semantic_hash": "6ab3b3564514300dc21f165fd7127d56"
+  },
+  "EchoTune/Managers/StoreKitManager.swift": {
+    "mtime": 1773044558.0,
+    "ast_hash": "8e98c6e996832f7756d371ad28db9d93",
+    "semantic_hash": "8e98c6e996832f7756d371ad28db9d93"
+  },
+  "EchoTune/Managers/SystemAudioCapture.swift": {
+    "mtime": 1773935344.0,
+    "ast_hash": "38c8a119209cc07615f507a8d5b56173",
+    "semantic_hash": "38c8a119209cc07615f507a8d5b56173"
+  },
+  "EchoTune/Managers/TextInsertionManager.swift": {
+    "mtime": 1777352454.0,
+    "ast_hash": "a75245ab56dac99741f0629cb9fd7ad5",
+    "semantic_hash": "a75245ab56dac99741f0629cb9fd7ad5"
+  },
+  "EchoTune/Managers/TranscriptionEngine+LiveStreaming.swift": {
+    "mtime": 1785052313.010535,
+    "ast_hash": "10ce804a8b6df7338b368e56fb0ce8c9",
+    "semantic_hash": "10ce804a8b6df7338b368e56fb0ce8c9"
+  },
+  "EchoTune/Managers/TranscriptionEngine+Routing.swift": {
+    "mtime": 1781314822.0,
+    "ast_hash": "eae4ffb979774e61c432316d58e2cf8b",
+    "semantic_hash": "eae4ffb979774e61c432316d58e2cf8b"
+  },
+  "EchoTune/Managers/TranscriptionEngine.swift": {
+    "mtime": 1785052339.5299075,
+    "ast_hash": "a32d8f128e4a86245b2fae56ad6c64c7",
+    "semantic_hash": "a32d8f128e4a86245b2fae56ad6c64c7"
+  },
+  "EchoTune/Managers/UpdateManager.swift": {
+    "mtime": 1783371765.5969775,
+    "ast_hash": "d940b4ccc0ac0d338a1e371b1ec767ed",
+    "semantic_hash": "d940b4ccc0ac0d338a1e371b1ec767ed"
+  },
+  "EchoTune/Managers/VADManager.swift": {
+    "mtime": 1779283618.0,
+    "ast_hash": "9fe476727fa7a04dcecee0698087ff65",
+    "semantic_hash": "9fe476727fa7a04dcecee0698087ff65"
+  },
+  "EchoTune/Managers/WhisperEngine+AudioProcessing.swift": {
+    "mtime": 1783370766.0186038,
+    "ast_hash": "f7f19b3c160f78ca471eddd4ab24181c",
+    "semantic_hash": "f7f19b3c160f78ca471eddd4ab24181c"
+  },
+  "EchoTune/Managers/WhisperEngine+Streaming.swift": {
+    "mtime": 1785051940.1143513,
+    "ast_hash": "47598a8eff7bd2909256aa6f45cbe9d9",
+    "semantic_hash": "47598a8eff7bd2909256aa6f45cbe9d9"
+  },
+  "EchoTune/Managers/WhisperEngine.swift": {
+    "mtime": 1783345684.154051,
+    "ast_hash": "7eec6b25b28a24b4b9ee7521af222b4e",
+    "semantic_hash": "7eec6b25b28a24b4b9ee7521af222b4e"
+  },
+  "EchoTune/Models/AIModel.swift": {
+    "mtime": 1781347235.0,
+    "ast_hash": "1b16d8032f0bb7e574d17166894864e8",
+    "semantic_hash": "1b16d8032f0bb7e574d17166894864e8"
+  },
+  "EchoTune/Models/AppSettings.swift": {
+    "mtime": 1783371697.7587953,
+    "ast_hash": "7e952e6304d227d8d5eb27d4bd14856b",
+    "semantic_hash": "7e952e6304d227d8d5eb27d4bd14856b"
+  },
+  "EchoTune/Models/AppState.swift": {
+    "mtime": 1776938860.0,
+    "ast_hash": "b4ed4bd7f20a94cf317bfa0711009734",
+    "semantic_hash": "b4ed4bd7f20a94cf317bfa0711009734"
+  },
+  "EchoTune/Models/DictionaryItem.swift": {
+    "mtime": 1773044558.0,
+    "ast_hash": "995ec8e74557789289d8b8630abe0a49",
+    "semantic_hash": "995ec8e74557789289d8b8630abe0a49"
+  },
+  "EchoTune/Models/LicenseInfo.swift": {
+    "mtime": 1773740560.0,
+    "ast_hash": "6362587a53433ffed16357ff66a39611",
+    "semantic_hash": "6362587a53433ffed16357ff66a39611"
+  },
+  "EchoTune/Models/MeetingSession.swift": {
+    "mtime": 1779340036.0,
+    "ast_hash": "ae4516df0ba472da5e2a5fd4c7ae2216",
+    "semantic_hash": "ae4516df0ba472da5e2a5fd4c7ae2216"
+  },
+  "EchoTune/Models/Note.swift": {
+    "mtime": 1773044540.0,
+    "ast_hash": "efeb75d07d78151c6d1258552c2d6292",
+    "semantic_hash": "efeb75d07d78151c6d1258552c2d6292"
+  },
+  "EchoTune/Models/PowerMode.swift": {
+    "mtime": 1776956214.0,
+    "ast_hash": "82465f5c0167365696f4f4f8abd2e8d3",
+    "semantic_hash": "82465f5c0167365696f4f4f8abd2e8d3"
+  },
+  "EchoTune/Models/TranscriptionStats.swift": {
+    "mtime": 1783371781.5850189,
+    "ast_hash": "a0e7c475db74afb308482c64022d80aa",
+    "semantic_hash": "a0e7c475db74afb308482c64022d80aa"
+  },
+  "EchoTune/Models/TriggerWordRule.swift": {
+    "mtime": 1773919592.0,
+    "ast_hash": "63aed068bdaa74386b2085f7b144d652",
+    "semantic_hash": "63aed068bdaa74386b2085f7b144d652"
+  },
+  "EchoTune/Utilities/ActiveBrowserInspector.swift": {
+    "mtime": 1783370580.49683,
+    "ast_hash": "8afb5650a6dd49f23b1a1aa6aed582c7",
+    "semantic_hash": "8afb5650a6dd49f23b1a1aa6aed582c7"
+  },
+  "EchoTune/Utilities/AudioChunker.swift": {
+    "mtime": 1773044558.0,
+    "ast_hash": "cf9636d214bf148d0acb3bf6e9cf3097",
+    "semantic_hash": "cf9636d214bf148d0acb3bf6e9cf3097"
+  },
+  "EchoTune/Utilities/Bundle+AppVersion.swift": {
+    "mtime": 1776987308.0,
+    "ast_hash": "de9fc581f3e0933c65d742206b4dcbf0",
+    "semantic_hash": "de9fc581f3e0933c65d742206b4dcbf0"
+  },
+  "EchoTune/Utilities/DebugLog.swift": {
+    "mtime": 1779348720.0,
+    "ast_hash": "d35ebee267c40b1074ec6b4df4736309",
+    "semantic_hash": "d35ebee267c40b1074ec6b4df4736309"
+  },
+  "EchoTune/Utilities/KeychainHelper.swift": {
+    "mtime": 1773044558.0,
+    "ast_hash": "951a6e94c3e250cda1f3847c3dff2934",
+    "semantic_hash": "951a6e94c3e250cda1f3847c3dff2934"
+  },
+  "EchoTune/Utilities/PerformanceMonitor.swift": {
+    "mtime": 1776942832.0,
+    "ast_hash": "a81206f0161aaf9716de6d9d4904c7e8",
+    "semantic_hash": "a81206f0161aaf9716de6d9d4904c7e8"
+  },
+  "EchoTune/Utilities/SystemAudioManager.swift": {
+    "mtime": 1773044558.0,
+    "ast_hash": "7258140b8d2cdfbe2c14a167d98a40fc",
+    "semantic_hash": "7258140b8d2cdfbe2c14a167d98a40fc"
+  },
+  "EchoTune/Utilities/SystemSpecsAnalyzer.swift": {
+    "mtime": 1780201456.0,
+    "ast_hash": "9d03078d15ebc49a9a3f6decfd7a4bf0",
+    "semantic_hash": "9d03078d15ebc49a9a3f6decfd7a4bf0"
+  },
+  "EchoTune/Views/Dashboard/HelpFeedbackView.swift": {
+    "mtime": 1785052355.004625,
+    "ast_hash": "012fbad614458baf3dda0f517b86e616",
+    "semantic_hash": "012fbad614458baf3dda0f517b86e616"
+  },
+  "EchoTune/Views/Dashboard/HomeContentView.swift": {
+    "mtime": 1783371765.5548127,
+    "ast_hash": "9016e7c6c9eadcc984f8eabf5fe28a7a",
+    "semantic_hash": "9016e7c6c9eadcc984f8eabf5fe28a7a"
+  },
+  "EchoTune/Views/Dashboard/ShareStatsView.swift": {
+    "mtime": 1783371785.3002088,
+    "ast_hash": "192dad5709506f765ddb8eebd79c5bb8",
+    "semantic_hash": "192dad5709506f765ddb8eebd79c5bb8"
+  },
+  "EchoTune/Views/Dictionary/DictionaryContentView.swift": {
+    "mtime": 1781343483.0,
+    "ast_hash": "644b315c53831f955bcc268b4bebe989",
+    "semantic_hash": "644b315c53831f955bcc268b4bebe989"
+  },
+  "EchoTune/Views/History/AudioPlayerManager.swift": {
+    "mtime": 1783371132.180642,
+    "ast_hash": "3a4f86306855a8d3f1bdece77662f846",
+    "semantic_hash": "3a4f86306855a8d3f1bdece77662f846"
+  },
+  "EchoTune/Views/History/HistoryComponents.swift": {
+    "mtime": 1783371132.1812534,
+    "ast_hash": "e5e085183701fc68843d0a4fc53dffcc",
+    "semantic_hash": "e5e085183701fc68843d0a4fc53dffcc"
+  },
+  "EchoTune/Views/History/TranscriptionHistoryItem.swift": {
+    "mtime": 1781343483.0,
+    "ast_hash": "ea5a5434cb9104b4127eec7cf1a307cb",
+    "semantic_hash": "ea5a5434cb9104b4127eec7cf1a307cb"
+  },
+  "EchoTune/Views/History/TranscriptionHistoryManager.swift": {
+    "mtime": 1781343483.0,
+    "ast_hash": "a1cf1af2236798254ab738bc1355f60f",
+    "semantic_hash": "a1cf1af2236798254ab738bc1355f60f"
+  },
+  "EchoTune/Views/HistoryView.swift": {
+    "mtime": 1783371079.901883,
+    "ast_hash": "d5e9889b481f6207ea8d400041b416b5",
+    "semantic_hash": "d5e9889b481f6207ea8d400041b416b5"
+  },
+  "EchoTune/Views/MainDashboardView.swift": {
+    "mtime": 1785052352.2880297,
+    "ast_hash": "48c35bb8d072f0752c623bdee47590b4",
+    "semantic_hash": "48c35bb8d072f0752c623bdee47590b4"
+  },
+  "EchoTune/Views/Meeting/MeetingView.swift": {
+    "mtime": 1785053259.5704753,
+    "ast_hash": "cf2bdb03cf91386a0dcb84df5d4b0a0f",
+    "semantic_hash": "cf2bdb03cf91386a0dcb84df5d4b0a0f"
+  },
+  "EchoTune/Views/MenuBar/StatusBarController.swift": {
+    "mtime": 1783346050.6405132,
+    "ast_hash": "acfa28d0679cdbafbe422117197226e6",
+    "semantic_hash": "acfa28d0679cdbafbe422117197226e6"
+  },
+  "EchoTune/Views/MiniRecorderView.swift": {
+    "mtime": 1783372408.499224,
+    "ast_hash": "3440b5e1a4ed0ff37e746605bab6ae0f",
+    "semantic_hash": "3440b5e1a4ed0ff37e746605bab6ae0f"
+  },
+  "EchoTune/Views/Notes/NotesContentView.swift": {
+    "mtime": 1781343483.0,
+    "ast_hash": "543b1c05c2068ef399064dd79bf0721c",
+    "semantic_hash": "543b1c05c2068ef399064dd79bf0721c"
+  },
+  "EchoTune/Views/Onboarding/LiveDemoStep.swift": {
+    "mtime": 1783343641.8476622,
+    "ast_hash": "a5705fc04af60d48fef996394b682c42",
+    "semantic_hash": "a5705fc04af60d48fef996394b682c42"
+  },
+  "EchoTune/Views/Onboarding/OnboardingComponents.swift": {
+    "mtime": 1783343545.513198,
+    "ast_hash": "8425844d167def33a02ae1576fed7b4b",
+    "semantic_hash": "8425844d167def33a02ae1576fed7b4b"
+  },
+  "EchoTune/Views/Onboarding/OnboardingTheme.swift": {
+    "mtime": 1783343535.3573549,
+    "ast_hash": "f81e0e30e883ab51b440c6a4a7233dcc",
+    "semantic_hash": "f81e0e30e883ab51b440c6a4a7233dcc"
+  },
+  "EchoTune/Views/Onboarding/OnboardingView.swift": {
+    "mtime": 1783349577.8438048,
+    "ast_hash": "5a0e03c795720564fba9b8a30dfc3525",
+    "semantic_hash": "5a0e03c795720564fba9b8a30dfc3525"
+  },
+  "EchoTune/Views/Onboarding/PermissionsStep.swift": {
+    "mtime": 1783343578.8742347,
+    "ast_hash": "e9e5574ec7aaa929ff7e1e28456f8db3",
+    "semantic_hash": "e9e5574ec7aaa929ff7e1e28456f8db3"
+  },
+  "EchoTune/Views/Onboarding/SetupStep.swift": {
+    "mtime": 1783345720.4152915,
+    "ast_hash": "0995d299dcfb5be603766e3e534cc188",
+    "semantic_hash": "0995d299dcfb5be603766e3e534cc188"
+  },
+  "EchoTune/Views/Onboarding/TrialCTAStep.swift": {
+    "mtime": 1783371672.4597833,
+    "ast_hash": "7a1d96558f163428b0feb265c5d0192a",
+    "semantic_hash": "7a1d96558f163428b0feb265c5d0192a"
+  },
+  "EchoTune/Views/Onboarding/WelcomeStep.swift": {
+    "mtime": 1783346018.5144143,
+    "ast_hash": "7f905487b7f6ca345af100402842dd41",
+    "semantic_hash": "7f905487b7f6ca345af100402842dd41"
+  },
+  "EchoTune/Views/PurchaseView.swift": {
+    "mtime": 1783371674.412462,
+    "ast_hash": "f0841ffb29b12927916e5fac23193b95",
+    "semantic_hash": "f0841ffb29b12927916e5fac23193b95"
+  },
+  "EchoTune/Views/RecordingIndicatorWindow.swift": {
+    "mtime": 1785052370.3002937,
+    "ast_hash": "6f8b49a20c94143a53acd38e22475a87",
+    "semantic_hash": "6f8b49a20c94143a53acd38e22475a87"
+  },
+  "EchoTune/Views/Settings/AIAutomationSettingsView.swift": {
+    "mtime": 1781343483.0,
+    "ast_hash": "87f83d224b59c125a020525aa3c444d5",
+    "semantic_hash": "87f83d224b59c125a020525aa3c444d5"
+  },
+  "EchoTune/Views/Settings/AIModelsSettingsView.swift": {
+    "mtime": 1783371716.2711353,
+    "ast_hash": "7a11578bb1725568fe448374307fbfa0",
+    "semantic_hash": "7a11578bb1725568fe448374307fbfa0"
+  },
+  "EchoTune/Views/Settings/LicenseSettingsView.swift": {
+    "mtime": 1783371079.9046166,
+    "ast_hash": "75a605f72418e5453fbbef6379fc3614",
+    "semantic_hash": "75a605f72418e5453fbbef6379fc3614"
+  },
+  "EchoTune/Views/Settings/SettingsCompositeViews.swift": {
+    "mtime": 1785052342.3429902,
+    "ast_hash": "115bd3c49c65839d5dc99f32e9932d63",
+    "semantic_hash": "115bd3c49c65839d5dc99f32e9932d63"
+  },
+  "EchoTune/Views/Settings/SettingsView.swift": {
+    "mtime": 1781343483.0,
+    "ast_hash": "1b0398e9a496cf69d0cbe42088beb7a0",
+    "semantic_hash": "1b0398e9a496cf69d0cbe42088beb7a0"
+  },
+  "EchoTuneTests/EchoTuneTests.swift": {
+    "mtime": 1773044540.0,
+    "ast_hash": "704bb56808abb18bff99e8a2c1aa460c",
+    "semantic_hash": "704bb56808abb18bff99e8a2c1aa460c"
+  },
+  "EchoTuneUITests/EchoTuneUITests.swift": {
+    "mtime": 1773044540.0,
+    "ast_hash": "f45d0395a2bb42112894e61c1ac59f4d",
+    "semantic_hash": "f45d0395a2bb42112894e61c1ac59f4d"
+  },
+  "EchoTuneUITests/EchoTuneUITestsLaunchTests.swift": {
+    "mtime": 1773044540.0,
+    "ast_hash": "5921656ae382b4f77827ea6aa32d767d",
+    "semantic_hash": "5921656ae382b4f77827ea6aa32d767d"
+  },
+  "EchoTuneUITests/OnboardingPhase1UITests.swift": {
+    "mtime": 1779336246.0,
+    "ast_hash": "140e86f322acf0b04f1da97857413f71",
+    "semantic_hash": "140e86f322acf0b04f1da97857413f71"
+  },
+  "Scripts/analyze_performance.py": {
+    "mtime": 1773044540.0,
+    "ast_hash": "424c22b85337434a640912cf07eb1175",
+    "semantic_hash": "424c22b85337434a640912cf07eb1175"
+  },
+  "Scripts/build_all.sh": {
+    "mtime": 1773044540.0,
+    "ast_hash": "950906ba48c64d421d3d02a47bc278d2",
+    "semantic_hash": "950906ba48c64d421d3d02a47bc278d2"
+  },
+  "Scripts/build_app_store.sh": {
+    "mtime": 1773044540.0,
+    "ast_hash": "822efd7aef555ae785f78dfb71181691",
+    "semantic_hash": "822efd7aef555ae785f78dfb71181691"
+  },
+  "Scripts/build_direct_sale.sh": {
+    "mtime": 1773044630.0,
+    "ast_hash": "56bec1dd46237839ee7e7c803c532656",
+    "semantic_hash": "56bec1dd46237839ee7e7c803c532656"
+  },
+  "Scripts/run_performance_tests.sh": {
+    "mtime": 1773044540.0,
+    "ast_hash": "2ce51866e9a74ac9983d7ca9cbb9c84c",
+    "semantic_hash": "2ce51866e9a74ac9983d7ca9cbb9c84c"
+  }
+}

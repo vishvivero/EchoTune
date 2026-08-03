@@ -143,7 +143,12 @@ extension WhisperEngine {
 
         let transcriptionOptions = DecodingOptions(
             task: .transcribe,
-            language: settings.autoDetectLanguage ? nil : preferredLanguage,
+            // When auto-detecting, pass the preferred language as a strong hint
+            // instead of nil — WhisperKit's detection window (30s) is longer than
+            // typical meeting chunks (8s), causing false language IDs (e.g. en→es).
+            // A hint biases detection towards the correct language while still
+            // allowing override for genuinely multilingual scenarios.
+            language: settings.autoDetectLanguage ? preferredLanguage : preferredLanguage,
             detectLanguage: settings.autoDetectLanguage || settings.translateToEnglish
         )
         let transcriptionPass = try await whisperKit.transcribe(audioArray: audioArray, decodeOptions: transcriptionOptions)
