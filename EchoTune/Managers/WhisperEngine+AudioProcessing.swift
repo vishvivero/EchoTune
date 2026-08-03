@@ -163,7 +163,7 @@ extension WhisperEngine {
         if settings.translateToEnglish, let detectedLanguage, !detectedLanguage.hasPrefix("en") {
             let translationOptions = DecodingOptions(
                 task: .translate,
-                language: settings.autoDetectLanguage ? nil : preferredLanguage,
+                language: preferredLanguage,
                 detectLanguage: true
             )
             let translationPass = try await whisperKit.transcribe(audioArray: audioArray, decodeOptions: translationOptions)

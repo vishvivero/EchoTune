@@ -58,10 +58,10 @@ class MeetingManager: ObservableObject {
     private var pendingMeetingFinalisation: Bool?
 
     // Configuration
-    private let maxChunkSeconds: TimeInterval = 8       // Force transcribe after 8s even if still talking
-    private let minChunkSeconds: TimeInterval = 1.5     // Don't transcribe chunks shorter than 1.5s
+    private let maxChunkSeconds: TimeInterval = 15       // Force transcribe after 15s even if still talking
+    private let minChunkSeconds: TimeInterval = 2.0     // Don't transcribe chunks shorter than 2s
     private let silenceThreshold: Float = 0.003         // Audio level below this = silence
-    private let silenceTriggerSeconds: TimeInterval = 0.6 // Silence this long → trigger transcription
+    private let silenceTriggerSeconds: TimeInterval = 2.0 // Silence this long → trigger transcription (was 0.6s)
     private let meetingsDirectory: URL
 
     // Adaptive chunking state

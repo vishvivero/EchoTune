@@ -18,7 +18,7 @@ import os.log
 extension WhisperEngine {
 
     /// Interval in seconds between live transcription updates
-    private static let liveTranscriptionInterval: TimeInterval = 2.5
+    private static let liveTranscriptionInterval: TimeInterval = 4.0
 
     func startStreamingTranscription(completion: @escaping (Result<WhisperTranscriptionResult, WhisperError>) -> Void) {
         os_log("🎤 startStreamingTranscription, whisperKit=%{public}@, isAvailable=%d", log: wLog, type: .info, whisperKitRef == nil ? "nil" : "loaded", isAvailable ? 1 : 0)
