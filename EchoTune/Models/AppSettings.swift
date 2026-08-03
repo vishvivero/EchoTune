@@ -362,6 +362,7 @@ class AppSettings: ObservableObject {
     }
 
     static let defaultLocalTranscriptionModel = "distil-whisper_distil-large-v3_turbo_600MB"
+    static let defaultMeetingModel = "parakeet-tdt-0.6b-v3"  // Fastest model for meetings (Neural Engine)
     private static let defaultEnhancementModel = AIEnhancementEngine.EnhancementModel.groqLlama.rawValue
 
     static func canonicalTranscriptionModelID(_ rawValue: String) -> String {
@@ -378,7 +379,10 @@ class AppSettings: ObservableObject {
             "distil-large-v3": "openai_whisper-base",
             "distil-large-v3-turbo": defaultLocalTranscriptionModel,
             "distil-whisper_distil-large-v3": "openai_whisper-base",
-            "distil-whisper_distil-large-v3_turbo": defaultLocalTranscriptionModel
+            "distil-whisper_distil-large-v3_turbo": defaultLocalTranscriptionModel,
+            "parakeet": "parakeet-tdt-0.6b-v3",
+            "parakeet-v3": "parakeet-tdt-0.6b-v3",
+            "parakeet-v2": "parakeet-tdt-0.6b-v2"
         ]
 
         if let mapped = legacyMap[normalized] {

@@ -222,10 +222,10 @@ class MeetingManager: ObservableObject {
         transcriptionWarning = nil
         summaryIssue = nil
 
-        // Meetings transcribe locally with WhisperKit only. A meeting that can
-        // never transcribe must not start silently (it would record a red badge
-        // for an hour and produce an empty transcript).
-        if WhisperEngine.shared.whisperKitRef == nil {
+        // Meetings transcribe locally with WhisperKit or Parakeet. A meeting that
+        // can never transcribe must not start silently.
+        let isParakeet = AppSettings.shared.transcriptionModel.hasPrefix("parakeet")
+        if (isParakeet && !ParakeetEngine.shared.isAvailable) || (!isParakeet && WhisperEngine.shared.whisperKitRef == nil) {
             let localModel: AIModel?
             if let current = ModelManager.shared.currentModel, current.category == .local, current.isInstalled {
                 localModel = current
@@ -247,16 +247,28 @@ class MeetingManager: ObservableObject {
                 return false
             }
 
-            // Model installed but not loaded yet — load it now. Audio buffers
-            // accumulate (and failed chunks are re-queued) until it's ready.
+            // Model installed but not loaded yet — load it now.
             transcriptionWarning = "Preparing the transcription model — the transcript will begin once it's ready."
-            WhisperEngine.shared.loadModel(model) { [weak self] result in
-                DispatchQueue.main.async {
-                    switch result {
-                    case .success:
-                        self?.transcriptionWarning = nil
-                    case .failure(let error):
-                        self?.transcriptionWarning = "Transcription model failed to load: \(error.localizedDescription)"
+            if isParakeet {
+                ParakeetEngine.shared.loadModel(model) { [weak self] result in
+                    DispatchQueue.main.async {
+                        switch result {
+                        case .success:
+                            self?.transcriptionWarning = nil
+                        case .failure(let error):
+                            self?.transcriptionWarning = "Transcription model failed to load: \(error.localizedDescription)"
+                        }
+                    }
+                }
+            } else {
+                WhisperEngine.shared.loadModel(model) { [weak self] result in
+                    DispatchQueue.main.async {
+                        switch result {
+                        case .success:
+                            self?.transcriptionWarning = nil
+                        case .failure(let error):
+                            self?.transcriptionWarning = "Transcription model failed to load: \(error.localizedDescription)"
+                        }
                     }
                 }
             }
@@ -782,17 +794,23 @@ class MeetingManager: ObservableObject {
                     speakerLabel = "Speaker 1 (Me)"
                 }
 
-                // Always transcribe live locally with WhisperKit — cloud transcription is
-                // never used during a live meeting (avoids unbounded RAM growth and total
-                // transcript loss on a network failure).
-                guard let whisperKit = WhisperEngine.shared.whisperKitRef else {
-                    throw NSError(domain: "MeetingManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "WhisperKit not loaded"])
-                }
+                // Prefer Parakeet (Neural Engine, ~120x realtime) for meetings.
+                // Falls back to WhisperKit if Parakeet is not available.
+                let selectedModel = AppSettings.shared.transcriptionModel
+                let isParakeet = selectedModel.hasPrefix("parakeet")
 
-                let result = try await WhisperEngine.shared.transcribeWithCurrentSettings(
-                    audioArray: audioArray,
-                    whisperKit: whisperKit
-                )
+                let result: WhisperTranscriptionResult
+                if isParakeet && ParakeetEngine.shared.isAvailable {
+                    result = try await ParakeetEngine.shared.transcribe(audioArray: audioArray)
+                } else {
+                    guard let whisperKit = WhisperEngine.shared.whisperKitRef else {
+                        throw NSError(domain: "MeetingManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "No transcription model loaded"])
+                    }
+                    result = try await WhisperEngine.shared.transcribeWithCurrentSettings(
+                        audioArray: audioArray,
+                        whisperKit: whisperKit
+                    )
+                }
                 let text = result.outputText.trimmingCharacters(in: .whitespacesAndNewlines)
 
                 await MainActor.run {
