@@ -224,7 +224,7 @@ class MeetingManager: ObservableObject {
 
         // Meetings transcribe locally with WhisperKit or Parakeet. A meeting that
         // can never transcribe must not start silently.
-        let isParakeet = AppSettings.shared.transcriptionModel.hasPrefix("parakeet")
+        let isParakeet = AppSettings.shared.defaultTranscriptionModel.hasPrefix("parakeet")
         if (isParakeet && !ParakeetEngine.shared.isAvailable) || (!isParakeet && WhisperEngine.shared.whisperKitRef == nil) {
             let localModel: AIModel?
             if let current = ModelManager.shared.currentModel, current.category == .local, current.isInstalled {
@@ -796,7 +796,7 @@ class MeetingManager: ObservableObject {
 
                 // Prefer Parakeet (Neural Engine, ~120x realtime) for meetings.
                 // Falls back to WhisperKit if Parakeet is not available.
-                let selectedModel = AppSettings.shared.transcriptionModel
+                let selectedModel = AppSettings.shared.defaultTranscriptionModel
                 let isParakeet = selectedModel.hasPrefix("parakeet")
 
                 let result: WhisperTranscriptionResult
