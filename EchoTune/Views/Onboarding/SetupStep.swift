@@ -12,6 +12,7 @@ struct SetupStep: View {
     @StateObject private var whisperEngine = WhisperEngine.shared
     @State private var errorMessage: String? = nil
     @State private var isCompiling = false
+    @State private var showAllModels = false
     let onNext: () -> Void
 
     private static let leanModelID = "openai_whisper-base"
@@ -27,12 +28,10 @@ struct SetupStep: View {
         return modelManager.availableModels.first { $0.id == Self.leanModelID }
     }
 
-    /// A lighter, faster alternative shown alongside the recommendation —
-    /// hidden if the recommendation already *is* the lean model.
-    private var leanModel: AIModel? {
-        guard let lean = modelManager.availableModels.first(where: { $0.id == Self.leanModelID }) else { return nil }
-        guard lean.id != recommendedModel?.id else { return nil }
-        return lean
+    /// Every locally-running model (excludes cloud models that need API keys —
+    /// those live in Settings > AI & Models).
+    private var localModels: [AIModel] {
+        modelManager.availableModels.filter { $0.category == .local }
     }
 
     var body: some View {
@@ -40,11 +39,11 @@ struct SetupStep: View {
             VStack(spacing: 12) {
                 OnboardingTheme.HeaderIconChip(systemName: "cpu.fill")
 
-                Text("Setup AI Engine")
+                Text("Choose AI Engine")
                     .font(.system(size: 26, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
 
-                Text("EchoTune transcribes your speech offline. Download the model recommended for your Mac, or pick the leaner, faster option.")
+                Text("We recommend the model below for your Mac — it's optional. You can try EchoTune right away with Apple Speech (no download), or pick from every available model.")
                     .font(.system(size: 13))
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
@@ -52,52 +51,154 @@ struct SetupStep: View {
             }
             .padding(.top, 16)
 
-            VStack(spacing: 16) {
-                if let model = recommendedModel {
-                    modelCard(model: model, badge: "Recommended for your Mac")
-                } else {
-                    ProgressView()
-                        .frame(height: 120)
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 16) {
+                    if let model = recommendedModel {
+                        modelCard(model: model, badge: "Recommended for your Mac")
+                    } else {
+                        ProgressView()
+                            .frame(height: 120)
+                    }
+
+                    // "See what else is available" — full local model catalog
+                    DisclosureGroup(isExpanded: $showAllModels) {
+                        VStack(spacing: 8) {
+                            ForEach(localModels) { model in
+                                compactModelRow(model: model)
+                            }
+                        }
+                        .padding(.top, 8)
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "square.grid.2x2")
+                                .foregroundColor(OnboardingTheme.accent)
+                            Text("See all \(localModels.count) available models")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.primary)
+                        }
+                    }
+                    .padding(14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(OnboardingTheme.accent.opacity(0.05))
+                    )
+
+                    if let error = errorMessage {
+                        Text(error)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.red)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 12)
+                    }
                 }
-
-                if let model = leanModel {
-                    modelCard(model: model, badge: "Leaner & faster")
-                }
-            }
-            .padding(.horizontal, 20)
-
-            if let error = errorMessage {
-                Text(error)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.red)
-                    .padding(.horizontal)
-                    .multilineTextAlignment(.center)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 8)
             }
 
-            Spacer()
+            Spacer(minLength: 0)
 
-            // Continue Button (Only shown if a model is successfully selected and loaded)
-            if isModelActiveAndReady {
+            // Continue — always available. If no model was chosen, EchoTune
+            // runs on Apple Speech until the user picks one in Settings.
+            VStack(spacing: 6) {
                 Button(action: onNext) {
                     Text("Continue")
                         .frame(width: 200)
                 }
                 .buttonStyle(GradientProminentButtonStyle())
                 .controlSize(.large)
-                .padding(.bottom, 20)
+                .disabled(modelManager.isDownloading)
+
+                Text(modelManager.isDownloading
+                     ? "Downloading \(modelManager.currentDownloadModel?.name ?? "model") — you can still continue…"
+                     : "No download needed — EchoTune starts with Apple Speech.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
+            .padding(.bottom, 20)
         }
         .onAppear {
             errorMessage = nil
         }
     }
 
-    private var isModelActiveAndReady: Bool {
-        if let current = modelManager.currentModel {
-            return whisperEngine.isAvailable && whisperEngine.loadedModelName == current.name
+    // MARK: - Compact row for the full catalog
+
+    @ViewBuilder
+    private func compactModelRow(model: AIModel) -> some View {
+        let isInstalled = modelManager.isInstalledAndUsable(model)
+        let isActive = modelManager.currentModel?.id == model.id
+        let isDownloadingThis = modelManager.isDownloading && modelManager.currentDownloadModel?.id == model.id
+
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(model.name)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.primary)
+
+                    if model.isBuiltIn {
+                        Text("Built-in")
+                            .font(.system(size: 9, weight: .bold))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Capsule().fill(Color.secondary.opacity(0.12)))
+                            .foregroundColor(.secondary)
+                    }
+
+                    if isActive {
+                        Text("Active")
+                            .font(.system(size: 9, weight: .bold))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Capsule().fill(OnboardingTheme.accent.opacity(0.15)))
+                            .foregroundColor(OnboardingTheme.accent)
+                    }
+                }
+
+                HStack(spacing: 10) {
+                    Text("Size: \(model.formattedSize)")
+                    Text("Speed: \(model.speedRatingStars)")
+                    Text("Accuracy: \(model.accuracyRatingStars)")
+                }
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            if model.isBuiltIn {
+                Button("Select") {
+                    let _ = modelManager.setCurrentModel(model)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(isActive)
+            } else if isInstalled {
+                Button(isActive ? "Active" : "Select") {
+                    let _ = modelManager.setCurrentModel(model)
+                    selectAndCompileModel(model)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .tint(OnboardingTheme.accent)
+                .disabled(isActive)
+            } else if isDownloadingThis {
+                ProgressView()
+                    .controlSize(.small)
+            } else {
+                Button("Download") {
+                    downloadModel(model)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .tint(OnboardingTheme.accent)
+                .disabled(modelManager.isDownloading)
+            }
         }
-        return false
+        .padding(.vertical, 4)
     }
+
+    // MARK: - Recommended model card
 
     @ViewBuilder
     private func modelCard(model: AIModel, badge: String) -> some View {
@@ -109,7 +210,6 @@ struct SetupStep: View {
         OnboardingCardView {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    // Icon chip — matches the dashboard sidebar's rounded icon chips
                     ZStack {
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
                             .fill(OnboardingTheme.brandGradient)
@@ -161,9 +261,33 @@ struct SetupStep: View {
                         }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
+                        .tint(OnboardingTheme.accent)
                         .disabled(modelManager.isDownloading)
                     }
                 }
+
+                // Speed/accuracy badges under the card header
+                HStack(spacing: 12) {
+                    Label("Speed", systemImage: "gauge")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                    Text(model.speedRatingStars)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.primary)
+                    Divider().frame(height: 12)
+                    Label("Accuracy", systemImage: "target")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                    Text(model.accuracyRatingStars)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.primary)
+                    Spacer()
+                    Text(model.description)
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+                .padding(.top, 2)
 
                 if isDownloadingThis {
                     VStack(alignment: .leading, spacing: 4) {
@@ -194,7 +318,6 @@ struct SetupStep: View {
                         }
                     }
                 } else if isInstalled && isActive && !whisperEngine.isAvailable {
-                    // Selected but load failed/not loaded yet
                     Button(action: {
                         selectAndCompileModel(model)
                     }) {
@@ -202,10 +325,13 @@ struct SetupStep: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
+                    .tint(OnboardingTheme.accent)
                 }
             }
         }
     }
+
+    // MARK: - Actions
 
     private func downloadModel(_ model: AIModel) {
         errorMessage = nil
@@ -230,9 +356,6 @@ struct SetupStep: View {
             case .success:
                 debugLog("✓ Local model loaded successfully in onboarding setup")
             case .failure(let error):
-                // A load failure on a model we believed was installed almost always means
-                // the downloaded files are truncated/corrupted. Wipe it so the card reverts
-                // to "Download" instead of retrying against permanently-broken files forever.
                 modelManager.markModelCorruptedAndRemove(model)
                 errorMessage = "\(model.name)'s files were incomplete or corrupted (\(error.localizedDescription)). They've been removed — please tap Download to fetch it again."
             }
