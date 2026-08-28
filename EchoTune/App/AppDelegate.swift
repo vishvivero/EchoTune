@@ -118,6 +118,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // across shows (isReleasedWhenClosed=false), so a one-time setContentSize
         // at creation doesn't survive size changes elsewhere.
         settingsWindow?.setContentSize(NSSize(width: 465, height: 345))
+        settingsWindow?.minSize = NSSize(width: 465, height: 345)
+        settingsWindow?.maxSize = NSSize(width: 900, height: 700)
         settingsWindow?.center()
 
         // Show settings window without stealing focus
