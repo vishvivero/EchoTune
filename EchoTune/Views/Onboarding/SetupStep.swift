@@ -38,7 +38,7 @@ struct SetupStep: View {
     var body: some View {
         VStack(spacing: 20) {
             VStack(spacing: 12) {
-                OnboardingTheme.HeaderIconChip(systemName: "cpu.fill", tint: .purple)
+                OnboardingTheme.HeaderIconChip(systemName: "cpu.fill")
 
                 Text("Setup AI Engine")
                     .font(.system(size: 26, weight: .bold, design: .rounded))

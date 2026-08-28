@@ -22,7 +22,7 @@ struct LiveWaveformView: View {
                 let width = size.width
                 let height = size.height
                 let midY = height / 2.0
-                // Brand gradient (blue → purple) matches the dashboard accents
+                // Brand gradient (cyan → deep cyan) matches the logo
                 let grad = Gradient(colors: [OnboardingTheme.accent, OnboardingTheme.accent2])
 
                 var path = Path()

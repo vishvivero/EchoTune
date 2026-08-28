@@ -20,7 +20,7 @@ struct LiveDemoStep: View {
     var body: some View {
         VStack(spacing: 20) {
             VStack(spacing: 12) {
-                OnboardingTheme.HeaderIconChip(systemName: "waveform", tint: .green)
+                OnboardingTheme.HeaderIconChip(systemName: "waveform")
 
                 Text("Try Live Dictation")
                     .font(.system(size: 26, weight: .bold, design: .rounded))
