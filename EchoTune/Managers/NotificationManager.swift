@@ -283,43 +283,6 @@ class NotificationManager {
         debugLog("📢 Notification: \(title)")
     }
 
-    func showMeetingDetectedPrompt(appName: String, sourceHint: String?, includesSystemAudio: Bool) {
-        guard notificationsEnabled else { return }
-
-        let content = UNMutableNotificationContent()
-        content.title = "Meeting detected in \(appName)"
-
-        var body = "Start recording this conversation in EchoTune?"
-        if let sourceHint, !sourceHint.isEmpty {
-            body += "\n\(sourceHint)"
-        }
-        if !includesSystemAudio {
-            body += "\nTip: grant Screen Recording for system audio capture."
-        }
-
-        content.body = body
-        content.sound = AppSettings.shared.playSoundOnStartStop ? .default : nil
-        content.categoryIdentifier = "MEETING_DETECTED"
-        content.userInfo = [
-            "appName": appName,
-            "sourceHint": sourceHint ?? ""
-        ]
-
-        let request = UNNotificationRequest(
-            identifier: "meeting_detected_\(appName.replacingOccurrences(of: " ", with: "_").lowercased())",
-            content: content,
-            trigger: nil
-        )
-
-        center.add(request) { error in
-            if let error {
-                debugLog("❌ Failed to show meeting detection notification: \(error)")
-            }
-        }
-
-        debugLog("📢 Notification: Meeting detected in \(appName)")
-    }
-
     // MARK: - Settings
 
     func setNotificationsEnabled(_ enabled: Bool) {
@@ -400,32 +363,12 @@ extension NotificationManager {
             options: []
         )
 
-        let startMeetingAction = UNNotificationAction(
-            identifier: "START_MEETING_RECORDING",
-            title: "Start Recording",
-            options: .foreground
-        )
-
-        let dismissMeetingAction = UNNotificationAction(
-            identifier: "DISMISS_MEETING_DETECTED",
-            title: "Not Now",
-            options: []
-        )
-
-        let meetingDetectedCategory = UNNotificationCategory(
-            identifier: "MEETING_DETECTED",
-            actions: [startMeetingAction, dismissMeetingAction],
-            intentIdentifiers: [],
-            options: []
-        )
-
         // Register categories
         center.setNotificationCategories([
             transcriptionCategory,
             trialCategory,
             trialExpiredCategory,
-            updateCategory,
-            meetingDetectedCategory
+            updateCategory
         ])
 
         debugLog("✓ Notification categories registered")

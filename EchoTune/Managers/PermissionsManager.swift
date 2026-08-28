@@ -4,7 +4,7 @@
 //
 //  Single source of truth for the three system permissions EchoTune needs:
 //  microphone (capture speech), accessibility (insert text into other apps),
-//  and screen recording (optional; system-audio capture for meetings).
+//  and screen recording (optional; used for context-aware transcription hints).
 //
 //  State refreshes whenever the app returns to the foreground, so coming
 //  back from System Settings picks up newly granted permissions without a

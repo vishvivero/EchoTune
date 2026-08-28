@@ -1,0 +1,9 @@
+# Exclude Info.plist from Copy Bundle Resources
+# Info.plist should only be referenced via INFOPLIST_FILE build setting
+Info.plist
+
+
+
+
+
+

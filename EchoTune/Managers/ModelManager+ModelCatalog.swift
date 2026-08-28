@@ -79,7 +79,7 @@ extension ModelManager {
                 id: "parakeet-tdt-0.6b-v3",
                 name: "Parakeet TDT v3",
                 size: 460 * 1024 * 1024,
-                description: "Fastest meeting transcription. Runs on Apple Neural Engine — loads in seconds. 25 languages. ~120x realtime.",
+                description: "Fastest local transcription. Runs on Apple Neural Engine — loads in seconds. 25 languages. ~120x realtime.",
                 language: "Multilingual (25 European languages)",
                 url: URL(string: "https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v3-coreml")!,
                 type: .fast,

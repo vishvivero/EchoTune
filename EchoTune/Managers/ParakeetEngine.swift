@@ -10,7 +10,7 @@
 //  The FluidAudio SPM package (v0.15.5) is already added to the project.
 //  The real engine should use FluidAudio's ASR pipeline — see the
 //  Getting Started doc at FluidInference/FluidAudio on GitHub.
-//  Until integrated, meetings fall back to WhisperKit via MeetingManager.
+//  Until integrated, transcription falls back to WhisperKit.
 //
 
 import Foundation
@@ -45,7 +45,7 @@ class ParakeetEngine: ObservableObject {
         loadingStage = "Parakeet requires FluidAudio integration"
         loadingProgress = 0.0
 
-        // Not available until FluidAudio is wired up — MeetingManager falls back to WhisperKit
+        // Not available until FluidAudio is wired up
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.isLoading = false
             self?.loadingProgress = 0

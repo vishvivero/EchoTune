@@ -88,57 +88,6 @@ struct HotkeySettingsView: View {
     }
 }
 
-// MARK: - Meetings Settings
-struct MeetingsSettingsView: View {
-    @EnvironmentObject var settings: AppSettings
-    
-    var body: some View {
-        Form {
-            Section("Meeting Mode") {
-                Toggle("Enable Meeting Mode", isOn: $settings.meetingModeEnabled)
-                    .help("Enables meeting recording and transcription features.")
-
-                Toggle("Auto-detect meetings", isOn: $settings.meetingAutoDetect)
-                    .help("Detects when a meeting app (Zoom, Teams, Meet, etc.) is active.")
-                    .disabled(!settings.meetingModeEnabled)
-
-                Toggle("Auto-start recording on detected meetings", isOn: $settings.meetingAutoStartDetectedApps)
-                    .help("Automatically starts recording when a meeting is detected.")
-                    .disabled(!settings.meetingModeEnabled || !settings.meetingAutoDetect)
-            }
-
-            Section("Meeting Capture") {
-                Toggle("Include microphone audio", isOn: $settings.meetingIncludeMicAudio)
-                    .help("Records your own voice alongside system audio during meetings.")
-
-                Toggle("Auto-generate summary when meeting ends", isOn: $settings.meetingAutoSummarise)
-                    .help("Generates AI meeting notes automatically when the recording stops.")
-
-                Picker("Default AI Template", selection: $settings.meetingDefaultTemplate) {
-                    ForEach(MeetingTemplate.allCases) { template in
-                        Text("\(template.emoji) \(template.rawValue)").tag(template)
-                    }
-                }
-                .help("Template used for auto-detected and scheduled meetings.")
-            }
-            
-            Section("History Retention") {
-                Toggle("Keep Local Audio Retention Archive", isOn: $settings.keepAudioHistory)
-                    .help("Saves the audio files along with history recordings.")
-                
-                Picker("Retention Period", selection: $settings.audioRetentionDays) {
-                    Text("1 Day").tag(1)
-                    Text("7 Days").tag(7)
-                    Text("30 Days").tag(30)
-                    Text("Indefinitely").tag(9999)
-                }
-                .disabled(!settings.keepAudioHistory)
-            }
-        }
-        .formStyle(.grouped)
-    }
-}
-
 // MARK: - Permissions & Privacy
 struct PermissionsPrivacySettingsView: View {
     @StateObject private var permissions = PermissionsManager.shared
@@ -226,6 +175,19 @@ struct PrivacySettingsView: View {
                     .help("Help us improve EchoTune by sending anonymous diagnostic data.")
             }
             
+            Section("Audio Retention") {
+                Toggle("Keep Local Audio Recordings", isOn: $settings.keepAudioHistory)
+                    .help("Saves the audio files along with history recordings.")
+                
+                Picker("Retention Period", selection: $settings.audioRetentionDays) {
+                    Text("1 Day").tag(1)
+                    Text("7 Days").tag(7)
+                    Text("30 Days").tag(30)
+                    Text("Indefinitely").tag(9999)
+                }
+                .disabled(!settings.keepAudioHistory)
+            }
+
             Section("Local Storage") {
                 Button("Delete All Cached Audio Recordings") {
                     let _ = AudioCleanupManager.shared.deleteAllAudioFiles()

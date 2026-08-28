@@ -25,10 +25,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         UNUserNotificationCenter.current().delegate = self
         NotificationManager.shared.setupNotificationCategories()
 
-        if #available(macOS 13.0, *) {
-            _ = MeetingAutoDetectionCoordinator.shared
-        }
-
         // Set activation policy based on onboarding state
         // Onboarding itself is now rendered inline inside the SwiftUI WindowGroup
         let hasCompletedOnboarding = onboardingState.hasCompletedOnboarding
@@ -50,17 +46,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
-        guard #available(macOS 13.0, *) else { return }
-
-        switch response.actionIdentifier {
-        case "START_MEETING_RECORDING":
-            let userInfo = response.notification.request.content.userInfo
-            await MainActor.run {
-                MeetingAutoDetectionCoordinator.shared.startDetectedMeeting(from: userInfo)
-            }
-        default:
-            break
-        }
+        // No custom notification actions currently require handling
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

@@ -107,7 +107,6 @@ struct ModelLoadingToast: View {
 
 enum NavigationItem: String, CaseIterable, Identifiable {
     case home = "Home"
-    case meetings = "Meetings"
     case history = "History"
     case dictionary = "Dictionary"
     case notes = "Notes"
@@ -120,7 +119,6 @@ enum NavigationItem: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .home: return "house.fill"
-        case .meetings: return "video.fill"
         case .history: return "clock.arrow.circlepath"
         case .dictionary: return "book.fill"
         case .notes: return "note.text"
@@ -130,16 +128,12 @@ enum NavigationItem: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Items to show in sidebar (conditionally includes meetings)
+    /// Items to show in sidebar
     static var sidebarItems: [NavigationItem] {
-        var items: [NavigationItem] = [.home]
-        #if !APPSTORE
-        if AppSettings.shared.meetingModeEnabled {
-            items.append(.meetings)
-        }
-        #endif
-        items.append(contentsOf: [.history, .dictionary, .notes, .settings, .share, .helpFeedback])
-        return items
+        [
+            .home,
+            .history, .dictionary, .notes, .settings, .share, .helpFeedback
+        ]
     }
 }
 
@@ -395,17 +389,6 @@ struct ModernSidebarItem: View {
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
 
-                if item == .meetings {
-                    Text("BETA")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundColor(.orange)
-                        .lineLimit(1)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.orange.opacity(0.15))
-                        .cornerRadius(4)
-                }
-
                 Spacer()
 
                 // Active indicator
@@ -440,13 +423,6 @@ struct DetailView: View {
             switch selectedView {
             case .home:
                 HomeContentView(selectedView: $selectedView)
-            case .meetings:
-                if #available(macOS 13.0, *) {
-                    MeetingView()
-                } else {
-                    Text("Meeting Mode requires macOS 13 or later")
-                        .foregroundColor(.secondary)
-                }
             case .history:
                 HistoryView()
             case .dictionary:

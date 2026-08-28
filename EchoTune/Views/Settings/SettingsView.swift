@@ -11,7 +11,6 @@ import Combine
 enum SettingsTab: String, CaseIterable, Identifiable {
     case general = "General"
     case hotkeys = "Hotkeys"
-    case meetings = "Meetings"
     case permissions = "Permissions"
     
     case aiModels = "AI & Models"
@@ -25,7 +24,6 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         switch self {
         case .general: return "slider.horizontal.3"
         case .hotkeys: return "keyboard"
-        case .meetings: return "person.3.fill"
         case .permissions: return "lock.shield"
         case .aiModels: return "cpu"
         case .automation: return "bolt.fill"
@@ -85,7 +83,7 @@ struct SettingsView: View {
                 
                 VStack(spacing: 4) {
                     if !isAdvancedMode {
-                        ForEach([SettingsTab.general, .hotkeys, .meetings, .permissions]) { tab in
+                        ForEach([SettingsTab.general, .hotkeys, .permissions]) { tab in
                             SettingsSidebarRow(tab: tab, isSelected: selectedTab == tab) {
                                 selectedTab = tab
                             }
@@ -114,8 +112,6 @@ struct SettingsView: View {
                     GeneralSettingsView()
                 case .hotkeys:
                     HotkeySettingsView()
-                case .meetings:
-                    MeetingsSettingsView()
                 case .permissions:
                     PermissionsPrivacySettingsView()
                 case .aiModels:

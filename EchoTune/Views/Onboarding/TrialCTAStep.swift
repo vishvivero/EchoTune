@@ -23,7 +23,7 @@ struct TrialCTAStep: View {
                     .font(.system(size: 26, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
 
-                Text("Unlock unlimited voice dictation, custom AI models, meeting summaries, and advanced automations.")
+                Text("Unlock unlimited voice dictation, custom AI models, and advanced automations.")
                     .font(.system(size: 13))
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)

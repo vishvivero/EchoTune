@@ -192,23 +192,6 @@ extension PowerMode {
             autoSendEnabled: false
         ),
 
-        // Meetings - Long-form, accurate (high priority)
-        PowerMode(
-            name: "Meetings & Calls",
-            emoji: "🎙️",
-            priority: 85,
-            appBundleIdentifiers: [
-                "us.zoom.xos",
-                "com.microsoft.teams2",
-                "com.google.Chrome.app.Meet"
-            ],
-            cloudModelId: "groq-whisper-large-v3-turbo",
-            aiEnhancementEnabled: true,
-            enhancementModel: "gpt-5.5",
-            customEnhancementPrompt: "Format as meeting notes. Use bullet points for action items. Preserve names, dates, and key decisions.",
-            autoSendEnabled: false
-        ),
-
         // Social Media - Casual, emoji-friendly (medium priority)
         PowerMode(
             name: "Social Media",

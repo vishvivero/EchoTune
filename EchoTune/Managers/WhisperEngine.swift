@@ -174,14 +174,14 @@ class WhisperEngine: ObservableObject {
 
                 let computeOptions = ModelComputeOptions(
                     melCompute: .cpuAndGPU,              // GPU-accelerated mel-spectrogram (fastest)
-                    audioEncoderCompute: .all,           // Use all compute units (CPU + GPU + Neural Engine)
-                    textDecoderCompute: .all,            // Use all compute units for decoding
+                    audioEncoderCompute: .cpuAndGPU,     // GPU encoder — avoids 2-min ANE specialization on every load
+                    textDecoderCompute: .cpuAndGPU,      // GPU decoder — as fast or faster than ANE on M2+ (WhisperKit benchmarks)
                     prefillCompute: .cpuAndGPU           // GPU-accelerated cache prefilling (vs .cpuOnly default)
                 )
 
                 debugLog("   Mel-spectrogram: GPU accelerated")
-                debugLog("   Audio Encoder: All compute units (CPU + GPU + Neural Engine)")
-                debugLog("   Text Decoder: All compute units (CPU + GPU + Neural Engine)")
+                debugLog("   Audio Encoder: CPU + GPU (ANE specialization skipped for fast load)")
+                debugLog("   Text Decoder: CPU + GPU (ANE specialization skipped for fast load)")
                 debugLog("   Cache Prefill: GPU accelerated")
 
                 await MainActor.run {

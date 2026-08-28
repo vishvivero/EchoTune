@@ -74,35 +74,6 @@ class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(autoCorrection, forKey: "autoCorrection") }
     }
 
-    // Meeting Mode Settings
-    @Published var meetingModeEnabled: Bool {
-        didSet { UserDefaults.standard.set(meetingModeEnabled, forKey: "meetingModeEnabled") }
-    }
-
-    @Published var meetingAutoDetect: Bool {
-        didSet { UserDefaults.standard.set(meetingAutoDetect, forKey: "meetingAutoDetect") }
-    }
-
-    @Published var meetingAutoStartDetectedApps: Bool {
-        didSet { UserDefaults.standard.set(meetingAutoStartDetectedApps, forKey: "meetingAutoStartDetectedApps") }
-    }
-
-    @Published var meetingAutoSummarise: Bool {
-        didSet { UserDefaults.standard.set(meetingAutoSummarise, forKey: "meetingAutoSummarise") }
-    }
-
-    @Published var meetingUseCloudTranscription: Bool {
-        didSet { UserDefaults.standard.set(meetingUseCloudTranscription, forKey: "meetingUseCloudTranscription") }
-    }
-
-    @Published var meetingDefaultTemplate: MeetingTemplate {
-        didSet { UserDefaults.standard.set(meetingDefaultTemplate.rawValue, forKey: "meetingDefaultTemplate") }
-    }
-
-    @Published var meetingIncludeMicAudio: Bool {
-        didSet { UserDefaults.standard.set(meetingIncludeMicAudio, forKey: "meetingIncludeMicAudio") }
-    }
-
     // Audio Feedback Settings
     @Published var playSoundOnStartStop: Bool {
         didSet { UserDefaults.standard.set(playSoundOnStartStop, forKey: "playSoundOnStartStop") }
@@ -251,20 +222,6 @@ class AppSettings: ObservableObject {
         } else {
             self.autoCorrection = true // default ON
         }
-        // Meeting Mode
-        self.meetingModeEnabled = UserDefaults.standard.object(forKey: "meetingModeEnabled") as? Bool ?? true
-        self.meetingAutoDetect = UserDefaults.standard.object(forKey: "meetingAutoDetect") as? Bool ?? true
-        self.meetingAutoStartDetectedApps = UserDefaults.standard.object(forKey: "meetingAutoStartDetectedApps") as? Bool ?? false
-        self.meetingAutoSummarise = UserDefaults.standard.object(forKey: "meetingAutoSummarise") as? Bool ?? true
-        // Default to cloud if user has a Groq API key configured, otherwise local
-        self.meetingUseCloudTranscription = UserDefaults.standard.object(forKey: "meetingUseCloudTranscription") as? Bool ?? hasGroqKey
-        self.meetingIncludeMicAudio = UserDefaults.standard.object(forKey: "meetingIncludeMicAudio") as? Bool ?? true
-        if let templateRaw = UserDefaults.standard.string(forKey: "meetingDefaultTemplate"),
-           let template = MeetingTemplate(rawValue: templateRaw) {
-            self.meetingDefaultTemplate = template
-        } else {
-            self.meetingDefaultTemplate = .general
-        }
 
         // Audio Feedback Settings
         if UserDefaults.standard.object(forKey: "playSoundOnStartStop") != nil {
@@ -362,7 +319,6 @@ class AppSettings: ObservableObject {
     }
 
     static let defaultLocalTranscriptionModel = "distil-whisper_distil-large-v3_turbo_600MB"
-    static let defaultMeetingModel = "parakeet-tdt-0.6b-v3"  // Fastest model for meetings (Neural Engine)
     private static let defaultEnhancementModel = AIEnhancementEngine.EnhancementModel.groqLlama.rawValue
 
     static func canonicalTranscriptionModelID(_ rawValue: String) -> String {
@@ -438,13 +394,6 @@ class AppSettings: ObservableObject {
         self.autoCorrection = true
         self.playSoundOnStartStop = true
         self.muteBackgroundAudio = true
-        self.meetingModeEnabled = true
-        self.meetingAutoDetect = true
-        self.meetingAutoStartDetectedApps = false
-        self.meetingAutoSummarise = true
-        self.meetingUseCloudTranscription = false
-        self.meetingDefaultTemplate = .general
-        self.meetingIncludeMicAudio = true
     }
     
     // Reset all settings to default values
