@@ -155,13 +155,15 @@ struct SetupStep: View {
                     }
                 }
 
-                HStack(spacing: 10) {
-                    Text("Size: \(model.formattedSize)")
-                    Text("Speed: \(model.speedRatingStars)")
-                    Text("Accuracy: \(model.accuracyRatingStars)")
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 9))
+                        .foregroundColor(OnboardingTheme.accent)
+                    Text(model.insight)
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
                 }
-                .font(.system(size: 10))
-                .foregroundColor(.secondary)
             }
 
             Spacer()
@@ -228,7 +230,7 @@ struct SetupStep: View {
                         Text(model.name)
                             .font(.system(size: 16, weight: .bold))
                             .foregroundColor(.primary)
-                        Text("\(model.formattedSize) | \(model.language)")
+                        Text("\(model.formattedSize)")
                             .font(.system(size: 11))
                             .foregroundColor(.secondary)
                     }
@@ -266,26 +268,19 @@ struct SetupStep: View {
                     }
                 }
 
-                // Speed/accuracy badges under the card header
-                HStack(spacing: 12) {
-                    Label("Speed", systemImage: "gauge")
+                // What this model is good at (instead of abstract stars)
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "sparkles")
                         .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                    Text(model.speedRatingStars)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(.primary)
-                    Divider().frame(height: 12)
-                    Label("Accuracy", systemImage: "target")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                    Text(model.accuracyRatingStars)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(.primary)
+                        .foregroundColor(OnboardingTheme.accent)
+                        .padding(.top, 1)
+
+                    Text(model.insight)
+                        .font(.system(size: 12))
+                        .foregroundColor(.primary.opacity(0.85))
+                        .fixedSize(horizontal: false, vertical: true)
+
                     Spacer()
-                    Text(model.description)
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
                 }
                 .padding(.top, 2)
 

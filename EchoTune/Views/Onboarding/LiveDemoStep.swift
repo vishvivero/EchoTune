@@ -177,7 +177,7 @@ struct LiveDemoStep: View {
             name: "Apple Speech",
             size: 0,
             description: "",
-            language: "Multilingual",
+            language: "English",
             url: URL(string: "https://developer.apple.com/documentation/speech")!,
             type: .fast,
             category: .local,

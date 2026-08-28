@@ -61,6 +61,32 @@ struct AIModel: Identifiable, Equatable, Hashable {
         return String(repeating: "⭐", count: accuracyRating)
     }
 
+    /// One-line, plain-English note on what this model is best at.
+    /// Shown in onboarding instead of star ratings — helps users pick by
+    /// use case rather than abstract scores.
+    var insight: String {
+        switch id {
+        case "apple-speech":
+            return "Built into macOS — no download. Great for quick notes and drafts."
+        case "distil-whisper_distil-large-v3_turbo_600MB":
+            return "Best all-rounder — great for emails, documents, and daily dictation."
+        case "openai_whisper-large-v3-turbo":
+            return "Top accuracy — ideal for long, technical, or precise dictation."
+        case "openai_whisper-base":
+            return "Lightweight and fast — suits Macs with less RAM and quick dictation bursts."
+        case "parakeet-tdt-0.6b-v3":
+            return "Near-real-time speed on Apple Silicon — for when speed matters most."
+        case "parakeet-tdt-0.6b-v2":
+            return "English-optimised — top English accuracy with fast loading."
+        case "groq-whisper-large-v3-turbo":
+            return "Cloud-powered — top accuracy with no local download (needs API key)."
+        case "deepgram-nova":
+            return "Cloud-powered — fast and accurate (needs API key)."
+        default:
+            return description
+        }
+    }
+
     static func == (lhs: AIModel, rhs: AIModel) -> Bool {
         return lhs.id == rhs.id
     }

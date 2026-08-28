@@ -3,7 +3,7 @@
 //  EchoTune
 //
 //  Model catalog — curated for Apple Silicon (M1-M5).
-//  Only models that make sense: multilingual, fast, accurate.
+//  Only models that make sense: fast, accurate (English-optimised for this release).
 //
 
 import Foundation
@@ -20,7 +20,7 @@ extension ModelManager {
                 name: "Apple Speech",
                 size: 0,
                 description: "Built-in macOS transcription. No download required.",
-                language: "Multilingual",
+                language: "English",
                 url: URL(string: "https://developer.apple.com/documentation/speech")!,
                 type: .fast,
                 category: .local,
@@ -37,7 +37,7 @@ extension ModelManager {
                 name: "Distil Large v3 Turbo",
                 size: 600 * 1024 * 1024,
                 description: "Recommended. Fastest large model — distilled + turbo optimized. Great on all Apple Silicon.",
-                language: "Multilingual (19 languages)",
+                language: "English",
                 url: URL(string: "https://huggingface.co/argmaxinc/whisperkit-coreml")!,
                 type: .fast,
                 category: .local,
@@ -51,7 +51,7 @@ extension ModelManager {
                 name: "Large v3 Turbo",
                 size: 954 * 1024 * 1024,
                 description: "Maximum accuracy with turbo speed. Best for M2+ with 16GB+ RAM.",
-                language: "Multilingual (99 languages)",
+                language: "English",
                 url: URL(string: "https://huggingface.co/argmaxinc/whisperkit-coreml")!,
                 type: .balanced,
                 category: .local,
@@ -65,7 +65,7 @@ extension ModelManager {
                 name: "Base",
                 size: 143 * 1024 * 1024,
                 description: "Lightweight model compatible with all Apple Silicon (including M1) and Intel Macs.",
-                language: "Multilingual",
+                language: "English",
                 url: URL(string: "https://huggingface.co/argmaxinc/whisperkit-coreml")!,
                 type: .fast,
                 category: .local,
@@ -80,7 +80,7 @@ extension ModelManager {
                 name: "Parakeet TDT v3",
                 size: 460 * 1024 * 1024,
                 description: "Fastest local transcription. Runs on Apple Neural Engine — loads in seconds. 25 languages. ~120x realtime.",
-                language: "Multilingual (25 European languages)",
+                language: "English",
                 url: URL(string: "https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v3-coreml")!,
                 type: .fast,
                 category: .local,
@@ -110,7 +110,7 @@ extension ModelManager {
                 name: "Groq Whisper / Grok STT",
                 size: 0,
                 description: "Lightning-fast cloud transcription. Works with Groq gsk_ keys and xAI Grok xai- keys.",
-                language: "Multilingual",
+                language: "English",
                 url: URL(string: "https://console.groq.com")!,
                 type: .fast,
                 category: .cloud,
@@ -124,7 +124,7 @@ extension ModelManager {
                 name: "Deepgram Nova",
                 size: 0,
                 description: "Cloud transcription via Deepgram's Nova model. Requires a Deepgram API key.",
-                language: "Multilingual",
+                language: "English",
                 url: URL(string: "https://deepgram.com")!,
                 type: .fast,
                 category: .cloud,
