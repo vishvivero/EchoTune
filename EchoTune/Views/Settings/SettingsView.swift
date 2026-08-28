@@ -100,7 +100,7 @@ struct SettingsView: View {
                 
                 Spacer()
             }
-            .frame(width: 160)
+            .frame(width: 140)
             .background(Color(NSColor.windowBackgroundColor))
             
             Divider()
@@ -124,11 +124,11 @@ struct SettingsView: View {
                     AboutLicenseSettingsView()
                 }
             }
-            .padding(16)
+            .padding(12)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(Color(NSColor.textBackgroundColor))
         }
-        .frame(minWidth: 620, minHeight: 460)
+        .frame(minWidth: 465, minHeight: 345)
         .onChange(of: isAdvancedMode) { _, newValue in
             // Automatically switch selected tab when switching mode
             selectedTab = newValue ? .aiModels : .general
