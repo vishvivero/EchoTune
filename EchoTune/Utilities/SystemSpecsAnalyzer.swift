@@ -88,13 +88,13 @@ class SystemSpecsAnalyzer {
 
     // Check if M1 (first gen Apple Silicon)
     var isM1: Bool {
-        // M1 devices start with MacXX where XX <= 14
+        // M1 devices are Mac13,x (and legacy Mac12,x and earlier Apple Silicon)
         let identifier = deviceIdentifier
         if identifier.hasPrefix("Mac") {
             // Extract number after "Mac"
             let numberStr = identifier.dropFirst(3)
             if let number = Int(numberStr.components(separatedBy: ",")[0]) {
-                return number <= 14  // M1 devices: Mac13, Mac14
+                return number <= 13  // M1 devices: Mac13; Mac14+ is M2+
             }
         }
         return false
@@ -106,7 +106,7 @@ class SystemSpecsAnalyzer {
         if identifier.hasPrefix("Mac") {
             let numberStr = identifier.dropFirst(3)
             if let number = Int(numberStr.components(separatedBy: ",")[0]) {
-                return number >= 15  // M2: Mac15, M3: Mac16, M4: Mac17, etc.
+                return number >= 14  // M2: Mac14, M3: Mac16, M4: Mac17+ (Mac15 = M3 MBP Air? — Mac14+ covers M2 and later)
             }
         }
         return false
@@ -180,8 +180,8 @@ class SystemSpecsAnalyzer {
             if let number = Int(numberStr.components(separatedBy: ",")[0]) {
                 switch number {
                 case ..<13: return .intel
-                case 13...14: return .m1
-                case 15: return .m2
+                case 13: return .m1
+                case 14...15: return .m2
                 case 16: return .m3
                 default: return .m4orNewer
                 }
