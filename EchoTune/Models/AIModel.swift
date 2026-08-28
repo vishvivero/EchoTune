@@ -74,10 +74,8 @@ struct AIModel: Identifiable, Equatable, Hashable {
             return "Top accuracy — ideal for long, technical, or precise dictation."
         case "openai_whisper-base":
             return "Lightweight and fast — suits Macs with less RAM and quick dictation bursts."
-        case "parakeet-tdt-0.6b-v3":
-            return "Near-real-time speed on Apple Silicon — for when speed matters most."
-        case "parakeet-tdt-0.6b-v2":
-            return "English-optimised — top English accuracy with fast loading."
+        case "parakeet-tdt-0.6b-v3", "parakeet-tdt-0.6b-v2":
+            return description
         case "groq-whisper-large-v3-turbo":
             return "Cloud-powered — top accuracy with no local download (needs API key)."
         case "deepgram-nova":

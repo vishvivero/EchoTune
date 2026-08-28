@@ -72,36 +72,6 @@ extension ModelManager {
                 speedRating: 5,
                 accuracyRating: 3
             ),
-            
-            // MARK: - Neural Engine Models (Parakeet / FluidAudio)
-
-            AIModel(
-                id: "parakeet-tdt-0.6b-v3",
-                name: "Parakeet TDT v3",
-                size: 460 * 1024 * 1024,
-                description: "Fastest local transcription. Runs on Apple Neural Engine — loads in seconds. 25 languages. ~120x realtime.",
-                language: "English",
-                url: URL(string: "https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v3-coreml")!,
-                type: .fast,
-                category: .local,
-                speedRating: 5,
-                accuracyRating: 4,
-                isBuiltIn: false
-            ),
-
-            AIModel(
-                id: "parakeet-tdt-0.6b-v2",
-                name: "Parakeet TDT v2 (English)",
-                size: 460 * 1024 * 1024,
-                description: "English-optimised Parakeet. Same Neural Engine speed, tuned for maximum English accuracy.",
-                language: "English",
-                url: URL(string: "https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v2-coreml")!,
-                type: .fast,
-                category: .local,
-                speedRating: 5,
-                accuracyRating: 4,
-                isBuiltIn: false
-            ),
 
             // MARK: - Cloud Models
 
