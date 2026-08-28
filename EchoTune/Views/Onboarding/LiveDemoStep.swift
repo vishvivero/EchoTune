@@ -19,7 +19,9 @@ struct LiveDemoStep: View {
 
     var body: some View {
         VStack(spacing: 20) {
-            VStack(spacing: 8) {
+            VStack(spacing: 12) {
+                OnboardingTheme.HeaderIconChip(systemName: "waveform", tint: .green)
+
                 Text("Try Live Dictation")
                     .font(.system(size: 26, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
@@ -30,7 +32,7 @@ struct LiveDemoStep: View {
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 40)
             }
-            .padding(.top, 20)
+            .padding(.top, 16)
 
             // Audio Waveform Visualization
             if audioManager.isRecording {
@@ -54,19 +56,27 @@ struct LiveDemoStep: View {
                 Button(action: toggleRecording) {
                     ZStack {
                         Circle()
-                            .fill(audioManager.isRecording ? Color.red.opacity(0.15) : OnboardingTheme.accent.opacity(0.15))
+                            .fill(
+                                audioManager.isRecording
+                                    ? AnyGradient(Gradient(colors: [Color.red, Color.red.opacity(0.7)]))
+                                    : AnyGradient(Gradient(colors: [OnboardingTheme.accent, OnboardingTheme.accent2]))
+                            )
                             .frame(width: 80, height: 80)
+                            .shadow(
+                                color: (audioManager.isRecording ? Color.red : OnboardingTheme.accent).opacity(0.4),
+                                radius: 10, x: 0, y: 5
+                            )
 
                         if audioManager.isRecording {
                             Circle()
-                                .stroke(Color.red, lineWidth: 2)
+                                .stroke(Color.red.opacity(0.6), lineWidth: 2)
                                 .frame(width: 76, height: 76)
                                 .scaleEffect(1.0 + CGFloat(audioManager.audioLevel) * 0.5)
                         }
 
                         Image(systemName: audioManager.isRecording ? "stop.fill" : "mic.fill")
                             .font(.system(size: 32))
-                            .foregroundColor(audioManager.isRecording ? .red : OnboardingTheme.accent)
+                            .foregroundColor(.white)
                     }
                 }
                 .buttonStyle(.plain)
@@ -124,7 +134,7 @@ struct LiveDemoStep: View {
                     Text("Continue")
                         .frame(width: 200)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(GradientProminentButtonStyle())
                 .controlSize(.large)
                 .padding(.bottom, 20)
             }

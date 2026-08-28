@@ -37,7 +37,9 @@ struct SetupStep: View {
 
     var body: some View {
         VStack(spacing: 20) {
-            VStack(spacing: 8) {
+            VStack(spacing: 12) {
+                OnboardingTheme.HeaderIconChip(systemName: "cpu.fill", tint: .purple)
+
                 Text("Setup AI Engine")
                     .font(.system(size: 26, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
@@ -48,7 +50,7 @@ struct SetupStep: View {
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 40)
             }
-            .padding(.top, 20)
+            .padding(.top, 16)
 
             VStack(spacing: 16) {
                 if let model = recommendedModel {
@@ -80,7 +82,7 @@ struct SetupStep: View {
                     Text("Continue")
                         .frame(width: 200)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(GradientProminentButtonStyle())
                 .controlSize(.large)
                 .padding(.bottom, 20)
             }
@@ -107,13 +109,15 @@ struct SetupStep: View {
         OnboardingCardView {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
+                    // Icon chip — matches the dashboard sidebar's rounded icon chips
                     ZStack {
-                        Circle()
-                            .fill(OnboardingTheme.accent.opacity(0.15))
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(OnboardingTheme.brandGradient)
                             .frame(width: 40, height: 40)
+                            .shadow(color: OnboardingTheme.accent.opacity(0.3), radius: 5, x: 0, y: 3)
                         Image(systemName: "cpu")
                             .font(.system(size: 18))
-                            .foregroundColor(OnboardingTheme.accent)
+                            .foregroundColor(.white)
                     }
 
                     VStack(alignment: .leading, spacing: 2) {

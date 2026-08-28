@@ -13,7 +13,9 @@ struct PermissionsStep: View {
 
     var body: some View {
         VStack(spacing: 20) {
-            VStack(spacing: 8) {
+            VStack(spacing: 12) {
+                OnboardingTheme.HeaderIconChip(systemName: "lock.shield.fill")
+
                 Text("Enable Required Permissions")
                     .font(.system(size: 26, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
@@ -25,7 +27,7 @@ struct PermissionsStep: View {
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 40)
             }
-            .padding(.top, 20)
+            .padding(.top, 16)
 
             VStack(spacing: 12) {
                 // Card 1: Microphone (Core)
@@ -75,7 +77,7 @@ struct PermissionsStep: View {
                 Text("Continue")
                     .frame(width: 200)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(GradientProminentButtonStyle())
             .controlSize(.large)
             .disabled(!canContinue)
             .accessibilityIdentifier("onboarding.permissions.continueButton")
@@ -101,14 +103,23 @@ struct PermissionsStep: View {
     ) -> some View {
         OnboardingCardView {
             HStack(spacing: 16) {
+                // Icon chip — matches the dashboard sidebar's rounded icon chips
                 ZStack {
-                    Circle()
-                        .fill(isGranted ? Color.green.opacity(0.15) : OnboardingTheme.accent.opacity(0.1))
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(
+                            isGranted
+                                ? AnyShapeStyle(OnboardingTheme.successGradient)
+                                : AnyShapeStyle(OnboardingTheme.brandGradient)
+                        )
                         .frame(width: 44, height: 44)
+                        .shadow(
+                            color: (isGranted ? Color.green : OnboardingTheme.accent).opacity(0.3),
+                            radius: 6, x: 0, y: 3
+                        )
 
                     Image(systemName: isGranted ? "checkmark" : "shield.fill")
                         .font(.system(size: 18, weight: .bold))
-                        .foregroundColor(isGranted ? .green : OnboardingTheme.accent)
+                        .foregroundColor(.white)
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
@@ -124,16 +135,27 @@ struct PermissionsStep: View {
                 Spacer()
 
                 if isGranted {
-                    Text("Granted")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.green)
-                        .accessibilityIdentifier(grantedLblId)
+                    HStack(spacing: 4) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 12))
+                        Text("Granted")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
+                    .foregroundColor(.green)
+                    .accessibilityIdentifier(grantedLblId)
                 } else {
                     Button(action: grantAction) {
                         Text("Grant")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 6)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .fill(OnboardingTheme.brandGradient)
+                            )
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
+                    .buttonStyle(.plain)
                     .accessibilityIdentifier(grantBtnId)
                 }
             }

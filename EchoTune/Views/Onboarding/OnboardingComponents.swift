@@ -22,7 +22,8 @@ struct LiveWaveformView: View {
                 let width = size.width
                 let height = size.height
                 let midY = height / 2.0
-                let grad = Gradient(colors: [OnboardingTheme.accent, OnboardingTheme.accent.opacity(0.5)])
+                // Brand gradient (blue → purple) matches the dashboard accents
+                let grad = Gradient(colors: [OnboardingTheme.accent, OnboardingTheme.accent2])
 
                 var path = Path()
                 path.move(to: CGPoint(x: 0, y: midY))
@@ -48,11 +49,18 @@ struct StepIndicatorView: View {
     var body: some View {
         HStack(spacing: 8) {
             ForEach(0..<totalSteps, id: \.self) { index in
-                Circle()
-                    .fill(index <= currentStep ? OnboardingTheme.accent : Color.secondary.opacity(0.25))
-                    .frame(width: 8, height: 8)
-                    .scaleEffect(index == currentStep ? 1.3 : 1.0)
-                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: currentStep)
+                if index == currentStep {
+                    // Current step: capsule in brand gradient (like the dashboard's active nav pill)
+                    Capsule()
+                        .fill(OnboardingTheme.brandGradient)
+                        .frame(width: 22, height: 8)
+                        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: currentStep)
+                } else {
+                    Circle()
+                        .fill(index < currentStep ? AnyShapeStyle(OnboardingTheme.brandGradient) : AnyShapeStyle(Color.secondary.opacity(0.25)))
+                        .frame(width: 8, height: 8)
+                        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: currentStep)
+                }
             }
         }
     }
@@ -70,9 +78,17 @@ struct OnboardingCardView<Content: View>: View {
         content
             .padding(20)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(Color(NSColor.controlBackgroundColor))
-                    .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 2)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(OnboardingTheme.cardGradient)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+                    )
+                    .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 2)
             )
     }
 }

@@ -18,7 +18,9 @@ struct TrialCTAStep: View {
 
     var body: some View {
         VStack(spacing: 20) {
-            VStack(spacing: 8) {
+            VStack(spacing: 12) {
+                OnboardingTheme.HeaderIconChip(systemName: "crown.fill", tint: .orange)
+
                 Text("Get EchoTune Pro")
                     .font(.system(size: 26, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
@@ -29,7 +31,7 @@ struct TrialCTAStep: View {
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 40)
             }
-            .padding(.top, 20)
+            .padding(.top, 16)
 
             #if APPSTORE
             // App Store Build Flow
@@ -55,7 +57,7 @@ struct TrialCTAStep: View {
                             Text("Unlock EchoTune Pro")
                                 .frame(width: 220)
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(GradientProminentButtonStyle())
                         .controlSize(.large)
                     }
                     .padding()
@@ -84,7 +86,7 @@ struct TrialCTAStep: View {
                         Button(action: openCheckoutBrowser) {
                             Text("Buy License")
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(GradientProminentButtonStyle())
                         .controlSize(.regular)
                     }
                 }
@@ -110,7 +112,7 @@ struct TrialCTAStep: View {
                                     Text("Activate")
                                 }
                             }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(GradientProminentButtonStyle())
                             .controlSize(.regular)
                             .disabled(licenseKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isActivating || isSuccess)
                         }
@@ -134,7 +136,7 @@ struct TrialCTAStep: View {
                     Text("Start Free Trial")
                         .frame(width: 220)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(GradientProminentButtonStyle())
                 .controlSize(.large)
                 .disabled(isActivating)
 
