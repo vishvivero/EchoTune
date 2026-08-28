@@ -457,6 +457,15 @@ class ModelManager: ObservableObject {
         switch modelID {
         case "distil-whisper_distil-large-v3":
             return "distil-whisper_distil-large-v3_594MB"
+        case "openai_whisper-large-v3-v20240930_turbo", "openai_whisper-large-v3-v20240930_turbo_632MB":
+            // CRITICAL: must target the _632MB folder explicitly. The bare variant
+            // "openai_whisper-large-v3-v20240930_turbo" matches the 1.5GB fp16 folder
+            // in the HF repo (glob "*turbo/*" doesn't match "..._turbo_632MB/*"), so
+            // WhisperKit would download 2.4x the data into a folder our installer
+            // doesn't recognize — the "slow 10-minute download" bug.
+            return "openai_whisper-large-v3-v20240930_turbo_632MB"
+        case "openai_whisper-small.en", "openai_whisper-small.en_244MB":
+            return "openai_whisper-small.en"
         case "distil-whisper_distil-large-v3_turbo", "distil-whisper_distil-large-v3_turbo_600MB":
             return "distil-whisper_distil-large-v3_turbo_600MB"
         case "openai_whisper-large-v3-turbo", "openai_whisper-large-v3_turbo", "openai_whisper-large-v3_turbo_954MB":
