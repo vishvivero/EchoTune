@@ -135,11 +135,14 @@ final class PermissionsManager: ObservableObject {
             return
         }
 
-        // Trigger the native prompt, take the user straight to the pane,
-        // and watch for the grant (macOS never notifies us).
+        // Trigger the native prompt only. The prompt's "Open System Settings"
+        // button takes the user to the Accessibility pane, where macOS lists
+        // EchoTune and they flip the switch. We deliberately do NOT deep-link
+        // the pane ourselves: doing so showed a doubled dialog + pane for no
+        // gain, and AXIsProcessTrustedWithOptions(prompt:) is what registers
+        // the app in the list at all.
         let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
         _ = AXIsProcessTrustedWithOptions([promptKey: true] as CFDictionary)
-        SettingsPane.accessibility.open()
         beginAccessibilityWatch()
     }
 
