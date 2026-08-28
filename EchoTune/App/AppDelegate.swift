@@ -104,7 +104,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             settingsWindow = NSWindow(contentViewController: hostingController)
             settingsWindow?.title = "EchoTune Settings"
             settingsWindow?.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-            settingsWindow?.setContentSize(NSSize(width: 700, height: 560))
+            settingsWindow?.setContentSize(NSSize(width: 620, height: 460))
             settingsWindow?.center()
             settingsWindow?.isReleasedWhenClosed = false
 
