@@ -54,7 +54,7 @@ struct SetupStep: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 16) {
                     if let model = recommendedModel {
-                        modelCard(model: model, badge: "Recommended for your Mac")
+                        modelCard(model: model, badge: "Recommended for your \(SystemSpecsAnalyzer.shared.chipGeneration.displayName)")
                     } else {
                         ProgressView()
                             .frame(height: 120)
@@ -153,6 +153,9 @@ struct SetupStep: View {
                             .background(Capsule().fill(OnboardingTheme.accent.opacity(0.15)))
                             .foregroundColor(OnboardingTheme.accent)
                     }
+
+                    // Quiet chip-fit badge — helps people compare without noise
+                    chipFitBadge(model: model)
                 }
 
                 HStack(spacing: 6) {
@@ -198,6 +201,25 @@ struct SetupStep: View {
             }
         }
         .padding(.vertical, 4)
+    }
+
+    // MARK: - Chip-fit badge
+
+    private func chipFitBadge(model: AIModel) -> some View {
+        let fit = SystemSpecsAnalyzer.shared.fitOf(model)
+        let color: Color
+        switch fit {
+        case .best: color = Color.green
+        case .good: color = OnboardingTheme.accent
+        case .heavy: color = Color.orange
+        }
+
+        return Text(fit.label)
+            .font(.system(size: 9, weight: .bold))
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .background(Capsule().fill(color.opacity(0.14)))
+            .foregroundColor(color)
     }
 
     // MARK: - Recommended model card

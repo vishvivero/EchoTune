@@ -434,6 +434,10 @@ class ModelManager: ObservableObject {
         switch modelID {
         case "distil-whisper_distil-large-v3":
             return "distil-whisper_distil-large-v3_594MB"
+        case "openai_whisper-large-v3-v20240930_turbo", "openai_whisper-large-v3-v20240930_turbo_632MB":
+            return "openai_whisper-large-v3-v20240930_turbo_632MB"
+        case "openai_whisper-small.en", "openai_whisper-small.en_244MB":
+            return "openai_whisper-small.en"
         case "distil-whisper_distil-large-v3_turbo", "distil-whisper_distil-large-v3_turbo_600MB":
             return "distil-whisper_distil-large-v3_turbo_600MB"
         case "openai_whisper-large-v3-turbo", "openai_whisper-large-v3_turbo", "openai_whisper-large-v3_turbo_954MB":
@@ -530,6 +534,8 @@ class ModelManager: ObservableObject {
             "openai_whisper-base",
             "distil-whisper_distil-large-v3",
             "openai_whisper-large-v3-turbo",
+            "openai_whisper-large-v3-v20240930_turbo",
+            "openai_whisper-small.en",
             "distil-whisper_distil-large-v3_turbo",
             "distil-whisper_distil-large-v3_turbo_600MB"
         ]

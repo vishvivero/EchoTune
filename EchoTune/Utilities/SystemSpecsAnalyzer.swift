@@ -65,9 +65,9 @@ enum PerformanceTier {
         case .low:
             return "openai_whisper-base" // Base model for low-end systems
         case .medium:
-            return "distil-whisper_distil-large-v3_turbo_600MB" // Distilled large turbo variant
+            return "distil-whisper_distil-large-v3" // Best speed+accuracy on most Macs
         case .high:
-            return "openai_whisper-large-v3-turbo" // Large v3 Turbo premium variant for high-end systems
+            return "openai_whisper-large-v3-v20240930_turbo" // Slim flagship for M2+ 16GB
         }
     }
 }
@@ -135,18 +135,110 @@ class SystemSpecsAnalyzer {
         // Find the recommended model
         // Device-aware recommendation override
         let finalID: String
-        if isM1 {
-            // M1 cannot run large openai turbo model comfortably - fall back to distil turbo
-            if recommendedID == "openai_whisper-large-v3-turbo" {
-                finalID = "distil-whisper_distil-large-v3_turbo_600MB"
+        switch chipGeneration {
+        case .m1:
+            // M1 runs the distilled family comfortably; the full classic turbo is heavy
+            if recommendedID == "openai_whisper-large-v3-v20240930_turbo" || recommendedID == "openai_whisper-large-v3-turbo" {
+                finalID = "distil-whisper_distil-large-v3"
             } else {
                 finalID = recommendedID
             }
-        } else {
+        case .intel:
+            finalID = "openai_whisper-base"
+        default:
             finalID = recommendedID
         }
-        
+
         return availableModels.first(where: { $0.id == finalID })
+    }
+
+    // MARK: - Chip generation + per-model fit
+
+    /// Apple Silicon generation of this Mac (or Intel).
+    enum ChipGeneration {
+        case intel
+        case m1
+        case m2
+        case m3
+        case m4orNewer
+
+        var displayName: String {
+            switch self {
+            case .intel: return "Intel Mac"
+            case .m1: return "M1 Apple Silicon"
+            case .m2: return "M2 Apple Silicon"
+            case .m3: return "M3 Apple Silicon"
+            case .m4orNewer: return "M4 Apple Silicon"
+            }
+        }
+    }
+
+    var chipGeneration: ChipGeneration {
+        let identifier = deviceIdentifier
+        if identifier.hasPrefix("Mac") {
+            let numberStr = identifier.dropFirst(3)
+            if let number = Int(numberStr.components(separatedBy: ",")[0]) {
+                switch number {
+                case ..<13: return .intel
+                case 13...14: return .m1
+                case 15: return .m2
+                case 16: return .m3
+                default: return .m4orNewer
+                }
+            }
+        }
+        return checkIfAppleSilicon() ? .m4orNewer : .intel
+    }
+
+    /// How well a model fits this specific Mac — shown as a quiet badge in
+    /// onboarding so users can compare without being overwhelmed.
+    enum ChipFit {
+        case best
+        case good
+        case heavy
+
+        var label: String {
+            switch self {
+            case .best: return "Best fit for this chip"
+            case .good: return "Works well on this chip"
+            case .heavy: return "Heavy for this chip"
+            }
+        }
+    }
+
+    func fitOf(_ model: AIModel, specs: SystemSpecs = SystemSpecsAnalyzer.shared.getSystemSpecs()) -> ChipFit {
+        let chip = chipGeneration
+        let ramGB = specs.totalRAMInGB
+        let isLowRAM = ramGB < 16
+
+        switch model.id {
+        case "apple-speech", "openai_whisper-base":
+            return .best
+        case "openai_whisper-small", "openai_whisper-small.en":
+            return .best // tiny enough for everything
+        case "distil-whisper_distil-large-v3", "distil-whisper_distil-large-v3_594MB",
+             "distil-whisper_distil-large-v3_turbo", "distil-whisper_distil-large-v3_turbo_600MB":
+            switch chip {
+            case .intel: return .heavy
+            case .m1: return isLowRAM ? .good : .best
+            case .m2, .m3, .m4orNewer: return .best
+            }
+        case "openai_whisper-large-v3-v20240930_turbo", "openai_whisper-large-v3-v20240930_turbo_632MB":
+            switch chip {
+            case .intel: return .heavy
+            case .m1: return .heavy
+            case .m2: return isLowRAM ? .good : .best
+            case .m3, .m4orNewer: return .best
+            }
+        case "openai_whisper-large-v3-turbo":
+            switch chip {
+            case .intel, .m1: return .heavy
+            case .m2: return isLowRAM ? .good : .best
+            case .m3, .m4orNewer: return .best
+            }
+        default:
+            return .good
+        }
     }
 
     func isRecommendedModel(_ model: AIModel) -> Bool {
@@ -163,17 +255,17 @@ class SystemSpecsAnalyzer {
     func getRecommendationReason() -> String {
         let specs = getSystemSpecs()
         let ramGB = Int(specs.totalRAMInGB)
-        let chipType = specs.isAppleSilicon ? "Apple Silicon" : "Intel"
+        let chip = chipGeneration.displayName
 
         switch specs.performanceTier {
         case .veryLow:
-            return "Based on your system (\(ramGB)GB RAM, \(chipType)), we recommend using the built-in Apple Speech for optimal performance."
+            return "Based on your system (\(ramGB)GB RAM, \(chip)), we recommend the built-in Apple Speech — zero download, always works."
         case .low:
-            return "Based on your system (\(ramGB)GB RAM, \(chipType)), we recommend the Tiny model for the best balance of speed and quality."
+            return "Based on your system (\(ramGB)GB RAM, \(chip)), we recommend the Base model for a good balance of speed and accuracy."
         case .medium:
-            return "Based on your system (\(ramGB)GB RAM, \(chipType)), we recommend the Base model for excellent accuracy with good performance."
+            return "Based on your system (\(ramGB)GB RAM, \(chip)), we recommend Distil Large v3 — near-large accuracy with fast, offline speed."
         case .high:
-            return "Based on your system (\(ramGB)GB RAM, \(chipType)), your Mac can handle the Small or Medium models for superior accuracy."
+            return "Based on your system (\(ramGB)GB RAM, \(chip)), your Mac can comfortably run Large v3 Turbo — maximum accuracy, still offline and free."
         }
     }
 

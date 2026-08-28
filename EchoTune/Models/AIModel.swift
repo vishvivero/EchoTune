@@ -68,16 +68,22 @@ struct AIModel: Identifiable, Equatable, Hashable {
         switch id {
         case "apple-speech":
             return "Built into macOS — no download. Great for quick notes and drafts."
-        case "distil-whisper_distil-large-v3_turbo_600MB":
-            return "Best all-rounder — great for emails, documents, and daily dictation."
+        case "openai_whisper-small", "openai_whisper-small.en":
+            return "Lightweight — noticeably better than Base for English, ideal for 8GB Macs."
+        case "distil-whisper_distil-large-v3", "distil-whisper_distil-large-v3_594MB":
+            return "Best speed + accuracy balance — near-large accuracy, loads in seconds."
+        case "distil-whisper_distil-large-v3_turbo", "distil-whisper_distil-large-v3_turbo_600MB":
+            return "Fastest distilled model — great on every Apple Silicon Mac."
+        case "openai_whisper-large-v3-v20240930_turbo", "openai_whisper-large-v3-v20240930_turbo_632MB":
+            return "Slim flagship — max accuracy, 34% smaller download. Best on M2+."
         case "openai_whisper-large-v3-turbo":
-            return "Top accuracy — ideal for long, technical, or precise dictation."
+            return "Top accuracy — ideal for long, technical, or precise dictation. Needs 16GB+ RAM."
         case "openai_whisper-base":
             return "Lightweight and fast — suits Macs with less RAM and quick dictation bursts."
         case "parakeet-tdt-0.6b-v3", "parakeet-tdt-0.6b-v2":
             return description
         case "groq-whisper-large-v3-turbo":
-            return "Cloud-powered — top accuracy with no local download (needs API key)."
+            return "Cloud-powered — top accuracy with no local download (needs free Groq API key)."
         case "deepgram-nova":
             return "Cloud-powered — fast and accurate (needs API key)."
         default:
