@@ -152,19 +152,20 @@ final class PermissionsManager: ObservableObject {
             return
         }
 
-        // Two-step registration on macOS 14+:
-        // 1. A real ScreenCaptureKit query creates the app's TCC record —
-        //    this is what makes EchoTune appear in the Screen Recording pane.
-        // 2. CGRequestScreenCaptureAccess fires the system prompt.
+        // Step 1 — a real ScreenCaptureKit query creates the app's TCC record.
+        // This is what makes EchoTune appear in the Screen Recording pane at all.
         if #available(macOS 14.0, *) {
             Task {
                 _ = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
             }
         }
-        CGRequestScreenCaptureAccess()
 
-        // macOS requires an app relaunch for this grant to take effect.
-        SettingsPane.screenRecording.open()
+        // Step 2 — the native system prompt appears ("EchoTune would like to
+        // record this Mac's screen"). Its "Open System Settings" button takes
+        // the user to the pane, where EchoTune is listed and they flip the
+        // switch. We deliberately do NOT deep-link the pane ourselves — same
+        // rationale as Accessibility: avoids the doubled dialog + pane.
+        CGRequestScreenCaptureAccess()
     }
 
     /// Requests the two core permissions in sequence. Reports true only when
