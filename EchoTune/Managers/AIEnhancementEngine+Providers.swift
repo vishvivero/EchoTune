@@ -16,10 +16,11 @@ extension AIEnhancementEngine {
                            model: EnhancementModel,
                            apiKey: String,
                            customPrompt: String?,
-                           dictionaryContext: String?) async throws -> String {
+                           dictionaryContext: String?,
+                           screenContext: String? = nil) async throws -> String {
         let endpoint = "https://generativelanguage.googleapis.com/v1beta/models/\(model.rawValue):generateContent"
 
-        let systemPrompt = buildEnhancementPrompt(customPrompt: customPrompt, dictionaryContext: dictionaryContext)
+        let systemPrompt = buildEnhancementPrompt(customPrompt: customPrompt, dictionaryContext: dictionaryContext, screenContext: screenContext)
 
         let requestBody: [String: Any] = [
             "systemInstruction": [
@@ -82,10 +83,11 @@ extension AIEnhancementEngine {
                            model: EnhancementModel,
                            apiKey: String,
                            customPrompt: String?,
-                           dictionaryContext: String?) async throws -> String {
+                           dictionaryContext: String?,
+                           screenContext: String? = nil) async throws -> String {
         let endpoint = "https://api.openai.com/v1/chat/completions"
 
-        let systemPrompt = buildEnhancementPrompt(customPrompt: customPrompt, dictionaryContext: dictionaryContext)
+        let systemPrompt = buildEnhancementPrompt(customPrompt: customPrompt, dictionaryContext: dictionaryContext, screenContext: screenContext)
 
         let requestBody: [String: Any] = [
             "model": model.rawValue,
@@ -136,11 +138,12 @@ extension AIEnhancementEngine {
                          model: EnhancementModel,
                          apiKey: String,
                          customPrompt: String?,
-                         dictionaryContext: String?) async throws -> String {
+                         dictionaryContext: String?,
+                           screenContext: String? = nil) async throws -> String {
         // Groq uses an OpenAI-compatible chat completions API
         let endpoint = "https://api.groq.com/openai/v1/chat/completions"
 
-        let systemPrompt = buildEnhancementPrompt(customPrompt: customPrompt, dictionaryContext: dictionaryContext)
+        let systemPrompt = buildEnhancementPrompt(customPrompt: customPrompt, dictionaryContext: dictionaryContext, screenContext: screenContext)
 
         let requestBody: [String: Any] = [
             "model": model.rawValue,

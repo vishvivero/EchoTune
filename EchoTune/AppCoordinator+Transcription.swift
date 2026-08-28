@@ -336,12 +336,20 @@ extension AppCoordinator {
             // Enhance asynchronously
             Task {
                 do {
+                    // Grab screen context (frontmost app + window title) if permission granted.
+                    // The SCShareableContent query also keeps the app registered in macOS's Screen Recording pane.
+                    var screenContextText: String? = nil
+                    if #available(macOS 14.0, *), PermissionsManager.shared.hasScreenRecordingPermission {
+                        screenContextText = await ScreenContextManager.shared.promptHint()
+                    }
+
                     let enhanced = try await AIEnhancementEngine.shared.enhance(
                         textForEnhancement,
                         using: model,
                         apiKey: apiKey,
                         customPrompt: promptToUse,
-                        dictionaryContext: dictionaryContext.isEmpty ? nil : dictionaryContext
+                        dictionaryContext: dictionaryContext.isEmpty ? nil : dictionaryContext,
+                        screenContext: screenContextText
                     )
 
                     await MainActor.run {

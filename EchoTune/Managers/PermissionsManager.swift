@@ -17,6 +17,7 @@ import AppKit
 import AVFoundation
 import ApplicationServices
 import Combine
+import ScreenCaptureKit
 
 final class PermissionsManager: ObservableObject {
     static let shared = PermissionsManager()
@@ -148,9 +149,18 @@ final class PermissionsManager: ObservableObject {
             return
         }
 
-        // Registers the app in the Screen Recording pane and prompts.
-        // macOS requires an app relaunch for this grant to take effect.
+        // Two-step registration on macOS 14+:
+        // 1. A real ScreenCaptureKit query creates the app's TCC record —
+        //    this is what makes EchoTune appear in the Screen Recording pane.
+        // 2. CGRequestScreenCaptureAccess fires the system prompt.
+        if #available(macOS 14.0, *) {
+            Task {
+                _ = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            }
+        }
         CGRequestScreenCaptureAccess()
+
+        // macOS requires an app relaunch for this grant to take effect.
         SettingsPane.screenRecording.open()
     }
 
