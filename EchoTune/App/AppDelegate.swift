@@ -94,7 +94,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         debugLog("🪟 Onboarding window shown")
     }
 
-    func showSettings() {
+    @objc func showSettings(_ sender: Any? = nil) {
         if settingsWindow == nil {
             let settingsView = SettingsView()
                 .environmentObject(AppCoordinator.shared)

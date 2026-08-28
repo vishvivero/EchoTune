@@ -18,7 +18,7 @@ struct MainDashboardView: View {
             NavigationSplitView {
                 // Sidebar
                 SidebarView(selectedView: $selectedView)
-                    .frame(width: 300)
+                    .frame(width: 240)
             } detail: {
                 // Main content area
                 DetailView(selectedView: $selectedView)

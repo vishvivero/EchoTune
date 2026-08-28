@@ -122,7 +122,7 @@ struct EchoTuneApp: App {
                     MainDashboardView()
                         .environmentObject(AppCoordinator.shared)
                         .environmentObject(AppSettings.shared)
-                        .frame(minWidth: 1120, minHeight: 760)
+                        .frame(minWidth: 900, minHeight: 600)
                 } else {
                     OnboardingView(onComplete: onboardingCompleted)
                         .frame(width: 700, height: 650)
@@ -131,15 +131,21 @@ struct EchoTuneApp: App {
             .onOpenURL(perform: handleURL)
         }
         .defaultSize(
-            width: onboardingState.hasCompletedOnboarding ? 1280 : 700,
-            height: onboardingState.hasCompletedOnboarding ? 900 : 650
+            width: onboardingState.hasCompletedOnboarding ? 980 : 700,
+            height: onboardingState.hasCompletedOnboarding ? 660 : 650
         )
 
-        // Settings window
-        Settings {
-            SettingsView()
-                .environmentObject(AppCoordinator.shared)
-                .environmentObject(AppSettings.shared)
+        // Settings: routed through AppCoordinator → AppDelegate's controlled
+        // NSWindow (compact 465x345). The SwiftUI `Settings` scene was removed
+        // because it opened its own uncontrolled window (900x450) that ignored
+        // our sizing — Cmd+, is handled by the command below instead.
+        .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings…") {
+                    NSApp.sendAction(#selector(AppDelegate.showSettings(_:)), to: nil, from: nil)
+                }
+                .keyboardShortcut(",")
+            }
         }
     }
 
