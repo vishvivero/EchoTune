@@ -58,6 +58,7 @@ struct HotkeySettingsView: View {
     @EnvironmentObject var coordinator: AppCoordinator
 
     var body: some View {
+        ScrollView(.vertical) {
         VStack(alignment: .leading, spacing: 14) {
             Text("Keyboard Shortcuts")
                 .font(.headline)
@@ -85,6 +86,7 @@ struct HotkeySettingsView: View {
             // "More Actions" hotkey list removed for 4.0.0 — those bindings were
             // display-only (no delivery path existed) and misled users.
         }
+        }
     }
 }
 
@@ -93,6 +95,7 @@ struct PermissionsPrivacySettingsView: View {
     @StateObject private var permissions = PermissionsManager.shared
     
     var body: some View {
+        ScrollView(.vertical) {
         VStack(alignment: .leading, spacing: 16) {
             Text("System Permissions")
                 .font(.headline)
@@ -128,6 +131,7 @@ struct PermissionsPrivacySettingsView: View {
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.06), lineWidth: 1))
             
             Spacer()
+        }
         }
     }
 }
@@ -205,6 +209,7 @@ struct AboutLicenseSettingsView: View {
     @EnvironmentObject var coordinator: AppCoordinator
     
     var body: some View {
+        ScrollView(.vertical) {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 12) {
                 Image(systemName: "waveform")
@@ -264,6 +269,7 @@ struct AboutLicenseSettingsView: View {
             .cornerRadius(8)
             
             Spacer()
+        }
         }
     }
 }

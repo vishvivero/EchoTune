@@ -11,6 +11,7 @@ import Combine
 struct AIModelsSettingsView: View {
     @EnvironmentObject var settings: AppSettings
     @StateObject private var modelManager = ModelManager.shared
+    @StateObject private var whisperEngine = WhisperEngine.shared
     
     var body: some View {
         ScrollView {
@@ -76,12 +77,28 @@ struct AIModelsSettingsView: View {
                                     .disabled(modelManager.currentModel?.id == model.id)
                                 } else if modelManager.isInstalledAndUsable(model) {
                                     HStack(spacing: 8) {
-                                        Button("Select") {
-                                            let _ = modelManager.setCurrentModel(model)
+                                        // Engine-load feedback: selecting triggers CoreML
+                                        // load/compile (40-60s first time) — show it, don't hang silently
+                                        if whisperEngine.isLoading && modelManager.currentModel?.id == model.id {
+                                            VStack(alignment: .trailing, spacing: 4) {
+                                                ProgressView(value: whisperEngine.loadingProgress)
+                                                    .frame(width: 80)
+                                                Text(whisperEngine.loadingStage)
+                                                    .font(.system(size: 9))
+                                                    .foregroundColor(.secondary)
+                                                    .lineLimit(1)
+                                            }
+                                        } else {
+                                            Button("Select") {
+                                                let _ = modelManager.setCurrentModel(model)
+                                                // Load eagerly — otherwise the 40-60s CoreML
+                                                // load happens silently on the first dictation
+                                                whisperEngine.loadModel(model) { _ in }
+                                            }
+                                            .buttonStyle(.bordered)
+                                            .disabled(modelManager.currentModel?.id == model.id || (whisperEngine.isLoading && modelManager.currentModel?.id == model.id))
                                         }
-                                        .buttonStyle(.bordered)
-                                        .disabled(modelManager.currentModel?.id == model.id)
-                                        
+
                                         Button("Delete") {
                                             let _ = modelManager.deleteModel(model)
                                         }

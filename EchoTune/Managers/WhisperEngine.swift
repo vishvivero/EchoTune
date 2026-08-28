@@ -227,6 +227,35 @@ class WhisperEngine: ObservableObject {
                     self.loadingStage = modelExists ? "Loading model files..." : "Downloading model..."
                 }
 
+                // HEARTBEAT: WhisperKit's model load has no progress API (4 sequential
+                // CoreML loads; the ~1GB AudioEncoder dominates — ~40-60s on first load
+                // while CoreML compiles + caches). Without this, the UI freezes at 30%
+                // for the whole load and users think it's hung.
+                // Asymptotic creep 0.30 → 0.74: honest (never claims done early), keeps
+                // moving, and the real jump to 1.0 happens only on actual completion.
+                let loadHeartbeat = Task { [weak self] in
+                    var elapsed: Double = 0
+                    while !Task.isCancelled {
+                        try? await Task.sleep(nanoseconds: 250_000_000) // 250ms
+                        elapsed += 0.25
+                        await MainActor.run {
+                            guard let self, self.isLoading else { return }
+                            // While a download is driving progress (its own 0.15→0.55 map),
+                            // the heartbeat stays hands-off. It only creeps during the
+                            // CoreML load phase, which has no progress API.
+                            if self.loadingStage.hasPrefix("Downloading") { return }
+                            let creep = 0.44 * (1 - exp(-elapsed / 30))
+                            self.loadingProgress = min(0.74, max(self.loadingProgress, 0.30 + creep))
+                            let secs = Int(elapsed)
+                            if secs >= 10 && secs % 10 == 0 {
+                                self.loadingStage = "Loading AI engine… \(secs)s (first load is the slowest)"
+                            }
+                        }
+                    }
+                }
+                // deferred cancel so the heartbeat stops however the load ends
+                defer { loadHeartbeat.cancel() }
+
                 // Load WhisperKit with Metal optimization and model prewarming
                 // Note: WhisperKit initialization includes CoreML compilation which takes time for large models
 

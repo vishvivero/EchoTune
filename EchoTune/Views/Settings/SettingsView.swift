@@ -128,7 +128,7 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(Color(NSColor.textBackgroundColor))
         }
-        .frame(width: 700, height: 500)
+        .frame(minWidth: 700, minHeight: 560)
         .onChange(of: isAdvancedMode) { _, newValue in
             // Automatically switch selected tab when switching mode
             selectedTab = newValue ? .aiModels : .general
