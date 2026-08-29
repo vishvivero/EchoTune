@@ -14,6 +14,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     var settingsWindow: NSWindow?
     var onboardingWindow: NSWindow?
     private let onboardingState = OnboardingStateStore.shared
+    private let dashboardSize = NSSize(width: 900, height: 600)
+    private let dashboardMinimumSize = NSSize(width: 840, height: 570)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         debugLog("🚀 EchoTune launching...")
@@ -33,6 +35,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         // Model preloading is handled by AppCoordinator.initializeAfterOnboarding()
         // (waits for ModelManagerReady notification to avoid race conditions)
+
+        // WindowGroup creates the dashboard asynchronously. Apply the actual
+        // AppKit window size after SwiftUI has created it, including on launches
+        // where macOS restores a previous larger frame.
+        if onboardingState.hasCompletedOnboarding {
+            DispatchQueue.main.async { [weak self] in
+                self?.applyDashboardWindowSize()
+            }
+        }
 
         debugLog("✓ EchoTune ready")
     }
@@ -195,12 +206,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private func showPrimaryAppWindows() {
         DispatchQueue.main.async {
             for window in NSApp.windows where window !== self.onboardingWindow && window !== self.settingsWindow {
+                self.applyDashboardWindowSize(to: window)
                 window.makeKeyAndOrderFront(nil)
                 window.orderFrontRegardless()
                 debugLog("🪟 Revealed primary app window after onboarding: \(window.title)")
                 break
             }
         }
+    }
+
+    private func applyDashboardWindowSize(to window: NSWindow? = nil) {
+        guard let dashboard = window ?? NSApp.windows.first(where: {
+            $0 !== onboardingWindow && $0 !== settingsWindow && $0.contentViewController is NSHostingController<AnyView>
+        }) ?? NSApp.windows.first(where: {
+            $0 !== onboardingWindow && $0 !== settingsWindow && $0.title != "EchoTune Settings"
+        }) else {
+            return
+        }
+
+        dashboard.minSize = dashboardMinimumSize
+        dashboard.setContentSize(dashboardSize)
+        dashboard.center()
+        debugLog("🪟 Dashboard window sized to \(dashboardSize.width)x\(dashboardSize.height)")
     }
 
     func resetOnboardingAndRestart() {
