@@ -14,8 +14,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     var settingsWindow: NSWindow?
     var onboardingWindow: NSWindow?
     private let onboardingState = OnboardingStateStore.shared
-    private let dashboardSize = NSSize(width: 1080, height: 720)
-    private let dashboardMinimumSize = NSSize(width: 1008, height: 684)
+    private let dashboardSize = NSSize(width: 960, height: 720)
+    private let dashboardMinimumSize = NSSize(width: 900, height: 600)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         debugLog("🚀 EchoTune launching...")

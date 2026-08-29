@@ -122,7 +122,7 @@ struct EchoTuneApp: App {
                     MainDashboardView()
                         .environmentObject(AppCoordinator.shared)
                         .environmentObject(AppSettings.shared)
-                        .frame(minWidth: 1008, minHeight: 684)
+                        .frame(minWidth: 900, minHeight: 600)
                 } else {
                     OnboardingView(onComplete: onboardingCompleted)
                         .frame(width: 700, height: 650)
@@ -131,7 +131,7 @@ struct EchoTuneApp: App {
             .onOpenURL(perform: handleURL)
         }
         .defaultSize(
-            width: onboardingState.hasCompletedOnboarding ? 1080 : 700,
+            width: onboardingState.hasCompletedOnboarding ? 960 : 700,
             height: onboardingState.hasCompletedOnboarding ? 720 : 650
         )
 

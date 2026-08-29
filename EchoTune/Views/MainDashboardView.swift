@@ -15,16 +15,18 @@ struct MainDashboardView: View {
 
     var body: some View {
         ZStack {
-            NavigationSplitView {
-                // Sidebar
+            // Keep navigation and content directly adjacent. NavigationSplitView
+            // adds a platform-controlled gutter that makes the dashboard look
+            // disconnected at compact widths.
+            HStack(spacing: 0) {
                 SidebarView(selectedView: $selectedView)
                     .frame(width: 240)
-            } detail: {
-                // Main content area
+
+                Divider()
+
                 DetailView(selectedView: $selectedView)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .navigationSplitViewStyle(.prominentDetail)
             #if APPSTORE
             .sheet(isPresented: $appCoordinator.showPurchaseSheet) {
                 PurchaseView()
