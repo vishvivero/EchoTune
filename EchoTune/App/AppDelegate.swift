@@ -45,6 +45,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             }
         }
 
+        #if DEBUG
+        // UI tests launch with a forced onboarding argument. WindowGroup creation
+        // is asynchronous for this menu-bar app, so explicitly present the same
+        // onboarding surface used by reset/restart flows instead of relying on
+        // the host to create and focus the initial SwiftUI window.
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-force-onboarding") {
+            DispatchQueue.main.async { [weak self] in
+                self?.showOnboarding()
+            }
+        }
+        #endif
+
         debugLog("✓ EchoTune ready")
     }
 

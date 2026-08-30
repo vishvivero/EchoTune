@@ -1,0 +1,17 @@
+{
+  "runs": 3,
+  "successes": 3,
+  "loads": [
+    28.319998025894165,
+    8.754480004310608,
+    3.6142640113830566
+  ],
+  "transcriptions": [
+    5.876521944999695,
+    5.647909998893738,
+    5.635788917541504
+  ],
+  "medianLoadSeconds": 8.754480004310608,
+  "medianTranscriptionSeconds": 5.647909998893738,
+  "stableTranscript": true
+}

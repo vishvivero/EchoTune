@@ -122,8 +122,10 @@ struct LiveDemoStep: View {
             .padding(.horizontal, 20)
 
             // Hidden element for XCTest to read transcribed text
-            Text(transcriptionText)
-                .hidden()
+            Text(transcriptionText.isEmpty ? " " : transcriptionText)
+                .opacity(0.01)
+                .frame(width: 1, height: 1)
+                .accessibilityHidden(false)
                 .accessibilityIdentifier("onboarding.liveDemo.resultText")
 
             Spacer()
@@ -155,6 +157,23 @@ struct LiveDemoStep: View {
     private func startRecording() {
         transcriptionText = ""
         transcriptionCaption = "Recording... speak now."
+
+        #if DEBUG
+        // UI tests must not depend on microphone permissions, speaker routing,
+        // or model compilation. Exercise the same visible result state with a
+        // deterministic local fixture while keeping production launches real.
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-force-onboarding") {
+            isProcessing = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                guard self.isProcessing else { return }
+                self.isProcessing = false
+                self.transcriptionText = "Hello from EchoTune onboarding test"
+                self.transcriptionCaption = "Transcribed successfully using UI test fixture!"
+            }
+            return
+        }
+        #endif
+
         audioManager.startRecording()
 
         // Auto stop after 15 seconds

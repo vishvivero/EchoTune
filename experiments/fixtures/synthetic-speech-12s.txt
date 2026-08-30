@@ -1,0 +1,1 @@
+EchoTune benchmark fixture. This is a five second synthetic speech test. It verifies local transcription latency and accuracy without using personal audio.

@@ -1,0 +1,9 @@
+{
+  "fixturePath" : "\/Users\/zac\/.openclaw\/workspace\/worktrees\/echotune-6.3.0\/experiments\/fixtures\/synthetic-speech-12s.aiff",
+  "modelFolder" : "\/Users\/yashna\/Library\/Application Support\/EchoTune\/WhisperModels\/models\/argmaxinc\/whisperkit-coreml\/openai_whisper-large-v3-v20240930_turbo_632MB",
+  "modelLoadSeconds" : 3.6142640113830566,
+  "pid" : 69891,
+  "success" : true,
+  "transcript" : "Echo 2 benchmark fixture. This is a 5-second synthetic speech test. It verifies local transcription latency and accuracy without using personal audio.",
+  "transcriptionSeconds" : 5.635788917541504
+}

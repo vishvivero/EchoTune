@@ -359,7 +359,7 @@ class ModelManager: ObservableObject {
         }
 
         // Only WhisperKit-supported variants can be downloaded
-        guard let variant = whisperVariant(for: model.id) else {
+        guard whisperVariant(for: model.id) != nil else {
             debugLog("❌ Download not supported for model: \(model.id)")
             completion(.failure(.invalidModel))
             return

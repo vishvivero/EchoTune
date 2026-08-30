@@ -1,0 +1,6 @@
+{
+  "developerIDSignAndDeepVerify": true,
+  "gatekeeperStatus": 3,
+  "gatekeeperOutput": "/tmp/EchoTune-6.3.0-DeveloperID.app: rejected\nsource=Unnotarized Developer ID",
+  "expectedUnnotarizedRejection": true
+}
