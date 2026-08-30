@@ -14,11 +14,24 @@ class ModelManager: ObservableObject {
 
     // MARK: - ModelError
 
-    enum ModelError: Error {
+    enum ModelError: LocalizedError {
         case downloadFailed
         case installationFailed
         case modelNotFound
         case invalidModel
+
+        var errorDescription: String? {
+            switch self {
+            case .downloadFailed:
+                return "The model download could not be completed. Please check your connection and try again."
+            case .installationFailed:
+                return "The model download finished, but its files were incomplete or corrupted. Please retry the download."
+            case .modelNotFound:
+                return "The selected model files could not be found. Please download the model again."
+            case .invalidModel:
+                return "This model is not supported or its files are incomplete."
+            }
+        }
     }
 
     private struct WhisperValidationError: LocalizedError {
@@ -422,6 +435,9 @@ class ModelManager: ObservableObject {
                     debugLog("❌ Download failed: \(error)")
                     self.isDownloading = false
                     self.currentDownloadModel = nil
+                    if error is WhisperValidationError {
+                        debugLog("⚠️ Model installation rejected: incomplete or corrupted model files")
+                    }
                     completion(.failure(.installationFailed))
                 }
             }
@@ -688,71 +704,7 @@ class ModelManager: ObservableObject {
     }
 
     private func normalizeInstalledModelDirectory(from candidate: URL) -> URL? {
-        if hasRequiredModelFiles(at: candidate) {
-            return candidate
-        }
-
-        let fileManager = FileManager.default
-        guard let contents = try? fileManager.contentsOfDirectory(
-            at: candidate,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        ) else {
-            return nil
-        }
-
-        for child in contents {
-            guard (try? child.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
-                continue
-            }
-
-            if hasRequiredModelFiles(at: child) {
-                return child
-            }
-        }
-
-        return nil
-    }
-
-    // A genuinely-downloaded .mlmodelc package is at minimum tens of KB (compiled
-    // weights + graph); a truncated/interrupted download leaves only a tiny
-    // coremldata.bin stub behind. This catches that case instead of treating any
-    // present-but-empty folder as a usable install.
-    private let minimumCompiledModelComponentSize: Int64 = 50 * 1024
-
-    private func hasRequiredModelFiles(at folder: URL) -> Bool {
-        let requiredModels = ["MelSpectrogram", "AudioEncoder", "TextDecoder"]
-        for modelName in requiredModels {
-            let modelURL = ModelUtilities.detectModelURL(inFolder: folder, named: modelName)
-            guard FileManager.default.fileExists(atPath: modelURL.path) else { return false }
-            guard directorySize(at: modelURL) >= minimumCompiledModelComponentSize else {
-                debugLog("⚠️ \(modelName).mlmodelc at \(modelURL.path) is too small to be a real compiled model — treating as corrupted/incomplete")
-                return false
-            }
-        }
-
-        let requiredMetadataFiles = ["config.json", "generation_config.json"]
-        for fileName in requiredMetadataFiles {
-            let fileURL = folder.appendingPathComponent(fileName)
-            if !FileManager.default.fileExists(atPath: fileURL.path) {
-                return false
-            }
-        }
-
-        return true
-    }
-
-    private func directorySize(at url: URL) -> Int64 {
-        guard let enumerator = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey]) else {
-            return 0
-        }
-        var total: Int64 = 0
-        for case let fileURL as URL in enumerator {
-            if let size = try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize {
-                total += Int64(size)
-            }
-        }
-        return total
+        ModelArtifactValidator.normalizedDirectory(at: candidate)
     }
 
     /// Removes a local model's on-disk files and marks it not installed. Used when
