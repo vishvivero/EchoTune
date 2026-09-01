@@ -174,11 +174,6 @@ struct PrivacySettingsView: View {
     
     var body: some View {
         Form {
-            Section("Data Sharing") {
-                Toggle("Share Anonymous Usage Analytics", isOn: $settings.shareAnalytics)
-                    .help("Help us improve EchoTune by sending anonymous diagnostic data.")
-            }
-            
             Section("Audio Retention") {
                 Toggle("Keep Local Audio Recordings", isOn: $settings.keepAudioHistory)
                     .help("Saves the audio files along with history recordings.")

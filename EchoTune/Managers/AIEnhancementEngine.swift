@@ -23,7 +23,6 @@ class AIEnhancementEngine: ObservableObject {
         case groqMixtral = "mixtral-8x7b-32768"
         case gemini25Flash = "gemini-2.5-flash"
         case gemini25FlashLite = "gemini-2.5-flash-lite"
-        case openAIGPT55 = "gpt-5.5"
 
         var id: String { rawValue }
 
@@ -34,7 +33,6 @@ class AIEnhancementEngine: ObservableObject {
             case .groqMixtral: return "Fastest · Free (your key) — Groq Mixtral"
             case .gemini25Flash: return "Balanced · Free (your key) — Gemini 2.5"
             case .gemini25FlashLite: return "Light · Free (your key) — Gemini 2.5 Lite"
-            case .openAIGPT55: return "Premium · your key — OpenAI GPT-5.5"
             }
         }
 
@@ -45,7 +43,6 @@ class AIEnhancementEngine: ObservableObject {
             case .groqMixtral: return "Groq Mixtral"
             case .gemini25Flash: return "Gemini 2.5"
             case .gemini25FlashLite: return "Gemini 2.5 Lite"
-            case .openAIGPT55: return "GPT-5.5"
             }
         }
 
@@ -57,8 +54,6 @@ class AIEnhancementEngine: ObservableObject {
                 return .groq
             case .gemini25Flash, .gemini25FlashLite:
                 return .google
-            case .openAIGPT55:
-                return .openai
             }
         }
     }

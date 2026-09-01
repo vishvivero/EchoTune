@@ -7,7 +7,6 @@
 
 import SwiftUI
 import Combine
-import Sentry
 
 final class OnboardingStateStore: ObservableObject {
     static let shared = OnboardingStateStore()
@@ -96,20 +95,6 @@ struct EchoTuneApp: App {
     @StateObject private var onboardingState = OnboardingStateStore.shared
 
     init() {
-        // Crash reporting is strictly opt-in via "Share Anonymous Usage
-        // Analytics" in Settings > Privacy (default OFF). When enabled, no
-        // personally identifying information is attached and performance
-        // tracing is sampled minimally. Takes effect on next launch.
-        if AppSettings.shared.shareAnalytics {
-            SentrySDK.start { options in
-                options.dsn = "https://86b131825ccff6bdfcd747f6b8e9a699@o4510892828327936.ingest.us.sentry.io/4510892836323328"
-                options.debug = false
-                options.sendDefaultPii = false
-                options.tracesSampleRate = 0.05
-                options.enableAutoSessionTracking = true
-            }
-        }
-
         // Initialize app coordinator to setup hotkeys and managers
         _ = AppCoordinator.shared
     }

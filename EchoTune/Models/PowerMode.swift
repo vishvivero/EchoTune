@@ -137,7 +137,7 @@ extension PowerMode {
             websitePatterns: ["*.slack.com"],
             cloudModelId: "groq-whisper-large-v3-turbo",
             aiEnhancementEnabled: true,
-            enhancementModel: "gpt-5.5",
+            enhancementModel: AIEnhancementEngine.EnhancementModel.hosted.rawValue,
             customEnhancementPrompt: "Format like a casual chat message. Keep it conversational and concise.",
             autoSendEnabled: true
         ),
@@ -156,7 +156,7 @@ extension PowerMode {
             websitePatterns: ["*.github.com", "*.stackoverflow.com"],
             cloudModelId: "groq-whisper-large-v3-turbo",
             aiEnhancementEnabled: true,
-            enhancementModel: "gpt-5.5",
+            enhancementModel: AIEnhancementEngine.EnhancementModel.hosted.rawValue,
             customEnhancementPrompt: "Maintain technical accuracy. Preserve code-related terms, variable names, and technical jargon exactly as spoken. Format code blocks with proper syntax.",
             autoSendEnabled: false
         ),
@@ -175,7 +175,7 @@ extension PowerMode {
             useWhisper: true,
             whisperModelSize: "base",
             aiEnhancementEnabled: true,
-            enhancementModel: "gpt-5.5",
+            enhancementModel: AIEnhancementEngine.EnhancementModel.hosted.rawValue,
             customEnhancementPrompt: "Use professional, formal tone. Proper grammar, complete sentences. Format as clear paragraphs suitable for business communication.",
             autoSendEnabled: false
         ),
@@ -201,7 +201,7 @@ extension PowerMode {
             websitePatterns: ["*.twitter.com", "*.x.com", "*.linkedin.com", "*.facebook.com"],
             cloudModelId: "groq-whisper-large-v3-turbo",
             aiEnhancementEnabled: true,
-            enhancementModel: "gpt-5.5",
+            enhancementModel: AIEnhancementEngine.EnhancementModel.hosted.rawValue,
             customEnhancementPrompt: "Format like a modern social media post. Short lines, natural breaks, emoji-friendly. Casual and engaging tone.",
             autoSendEnabled: true
         )

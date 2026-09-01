@@ -52,10 +52,6 @@ class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(keepAudioHistory, forKey: "keepAudioHistory") }
     }
     
-    @Published var shareAnalytics: Bool {
-        didSet { UserDefaults.standard.set(shareAnalytics, forKey: "shareAnalytics") }
-    }
-    
     // Advanced Settings
     @Published var autoPunctuation: Bool {
         didSet { UserDefaults.standard.set(autoPunctuation, forKey: "autoPunctuation") }
@@ -234,7 +230,6 @@ class AppSettings: ObservableObject {
         self.autoDetectLanguage = UserDefaults.standard.object(forKey: "autoDetectLanguage") as? Bool ?? true
         self.translateToEnglish = UserDefaults.standard.object(forKey: "translateToEnglish") as? Bool ?? false
         self.keepAudioHistory = UserDefaults.standard.bool(forKey: "keepAudioHistory")
-        self.shareAnalytics = UserDefaults.standard.bool(forKey: "shareAnalytics")
         self.autoPunctuation = UserDefaults.standard.bool(forKey: "autoPunctuation")
         self.smartCapitalization = UserDefaults.standard.bool(forKey: "smartCapitalization")
         self.insertSpaceAfterText = UserDefaults.standard.bool(forKey: "insertSpaceAfterText")
@@ -384,7 +379,7 @@ class AppSettings: ObservableObject {
         }
 
         if storedValue == "gpt-5.4" {
-            return AIEnhancementEngine.EnhancementModel.openAIGPT55.rawValue
+            return AIEnhancementEngine.EnhancementModel.hosted.rawValue
         }
 
         let retiredModels = [
@@ -409,7 +404,6 @@ class AppSettings: ObservableObject {
         self.autoDetectLanguage = true
         self.translateToEnglish = false
         self.keepAudioHistory = false
-        self.shareAnalytics = false
         self.autoPunctuation = true
         self.smartCapitalization = true
         self.insertSpaceAfterText = true
