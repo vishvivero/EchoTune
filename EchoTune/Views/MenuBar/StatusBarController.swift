@@ -18,7 +18,7 @@ class StatusBarController: NSObject {
     override init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         popover = NSPopover()
-        popover.contentSize = NSSize(width: 280, height: 330)
+        popover.contentSize = NSSize(width: 280, height: 360)
         popover.behavior = .transient
         
         let contentView = MenuBarPopoverView()
@@ -128,153 +128,200 @@ struct MenuBarPopoverView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Header
-            HStack {
-                HStack(spacing: 8) {
-                    Group {
-                        if let appIcon = NSImage(named: "AppIcon") {
-                            Image(nsImage: appIcon)
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                        } else {
-                            Image(systemName: "waveform")
-                                .foregroundColor(.accentColor)
-                        }
-                    }
-                    .frame(width: 20, height: 20)
-                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
-
-                    Text("EchoTune")
-                        .font(.headline)
-                        .fontWeight(.bold)
-                }
-                
+            HStack(spacing: 10) {
+                appIcon
+                Text("EchoTune")
+                    .font(.system(size: 14, weight: .semibold))
                 Spacer()
-                
-                // Status badge
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(appState.recordingState.color)
-                        .frame(width: 8, height: 8)
-                    Text(appState.recordingState.description)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
+                statusBadge
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 18)
             .padding(.top, 16)
-            .padding(.bottom, 12)
-            
-            Divider()
-            
-            // Quick toggles / settings
-            VStack(spacing: 12) {
-                // Recording mode
-                HStack {
-                    Image(systemName: "mic.fill")
-                        .foregroundColor(.secondary)
-                        .frame(width: 20)
-                    Text("Recording Mode")
-                        .font(.body)
-                    Spacer()
-                    Picker("", selection: Binding(
-                        get: { settings.recordingMode },
-                        set: { settings.recordingMode = $0 }
-                    )) {
-                        Text("Hold").tag(RecordingMode.pushToTalk)
-                        Text("Toggle").tag(RecordingMode.toggle)
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(width: 120)
-                }
-                
-                // AI Enhancement Toggle
-                Toggle(isOn: Binding(
+            .padding(.bottom, 14)
+
+            // Settings
+            VStack(spacing: 0) {
+                modeRow
+                    .padding(.bottom, 14)
+                Divider().opacity(0.5)
+                    .padding(.vertical, 12)
+                toggleRow(icon: "sparkles", title: "AI Enhancement", isOn: Binding(
                     get: { settings.aiEnhancementEnabled },
                     set: { settings.aiEnhancementEnabled = $0 }
-                )) {
-                    HStack {
-                        Image(systemName: "sparkles")
-                            .foregroundColor(.secondary)
-                            .frame(width: 20)
-                        Text("AI Enhancement")
-                    }
-                }
-                .toggleStyle(.switch)
-                
-                // Auto-Send Toggle
-                Toggle(isOn: Binding(
+                ))
+                    .padding(.bottom, 12)
+                toggleRow(icon: "paperplane.fill", title: "Auto-Paste", isOn: Binding(
                     get: { settings.autoSendEnabled },
                     set: { settings.autoSendEnabled = $0 }
-                )) {
-                    HStack {
-                        Image(systemName: "paperplane.fill")
-                            .foregroundColor(.secondary)
-                            .frame(width: 20)
-                        Text("Auto-Send After Paste")
-                    }
-                }
-                .toggleStyle(.switch)
+                ))
             }
-            .padding(16)
-            
+            .padding(.horizontal, 18)
+            .padding(.vertical, 16)
+
             Divider()
-            
-            // Stats / Info
-            HStack(spacing: 20) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("STREAK")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundColor(.secondary)
-                    HStack(spacing: 4) {
-                        Text("🔥")
-                        Text("\(appState.currentStreak) days")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                    }
-                }
-                
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("TOTAL WORDS")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundColor(.secondary)
-                    Text("\(appState.totalWordsTranscribed)")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                }
-                
-                Spacer()
+
+            // Stats
+            HStack(spacing: 0) {
+                stat(
+                    icon: "flame.fill",
+                    value: "\(appState.currentStreak)",
+                    label: "Day streak",
+                    tint: .orange
+                )
+                statDivider
+                stat(
+                    icon: "textformat",
+                    value: appState.totalWordsTranscribed.formatted(),
+                    label: "Words",
+                    tint: .secondary
+                )
             }
-            .padding(16)
-            
+            .padding(.horizontal, 18)
+            .padding(.vertical, 14)
+
             Divider()
-            
+
             // Actions
-            HStack {
-                Button(action: showMainWindow) {
-                    Label("Dashboard", systemImage: "macwindow")
-                }
-                .buttonStyle(.bordered)
-                
-                Button(action: showSettingsWindow) {
-                    Label("Settings", systemImage: "gearshape")
-                }
-                .buttonStyle(.bordered)
-                
-                Spacer()
-                
+            HStack(spacing: 8) {
+                actionButton(icon: "macwindow", title: "Dashboard", action: showMainWindow)
+                actionButton(icon: "gearshape", title: "Settings", action: showSettingsWindow)
+                Spacer(minLength: 4)
                 Button(action: quitApp) {
                     Image(systemName: "power")
+                        .font(.system(size: 13, weight: .medium))
                         .foregroundColor(.red)
+                        .frame(width: 30, height: 30)
+                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.plain)
                 .help("Quit EchoTune")
             }
-            .padding(16)
+            .padding(.horizontal, 18)
+            .padding(.top, 14)
+            .padding(.bottom, 16)
         }
         .frame(width: 280)
-        .background(VisualEffectView(material: .hudWindow, blendingMode: .withinWindow).ignoresSafeArea())
+        .background(
+            VisualEffectView(material: .popover, blendingMode: .behindWindow)
+                .ignoresSafeArea()
+        )
     }
-    
+
+    // MARK: - Subviews
+
+    private var appIcon: some View {
+        Group {
+            if let appIcon = NSImage(named: "AppIcon") {
+                Image(nsImage: appIcon)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+            } else {
+                Image(systemName: "waveform")
+                    .foregroundColor(.accentColor)
+            }
+        }
+        .frame(width: 24, height: 24)
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+
+    private var statusBadge: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(appState.recordingState.color)
+                .frame(width: 7, height: 7)
+            Text(appState.recordingState.description)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 4)
+        .background(Capsule().fill(Color.primary.opacity(0.05)))
+    }
+
+    private var modeRow: some View {
+        HStack {
+            icon("mic.fill")
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Recording Mode")
+                    .font(.system(size: 13, weight: .medium))
+                Text(settings.recordingMode.description)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+            Picker("", selection: Binding(
+                get: { settings.recordingMode },
+                set: { settings.recordingMode = $0 }
+            )) {
+                Text("Hold").tag(RecordingMode.pushToTalk)
+                Text("Toggle").tag(RecordingMode.toggle)
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 104)
+        }
+    }
+
+    private func toggleRow(icon: String, title: String, isOn: Binding<Bool>) -> some View {
+        Toggle(isOn: isOn) {
+            HStack(spacing: 8) {
+                self.icon(icon)
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+            }
+        }
+        .toggleStyle(.switch)
+        .controlSize(.small)
+    }
+
+    private func stat(icon: String, value: String, label: String, tint: Color) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(tint)
+                .frame(width: 20)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(value)
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1)
+                Text(label)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var statDivider: some View {
+        Divider().frame(height: 30)
+            .padding(.horizontal, 10)
+    }
+
+    private func icon(_ name: String) -> some View {
+        Image(systemName: name)
+            .font(.system(size: 13))
+            .foregroundColor(.secondary)
+            .frame(width: 22)
+    }
+
+    private func actionButton(icon: String, title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 12))
+                Text(title)
+                    .font(.system(size: 12, weight: .medium))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(Capsule().fill(Color.primary.opacity(0.06)))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .foregroundColor(.primary)
+    }
+
     private func showMainWindow() {
         NSApp.activate(ignoringOtherApps: true)
         if let window = NSApp.windows.first(where: { $0.title.contains("EchoTune") && $0.canBecomeKey }) {
