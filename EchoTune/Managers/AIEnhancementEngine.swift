@@ -18,6 +18,7 @@ class AIEnhancementEngine: ObservableObject {
     // MARK: - Enums
 
     enum EnhancementModel: String, CaseIterable, Identifiable {
+        case hosted = "echotune-hosted"
         case groqLlama = "llama-3.3-70b-versatile"
         case groqMixtral = "mixtral-8x7b-32768"
         case gemini25Flash = "gemini-2.5-flash"
@@ -28,26 +29,30 @@ class AIEnhancementEngine: ObservableObject {
 
         var displayName: String {
             switch self {
-            case .groqLlama: return "Groq Llama 3.3 70B (Recommended)"
-            case .groqMixtral: return "Groq Mixtral 8x7B (Fastest)"
-            case .gemini25Flash: return "Gemini 2.5 Flash (Optional Quality Alternative)"
-            case .gemini25FlashLite: return "Gemini 2.5 Flash-Lite (Optional Lightweight)"
-            case .openAIGPT55: return "OpenAI GPT-5.5 (Optional)"
+            case .hosted: return "EchoTune Hosted · Free (Recommended)"
+            case .groqLlama: return "Fast · Free (your key) — Groq Llama 70B"
+            case .groqMixtral: return "Fastest · Free (your key) — Groq Mixtral"
+            case .gemini25Flash: return "Balanced · Free (your key) — Gemini 2.5"
+            case .gemini25FlashLite: return "Light · Free (your key) — Gemini 2.5 Lite"
+            case .openAIGPT55: return "Premium · your key — OpenAI GPT-5.5"
             }
         }
 
         var shortName: String {
             switch self {
-            case .groqLlama: return "Llama 3.3 70B"
-            case .groqMixtral: return "Mixtral 8x7B"
-            case .gemini25Flash: return "Gemini 2.5 Flash"
-            case .gemini25FlashLite: return "Gemini 2.5 Flash-Lite"
+            case .hosted: return "EchoTune Hosted"
+            case .groqLlama: return "Groq Llama 70B"
+            case .groqMixtral: return "Groq Mixtral"
+            case .gemini25Flash: return "Gemini 2.5"
+            case .gemini25FlashLite: return "Gemini 2.5 Lite"
             case .openAIGPT55: return "GPT-5.5"
             }
         }
 
         var provider: EnhancementProvider {
             switch self {
+            case .hosted:
+                return .hosted
             case .groqLlama, .groqMixtral:
                 return .groq
             case .gemini25Flash, .gemini25FlashLite:
@@ -59,12 +64,14 @@ class AIEnhancementEngine: ObservableObject {
     }
 
     enum EnhancementProvider {
+        case hosted
         case groq
         case google
         case openai
 
         var displayName: String {
             switch self {
+            case .hosted: return "EchoTune Hosted"
             case .groq: return "Groq"
             case .google: return "Gemini"
             case .openai: return "OpenAI"
@@ -210,12 +217,13 @@ class AIEnhancementEngine: ObservableObject {
                  customPrompt: String? = nil,
                  dictionaryContext: String? = nil,
                  screenContext: String? = nil) async throws -> String {
-        guard !apiKey.isEmpty else {
-            throw EnhancementError.noAPIKey
-        }
-
         guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return transcript
+        }
+
+        // BYO-key models require a key. The hosted path does not (uses the proxy).
+        if model.provider != .hosted && apiKey.isEmpty {
+            throw EnhancementError.noAPIKey
         }
 
         await MainActor.run {
@@ -236,6 +244,8 @@ class AIEnhancementEngine: ObservableObject {
             let enhanced: String
 
             switch model.provider {
+            case .hosted:
+                enhanced = try await enhanceWithHosted(transcript, model: model, customPrompt: customPrompt, dictionaryContext: dictionaryContext, screenContext: screenContext)
             case .groq:
                 enhanced = try await enhanceWithGroq(transcript, model: model, apiKey: apiKey, customPrompt: customPrompt, dictionaryContext: dictionaryContext, screenContext: screenContext)
             case .google:

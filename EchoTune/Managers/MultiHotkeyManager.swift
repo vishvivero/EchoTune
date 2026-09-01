@@ -377,7 +377,8 @@ class MultiHotkeyManager: ObservableObject {
 
                     let apiKey = settings.apiKey(for: model.provider)
 
-                    guard !apiKey.isEmpty else {
+                    // Hosted path needs no key; BYO-key providers do.
+                    if model.provider != .hosted && apiKey.isEmpty {
                         await MainActor.run { insertText(textToInsert) }
                         return
                     }

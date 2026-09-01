@@ -106,6 +106,17 @@ class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(customEnhancementPrompt, forKey: "customEnhancementPrompt") }
     }
 
+    /// Stable per-install id used to key the hosted fair-use quota. Persisted once.
+    let enhancementUserID: String
+
+    /// Base URL of the hosted enhancement proxy (Netlify Function on echotune.app).
+    var enhancementProxyURL: String {
+        "https://echotune.app/.netlify/functions/enhance"
+    }
+
+    /// Human-facing daily fair-use cap, mirrored from the proxy env. Purely informational.
+    var enhancementDailyLimit: Int { 50 }
+
     // Phase 6A: API Keys (stored securely in macOS Keychain)
     @Published var groqAPIKey: String {
         didSet {
@@ -148,6 +159,8 @@ class AppSettings: ObservableObject {
 
     func apiKey(for provider: AIEnhancementEngine.EnhancementProvider) -> String {
         switch provider {
+        case .hosted:
+            return "" // Hosted path uses the proxy; no user key.
         case .groq:
             return groqAPIKey
         case .google:
@@ -185,6 +198,15 @@ class AppSettings: ObservableObject {
     }
 
     init() {
+        // Stable per-install id for hosted fair-use. Generate once, persist.
+        if let stored = UserDefaults.standard.string(forKey: "enhancementUserID"), !stored.isEmpty {
+            self.enhancementUserID = stored
+        } else {
+            let newID = UUID().uuidString
+            UserDefaults.standard.set(newID, forKey: "enhancementUserID")
+            self.enhancementUserID = newID
+        }
+
         // Load settings from UserDefaults
         if let recordingModeValue = UserDefaults.standard.string(forKey: "recordingMode"),
            let mode = RecordingMode(rawValue: recordingModeValue) {
@@ -319,7 +341,7 @@ class AppSettings: ObservableObject {
     }
 
     static let defaultLocalTranscriptionModel = "distil-whisper_distil-large-v3_turbo_600MB"
-    private static let defaultEnhancementModel = AIEnhancementEngine.EnhancementModel.groqLlama.rawValue
+    private static let defaultEnhancementModel = AIEnhancementEngine.EnhancementModel.hosted.rawValue
 
     static func canonicalTranscriptionModelID(_ rawValue: String) -> String {
         let normalized = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)

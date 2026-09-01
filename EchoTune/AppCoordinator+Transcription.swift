@@ -306,12 +306,13 @@ extension AppCoordinator {
 
             let apiKey = settings.apiKey(for: model.provider)
 
-            guard !apiKey.isEmpty else {
+            // The hosted path needs no key. BYO-key providers do.
+            if model.provider != .hosted && apiKey.isEmpty {
                 debugLog("⚠️ No API key configured for AI enhancement")
                 markEnhancementFallback(reason: "Missing \(model.provider.displayName) API key")
                 notificationManager.showNotification(
                     title: "AI Enhancement Disabled",
-                    body: "Please add your API key in Settings > Advanced > AI Enhancement",
+                    body: "Add your \(model.provider.displayName) API key in Settings > AI Enhancement, or pick \"EchoTune Hosted\" for free enhancement.",
                     sound: false
                 )
                 insertTextWithAutoSend(

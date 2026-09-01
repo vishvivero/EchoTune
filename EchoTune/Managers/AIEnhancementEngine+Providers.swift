@@ -10,6 +10,61 @@ import Foundation
 
 extension AIEnhancementEngine {
 
+    // MARK: - Hosted (zero-config) Enhancement
+
+    /// Routes enhancement to EchoTune's hosted fair-use proxy. No user API key
+    /// required. The proxy applies a per-install daily quota (server-side).
+    func enhanceWithHosted(_ transcript: String,
+                           model: EnhancementModel,
+                           customPrompt: String?,
+                           dictionaryContext: String?,
+                           screenContext: String? = nil) async throws -> String {
+        let settings = AppSettings.shared
+        let endpoint = settings.enhancementProxyURL
+
+        var body: [String: Any] = [
+            "userId": settings.enhancementUserID,
+            "transcript": transcript
+        ]
+        if let customPrompt = customPrompt, !customPrompt.isEmpty {
+            body["prompt"] = customPrompt
+        }
+        if let vocab = dictionaryContext, !vocab.isEmpty {
+            body["vocab"] = vocab
+        }
+        if let screen = screenContext, !screen.isEmpty {
+            body["screenContext"] = screen
+        }
+
+        var request = URLRequest(url: URL(string: endpoint)!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        request.timeoutInterval = 60
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw EnhancementError.invalidResponse
+        }
+
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw EnhancementError.invalidResponse
+        }
+
+        if httpResponse.statusCode != 200 {
+            // Surface the proxy error (e.g. fair-use limit reached) to the user.
+            let message = json["error"] as? String ?? "HTTP \(httpResponse.statusCode)"
+            throw EnhancementError.apiError(message)
+        }
+
+        guard let enhanced = json["enhanced"] as? String else {
+            throw EnhancementError.invalidResponse
+        }
+
+        return enhanced.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     // MARK: - Gemini Enhancement
 
     func enhanceWithGemini(_ transcript: String,

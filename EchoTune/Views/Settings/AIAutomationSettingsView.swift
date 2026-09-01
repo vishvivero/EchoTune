@@ -32,13 +32,37 @@ struct AIAutomationSettingsView: View {
                     
                     if settings.aiEnhancementEnabled {
                         VStack(alignment: .leading, spacing: 10) {
+                            Text("Enhancement Engine")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
                             Picker("Enhancement Model", selection: $settings.selectedEnhancementModel) {
                                 ForEach(AIEnhancementEngine.EnhancementModel.allCases) { model in
                                     Text(model.displayName).tag(model.rawValue)
                                 }
                             }
                             .pickerStyle(.menu)
-                            
+
+                            // Fair-use / BYO-key hint
+                            if let model = AIEnhancementEngine.EnhancementModel(rawValue: settings.selectedEnhancementModel) {
+                                switch model.provider {
+                                case .hosted:
+                                    Label("Free — no key needed. Includes a daily fair-use allowance.", systemImage: "sparkles")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                case .groq, .google, .openai:
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Label("Uses your own \(model.provider.displayName) API key (Settings › AI Models).", systemImage: "key")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                        if settings.apiKey(for: model.provider).isEmpty {
+                                            Label("No \(model.provider.displayName) key found — add one in Settings › AI Models, or choose EchoTune Hosted.", systemImage: "exclamationmark.triangle")
+                                                .font(.caption)
+                                                .foregroundColor(.orange)
+                                        }
+                                    }
+                                }
+                            }
+
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Custom System Prompt")
                                     .font(.caption)
