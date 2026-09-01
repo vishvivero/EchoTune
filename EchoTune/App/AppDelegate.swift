@@ -127,9 +127,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             settingsWindow = NSWindow(contentViewController: hostingController)
             settingsWindow?.title = "EchoTune Settings"
             settingsWindow?.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-            settingsWindow?.setContentSize(NSSize(width: 465, height: 345))
-            settingsWindow?.minSize = NSSize(width: 465, height: 345)
-            settingsWindow?.maxSize = NSSize(width: 900, height: 700)
+            settingsWindow?.setContentSize(NSSize(width: 720, height: 480))
+            settingsWindow?.minSize = NSSize(width: 680, height: 420)
+            settingsWindow?.maxSize = NSSize(width: 1100, height: 800)
             settingsWindow?.center()
             settingsWindow?.isReleasedWhenClosed = false
 
@@ -137,12 +137,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             settingsWindow?.delegate = self
         }
 
-        // Apply the compact default size on every show — the window is reused
+        // Apply the default size on every show — the window is reused
         // across shows (isReleasedWhenClosed=false), so a one-time setContentSize
         // at creation doesn't survive size changes elsewhere.
-        settingsWindow?.setContentSize(NSSize(width: 465, height: 345))
-        settingsWindow?.minSize = NSSize(width: 465, height: 345)
-        settingsWindow?.maxSize = NSSize(width: 900, height: 700)
+        settingsWindow?.setContentSize(NSSize(width: 720, height: 480))
+        settingsWindow?.minSize = NSSize(width: 680, height: 420)
+        settingsWindow?.maxSize = NSSize(width: 1100, height: 800)
         settingsWindow?.center()
 
         // Show settings window without stealing focus

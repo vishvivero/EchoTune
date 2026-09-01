@@ -37,23 +37,23 @@ struct SettingsSidebarRow: View {
     let tab: SettingsTab
     let isSelected: Bool
     let action: () -> Void
-    
+
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             Image(systemName: tab.iconName)
-                .font(.body)
+                .font(.system(size: 14))
                 .foregroundColor(isSelected ? .accentColor : .secondary)
-                .frame(width: 18)
+                .frame(width: 20)
             Text(tab.rawValue)
-                .font(.body)
-                .foregroundColor(isSelected ? .primary : .primary.opacity(0.8))
+                .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                .foregroundColor(isSelected ? .primary : .primary.opacity(0.75))
             Spacer()
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isSelected ? Color.accentColor.opacity(0.14) : Color.clear)
         )
         .contentShape(Rectangle())
         .onTapGesture {
@@ -65,73 +65,98 @@ struct SettingsSidebarRow: View {
 struct SettingsView: View {
     @EnvironmentObject var coordinator: AppCoordinator
     @EnvironmentObject var settings: AppSettings
-    
-    @State private var isAdvancedMode = false
+
     @State private var selectedTab: SettingsTab = .general
-    
+
+    // Logical grouping for the sidebar (all tabs always visible, no hide-behind-a-mode).
+    private static let groups: [(header: String, tabs: [SettingsTab])] = [
+        (
+            header: "General",
+            tabs: [.general, .hotkeys, .permissions]
+        ),
+        (
+            header: "Intelligence",
+            tabs: [.aiModels, .automation]
+        ),
+        (
+            header: "App",
+            tabs: [.privacy, .license]
+        )
+    ]
+
     var body: some View {
         HStack(spacing: 0) {
             // Sidebar
-            VStack(spacing: 0) {
-                // Segmented picker for Basic/Advanced
-                Picker("", selection: $isAdvancedMode) {
-                    Text("Basic").tag(false)
-                    Text("Advanced").tag(true)
-                }
-                .pickerStyle(.segmented)
-                .padding(12)
-                
-                VStack(spacing: 4) {
-                    if !isAdvancedMode {
-                        ForEach([SettingsTab.general, .hotkeys, .permissions]) { tab in
-                            SettingsSidebarRow(tab: tab, isSelected: selectedTab == tab) {
-                                selectedTab = tab
-                            }
-                        }
-                    } else {
-                        ForEach([SettingsTab.aiModels, .automation, .privacy, .license]) { tab in
-                            SettingsSidebarRow(tab: tab, isSelected: selectedTab == tab) {
-                                selectedTab = tab
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: 16) {
+                    ForEach(Self.groups, id: \.header) { group in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(group.header.uppercased())
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(.secondary)
+                                .padding(.horizontal, 12)
+                            ForEach(group.tabs) { tab in
+                                SettingsSidebarRow(tab: tab, isSelected: selectedTab == tab) {
+                                    selectedTab = tab
+                                }
                             }
                         }
                     }
                 }
-                .padding(.horizontal, 12)
-                
-                Spacer()
+                .padding(.top, 16)
+                .padding(.bottom, 8)
             }
-            .frame(width: 140)
+            .frame(width: 190)
             .background(Color(NSColor.windowBackgroundColor))
-            
+
             Divider()
-            
-            // Detail pane
-            VStack {
-                switch selectedTab {
-                case .general:
-                    GeneralSettingsView()
-                case .hotkeys:
-                    HotkeySettingsView()
-                case .permissions:
-                    PermissionsPrivacySettingsView()
-                case .aiModels:
-                    AIModelsSettingsView()
-                case .automation:
-                    AIAutomationSettingsView()
-                case .privacy:
-                    PrivacySettingsView()
-                case .license:
-                    AboutLicenseSettingsView()
+
+            // Detail pane — roomier
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: 0) {
+                    headerTitle(for: selectedTab)
+                        .padding(.bottom, 16)
+
+                    detailView(for: selectedTab)
                 }
+                .padding(24)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
-            .padding(12)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(Color(NSColor.textBackgroundColor))
         }
-        .frame(minWidth: 465, idealWidth: 465, maxWidth: .infinity, minHeight: 345, idealHeight: 345, maxHeight: .infinity)
-        .onChange(of: isAdvancedMode) { _, newValue in
-            // Automatically switch selected tab when switching mode
-            selectedTab = newValue ? .aiModels : .general
+        .frame(minWidth: 680, idealWidth: 720, maxWidth: .infinity, minHeight: 420, idealHeight: 480, maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private func headerTitle(for tab: SettingsTab) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: tab.iconName)
+                .font(.system(size: 18))
+                .foregroundColor(.accentColor)
+            Text(tab.rawValue)
+                .font(.title2)
+                .fontWeight(.semibold)
+        }
+    }
+
+    @ViewBuilder
+    private func detailView(for tab: SettingsTab) -> some View {
+        switch tab {
+        case .general:
+            GeneralSettingsView()
+        case .hotkeys:
+            HotkeySettingsView()
+        case .permissions:
+            PermissionsPrivacySettingsView()
+        case .aiModels:
+            AIModelsSettingsView()
+        case .automation:
+            AIAutomationSettingsView()
+        case .privacy:
+            PrivacySettingsView()
+        case .license:
+            AboutLicenseSettingsView()
         }
     }
 }
