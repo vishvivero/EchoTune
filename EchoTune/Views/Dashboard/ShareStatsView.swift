@@ -23,21 +23,25 @@ struct ShareStatsView: View {
     ]
     
     var body: some View {
-        VStack(spacing: 24) {
-            // Header
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Share Your Progress")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                Text("Export a gorgeous card of your EchoTune statistics to share on social media.")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 24)
-            .padding(.top, 16)
-            
-            HStack(alignment: .top, spacing: 24) {
+        // ScrollView so the fixed panes scroll rather than force the resizable
+        // window wider (which slid the centered sidebar). Pane widths below are
+        // flexible so the content fits the ~719px detail pane without overflow.
+        ScrollView {
+            VStack(spacing: 24) {
+                // Header
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Share Your Progress")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    Text("Export a gorgeous card of your EchoTune statistics to share on social media.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 24)
+                .padding(.top, 16)
+
+                HStack(alignment: .top, spacing: 24) {
                 // Left Pane: Settings
                 VStack(alignment: .leading, spacing: 20) {
                     Text("Customize Card")
@@ -99,7 +103,7 @@ struct ShareStatsView: View {
                         .controlSize(.large)
                     }
                 }
-                .frame(width: 250)
+                .frame(minWidth: 220, maxWidth: 280)
                 .padding()
                 .background(Color.primary.opacity(0.02))
                 .cornerRadius(12)
@@ -176,7 +180,7 @@ struct ShareStatsView: View {
                         .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.15), lineWidth: 1))
                         .padding(24)
                     }
-                    .frame(width: 440, height: 320)
+                    .frame(maxWidth: 440, minHeight: 320)
                     
                     if showCopiedToast {
                         HStack(spacing: 8) {
@@ -194,6 +198,7 @@ struct ShareStatsView: View {
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 24)
+            }
         }
         .onAppear {
             stats.loadStats()
