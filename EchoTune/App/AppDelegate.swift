@@ -27,10 +27,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         let others = NSRunningApplication.runningApplications(withBundleIdentifier: "com.echotune.EchoTune")
             .filter { $0.processIdentifier != selfPID && !$0.isTerminated }
         if let other = others.first {
-            debugLog("⚠️ EchoTune already running (pid \(other.processIdentifier)) — activating it and exiting this instance")
-            other.activate()
-            NSApp.terminate(nil)
-            return
+            // UI tests launch many instances back-to-back and terminate them
+            // immediately — don't treat a test-runner app as "already running".
+            let isUITest = ProcessInfo.processInfo.arguments.contains("--ui-test-force-onboarding")
+                || ProcessInfo.processInfo.environment["ECHO_UI_TEST_FORCE_ONBOARDING"] != nil
+            if !isUITest {
+                debugLog("⚠️ EchoTune already running (pid \(other.processIdentifier)) — activating it and exiting this instance")
+                other.activate()
+                NSApp.terminate(nil)
+                return
+            }
         }
 
         // Initialize status bar (always show for accessory apps)
