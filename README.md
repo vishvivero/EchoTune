@@ -2,15 +2,21 @@
 
 **Private, on-device voice dictation and meeting notes for macOS.**
 
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![macOS](https://img.shields.io/badge/macOS-14%2B-333333?logo=apple&logoColor=white)](https://echotune.app)
+[![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-Ready-11554A?logo=apple)](https://echotune.app)
+[![GitHub release](https://img.shields.io/github/v/release/vishvivero/EchoTune)](https://github.com/vishvivero/EchoTune/releases)
+
 EchoTune turns speech into text anywhere on your Mac. Hold one key, talk, and
 your words appear in whatever app you're using. Transcription runs locally with
 Whisper models — with local models selected, your audio never leaves your
 machine. Optional AI cleanup and cloud transcription are available if you bring
 your own API key, and are always clearly labeled.
 
-EchoTune is open source (GPL-3.0). You can read, build, and modify it freely.
-A signed, notarized build with a license key is available for purchase if you'd
-rather not build it yourself and want to support development.
+EchoTune is open source under **GPL-3.0**, free to download, use, and modify.
+Download the latest notarized build for free from the
+[releases page](https://github.com/vishvivero/EchoTune/releases) or
+[echotune.app](https://echotune.app), or build it yourself from source.
 
 ## Features
 
@@ -46,8 +52,8 @@ rather not build it yourself and want to support development.
 ## Building from source
 
 ```sh
-git clone https://github.com/<your-org>/echotune.git
-cd echotune
+git clone https://github.com/vishvivero/EchoTune.git
+cd EchoTune
 open EchoTune.xcodeproj   # then Build & Run in Xcode
 ```
 
@@ -65,7 +71,8 @@ EchoTune is licensed under the **GNU General Public License v3.0** — see
 [`LICENSE`](LICENSE). Attributions and third-party components are listed in
 [`NOTICE.md`](NOTICE.md).
 
-Buying a signed binary supports development; the source here is the same app.
+Free for everyone to use, modify, and share. If you'd like to support
+development, a Polar license or a small donation goes a long way.
 
 ---
 
