@@ -289,9 +289,9 @@ class AppSettings: ObservableObject {
         // Recorder Style
         if let recorderStyleValue = UserDefaults.standard.string(forKey: "recorderStyle"),
            let style = RecorderStyle(rawValue: recorderStyleValue) {
-            self.recorderStyle = RecorderStyle.userFacingOptions.contains(style) ? style : .slim
+            self.recorderStyle = RecorderStyle.userFacingOptions.contains(style) ? style : .mini
         } else {
-            self.recorderStyle = .slim // default: slim bottom bar
+            self.recorderStyle = .mini // default: floating live preview panel
         }
 
         // Audio Cleanup Settings

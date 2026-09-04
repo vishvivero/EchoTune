@@ -22,6 +22,20 @@ struct GeneralSettingsView: View {
             }
             .padding(.bottom, 8)
 
+            Section("Dictation Preview") {
+                Picker("Preview Style", selection: $settings.recorderStyle) {
+                    ForEach(RecorderStyle.userFacingOptions) { style in
+                        Text(style.rawValue).tag(style)
+                    }
+                }
+                .help("How the live dictation preview appears while you speak.")
+                .pickerStyle(.inline)
+                Text(settings.recorderStyle.description)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.bottom, 8)
+
             Section("Transcription Output") {
                 // Auto-Punctuation toggle removed for 4.0.0 — it never did
                 // anything (punctuation is whatever the model emits).
