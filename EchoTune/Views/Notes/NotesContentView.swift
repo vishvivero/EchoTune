@@ -11,6 +11,73 @@ struct NotesContentView: View {
     @ObservedObject var notesManager = NotesManager.shared
     @State private var selectedNote: Note? = nil
     @State private var searchText = ""
+    @State private var aiBusy = false
+    @State private var aiError: String? = nil
+
+    // MARK: - AI Note Actions
+
+    private enum NoteAIAction {
+        case summarize, todo, cleanup, keyPoints, professional
+
+        var prompt: String {
+            switch self {
+            case .summarize:
+                return "Summarize the following note content into a tight paragraph (max 5 sentences). Reply with ONLY the summary.\n\nContent:\n"
+            case .todo:
+                return "Extract an actionable to-do list from the following note. Output ONLY the list as lines starting with '- [ ] '. Each item short and action-first. If there are no actionable items, output the 3 most important points as '- [ ]' items.\n\nContent:\n"
+            case .cleanup:
+                return "Clean up the following dictated note: fix grammar, remove filler words and repetitions, keep the structure and meaning. Reply with ONLY the cleaned note.\n\nContent:\n"
+            case .keyPoints:
+                return "Condense the following note into key points as bullet lines starting with '- '. Reply with ONLY the bullets.\n\nContent:\n"
+            case .professional:
+                return "Rewrite the following note in a professional, well-structured form. Reply with ONLY the rewrite.\n\nContent:\n"
+            }
+        }
+    }
+
+    private func runAI(action: NoteAIAction, note: Note) {
+        let content = note.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !content.isEmpty, !aiBusy else { return }
+
+        // Use the user's selected enhancement model — hosted free path works
+        // with no key, so the menu is functional out of the box.
+        let modelString = AppSettings.shared.selectedEnhancementModel
+        guard let model = AIEnhancementEngine.EnhancementModel(rawValue: modelString) else {
+            aiError = "No enhancement model configured."
+            return
+        }
+        let apiKey = AppSettings.shared.apiKey(for: model.provider)
+
+        aiBusy = true
+        aiError = nil
+
+        Task {
+            do {
+                let result = try await AIEnhancementEngine.shared.enhance(
+                    content,
+                    using: model,
+                    apiKey: apiKey,
+                    customPrompt: action.prompt
+                )
+
+                await MainActor.run {
+                    aiBusy = false
+                    var updated = note
+                    updated.content = result
+                    updated.dateModified = Date()
+                    notesManager.updateNote(updated)
+                    selectedNote = updated
+                }
+            } catch {
+                await MainActor.run {
+                    aiBusy = false
+                    aiError = model.provider == .hosted
+                        ? "AI request failed: \(error.localizedDescription)"
+                        : "AI failed (\(model.provider.displayName)): \(error.localizedDescription). Add a key in Settings > Intelligence, or switch to EchoTune Hosted (free)."
+                }
+            }
+        }
+    }
     
     var filteredNotes: [Note] {
         if searchText.isEmpty {
@@ -133,7 +200,43 @@ struct NotesContentView: View {
                             }
                             .buttonStyle(.bordered)
                             .help("Toggle Favorite")
-                            
+
+                            // AI actions
+                            Menu {
+                                Button("Summarize") { runAI(action: .summarize, note: note) }
+                                Button("To-Do List") { runAI(action: .todo, note: note) }
+                                Button("Clean Up Dictation") { runAI(action: .cleanup, note: note) }
+                                Button("Key Points") { runAI(action: .keyPoints, note: note) }
+                                Button("Make Professional") { runAI(action: .professional, note: note) }
+                            } label: {
+                                if aiBusy {
+                                    ProgressView().scaleEffect(0.55)
+                                } else {
+                                    Image(systemName: "sparkles")
+                                }
+                            }
+                            .disabled(aiBusy || note.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            .help("AI assist: summarize, extract todos, clean up")
+
+                            // AI actions menu
+                            Menu {
+                                Button("Summarize") { runAI(action: .summarize, note: note) }
+                                Button("Extract To-Do List") { runAI(action: .todo, note: note) }
+                                Button("Clean Up & Format") { runAI(action: .cleanup, note: note) }
+                                Button("Key Points Bullets") { runAI(action: .keyPoints, note: note) }
+                                Divider()
+                                Button("Rewrite Professionally") { runAI(action: .professional, note: note) }
+                            } label: {
+                                Label("AI", systemImage: "sparkles")
+                            }
+                            .disabled(aiBusy || note.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            .help("AI helper — uses your selected enhancement model (hosted free available)")
+
+                            if aiBusy {
+                                ProgressView()
+                                    .scaleEffect(0.6)
+                            }
+
                             // Delete button
                             Button(action: {
                                 notesManager.deleteNote(note)
@@ -146,6 +249,22 @@ struct NotesContentView: View {
                             .help("Delete Note")
                         }
                         .padding(20)
+
+                        if let err = aiError {
+                            HStack(spacing: 6) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundColor(.orange)
+                                Text(err)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Button("Dismiss") { aiError = nil }
+                                    .buttonStyle(.link)
+                                    .font(.caption)
+                            }
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 6)
+                        }
                         
                         Divider()
                         

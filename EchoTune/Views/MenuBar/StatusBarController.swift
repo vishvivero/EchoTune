@@ -124,223 +124,328 @@ struct MenuBarPopoverView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var settings: AppSettings
     @EnvironmentObject var coordinator: AppCoordinator
-    
+    @ObservedObject private var history = TranscriptionHistoryManager.shared
+    @State private var copyToast: String? = nil
+
     var body: some View {
         VStack(spacing: 0) {
-            // Header
-            HStack(spacing: 10) {
-                appIcon
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 0) {
+                    header
+                    sectionLabel("Quick Actions")
+                    quickActions
+                    sectionLabel("Preferences")
+                    preferences
+                    sectionLabel("Recent Transcriptions")
+                    recentList
+                }
+            }
+
+            footer
+        }
+        .frame(width: 300)
+        .background(VisualEffectView(material: .popover, blendingMode: .behindWindow).opacity(0.98))
+    }
+
+    // MARK: - Header
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            Image(nsImage: NSImage(named: "MenuBarIcon") ?? NSImage())
+                .resizable()
+                .renderingMode(.template)
+                .foregroundColor(.primary)
+                .frame(width: 22, height: 22)
+
+            VStack(alignment: .leading, spacing: 1) {
                 Text("EchoTune")
                     .font(.system(size: 14, weight: .semibold))
-                Spacer()
-                statusBadge
+                Text(statusText)
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
             }
-            .padding(.horizontal, 18)
-            .padding(.top, 16)
-            .padding(.bottom, 14)
 
-            // Settings
-            VStack(spacing: 0) {
-                modeRow
-                    .padding(.bottom, 14)
-                Divider().opacity(0.5)
-                    .padding(.vertical, 12)
-                toggleRow(icon: "sparkles", title: "AI Enhancement", isOn: Binding(
-                    get: { settings.aiEnhancementEnabled },
-                    set: { settings.aiEnhancementEnabled = $0 }
-                ))
-                    .padding(.bottom, 12)
-                toggleRow(icon: "paperplane.fill", title: "Auto-Paste", isOn: Binding(
-                    get: { settings.autoSendEnabled },
-                    set: { settings.autoSendEnabled = $0 }
-                ))
-            }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 16)
-
-            Divider()
-
-            // Stats
-            HStack(spacing: 0) {
-                stat(
-                    icon: "flame.fill",
-                    value: "\(appState.currentStreak)",
-                    label: "Day streak",
-                    tint: .orange
-                )
-                statDivider
-                stat(
-                    icon: "textformat",
-                    value: appState.totalWordsTranscribed.formatted(),
-                    label: "Words",
-                    tint: .secondary
-                )
-            }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 14)
-
-            Divider()
-
-            // Actions
-            HStack(spacing: 8) {
-                actionButton(icon: "macwindow", title: "Dashboard", action: showMainWindow)
-                actionButton(icon: "gearshape", title: "Settings", action: showSettingsWindow)
-                Spacer(minLength: 4)
-                Button(action: quitApp) {
-                    Image(systemName: "power")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.red)
-                        .frame(width: 30, height: 30)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help("Quit EchoTune")
-            }
-            .padding(.horizontal, 18)
-            .padding(.top, 14)
-            .padding(.bottom, 16)
+            Spacer()
+            statusBadge
         }
-        .frame(width: 280)
-        .background(
-            VisualEffectView(material: .popover, blendingMode: .behindWindow)
-                .ignoresSafeArea()
-        )
+        .padding(.horizontal, 16)
+        .padding(.top, 16)
+        .padding(.bottom, 12)
     }
 
-    // MARK: - Subviews
-
-    private var appIcon: some View {
-        Group {
-            if let appIcon = NSImage(named: "AppIcon") {
-                Image(nsImage: appIcon)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-            } else {
-                Image(systemName: "waveform")
-                    .foregroundColor(.accentColor)
-            }
+    private var statusText: String {
+        switch appState.recordingState {
+        case .idle: return "Ready to dictate"
+        case .recording: return "Recording…"
+        case .processing: return "Processing…"
+        case .loadingModel(let name): return "Loading \(name)…"
+        case .error(let msg): return msg
         }
-        .frame(width: 24, height: 24)
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 
+    @ViewBuilder
     private var statusBadge: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 5) {
             Circle()
-                .fill(appState.recordingState.color)
+                .fill(badgeColor)
                 .frame(width: 7, height: 7)
-            Text(appState.recordingState.description)
-                .font(.caption)
+            Text(badgeLabel)
+                .font(.system(size: 10, weight: .medium))
                 .foregroundColor(.secondary)
-                .lineLimit(1)
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 4)
-        .background(Capsule().fill(Color.primary.opacity(0.05)))
+        .background(Capsule().fill(Color.primary.opacity(0.06)))
     }
 
-    private var modeRow: some View {
-        HStack {
-            icon("mic.fill")
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Recording Mode")
-                    .font(.system(size: 13, weight: .medium))
-                Text(settings.recordingMode.description)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-            }
-            Spacer()
-            Picker("", selection: Binding(
-                get: { settings.recordingMode },
-                set: { settings.recordingMode = $0 }
-            )) {
-                Text("Hold").tag(RecordingMode.pushToTalk)
-                Text("Toggle").tag(RecordingMode.toggle)
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 104)
+    private var badgeColor: Color {
+        switch appState.recordingState {
+        case .recording: return .red
+        case .processing: return .blue
+        case .loadingModel: return .orange
+        case .error: return .orange
+        case .idle: return .green
         }
     }
 
-    private func toggleRow(icon: String, title: String, isOn: Binding<Bool>) -> some View {
-        Toggle(isOn: isOn) {
-            HStack(spacing: 8) {
-                self.icon(icon)
-                Text(title)
-                    .font(.system(size: 13, weight: .medium))
-            }
+    private var badgeLabel: String {
+        switch appState.recordingState {
+        case .recording: return "REC"
+        case .processing: return "BUSY"
+        case .loadingModel: return "LOAD"
+        case .error: return "ERR"
+        case .idle: return "LIVE"
         }
-        .toggleStyle(.switch)
-        .controlSize(.small)
     }
 
-    private func stat(icon: String, value: String, label: String, tint: Color) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(tint)
-                .frame(width: 20)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(value)
-                    .font(.system(size: 13, weight: .semibold))
-                    .lineLimit(1)
-                Text(label)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
+    // MARK: - Sections
 
-    private var statDivider: some View {
-        Divider().frame(height: 30)
-            .padding(.horizontal, 10)
-    }
-
-    private func icon(_ name: String) -> some View {
-        Image(systemName: name)
-            .font(.system(size: 13))
+    private func sectionLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 9, weight: .bold))
             .foregroundColor(.secondary)
-            .frame(width: 22)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+            .padding(.bottom, 6)
+    }
+
+    private var quickActions: some View {
+        VStack(spacing: 8) {
+            // Copy Last Transcription — big, prominent
+            Button(action: copyLast) {
+                HStack(spacing: 9) {
+                    Image(systemName: "doc.on.doc.fill")
+                        .font(.system(size: 12))
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(copyLastTitle)
+                            .font(.system(size: 12, weight: .medium))
+                        if let preview = lastPreview {
+                            Text(preview)
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                    Spacer()
+                    if copyToast != nil && copyToast == "last" {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                            .font(.system(size: 12))
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .background(RoundedRectangle(cornerRadius: 9).fill(Color.accentColor.opacity(0.12)))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(lastTranscription == nil)
+            .opacity(lastTranscription == nil ? 0.45 : 1)
+
+            HStack(spacing: 8) {
+                actionButton(icon: "mic.fill", title: coordinator.appState.recordingState == .recording ? "Stop" : "Dictate") {
+                    coordinator.toggleDictation()
+                }
+                actionButton(icon: "clock.arrow.circlepath", title: "History") {
+                    (NSApp.delegate as? AppDelegate)?.showSettings()
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+    }
+
+    private var preferences: some View {
+        VStack(spacing: 0) {
+            toggleRow(icon: "sparkles", title: "AI Enhancement", isOn: Binding(
+                get: { settings.aiEnhancementEnabled },
+                set: { settings.aiEnhancementEnabled = $0 }
+            ))
+                .padding(.bottom, 10)
+            toggleRow(icon: "paperplane.fill", title: "Auto-Paste", isOn: Binding(
+                get: { settings.autoSendEnabled },
+                set: { settings.autoSendEnabled = $0 }
+            ))
+        }
+        .padding(.horizontal, 16)
+    }
+
+    private var recentList: some View {
+        VStack(spacing: 4) {
+            if recentTranscriptions.isEmpty {
+                Text("No transcriptions yet")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+            } else {
+                ForEach(recentTranscriptions) { item in
+                    RecentRow(item: item, showCheck: copyToast == item.id.uuidString) {
+                        copy(item: item)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 12)
+    }
+
+    private var footer: some View {
+        HStack {
+            Spacer()
+            Button("Settings…") { (NSApp.delegate as? AppDelegate)?.showSettings() }
+                .buttonStyle(.link)
+                .font(.system(size: 11))
+            Spacer()
+        }
+        .padding(.vertical, 8)
+        .background(Color.primary.opacity(0.03))
+    }
+
+    // MARK: - Data helpers
+
+    private var lastTranscription: TranscriptionHistoryItem? {
+        history.transcriptions.first
+    }
+
+    private var copyLastTitle: String {
+        lastTranscription == nil ? "No transcriptions yet" : "Copy Last Transcription"
+    }
+
+    private var lastPreview: String? {
+        guard let t = lastTranscription else { return nil }
+        return t.text.isEmpty ? "Empty" : t.text
+    }
+
+    /// Last 10, newest first
+    private var recentTranscriptions: [TranscriptionHistoryItem] {
+        Array(history.transcriptions.prefix(10))
+    }
+
+    // MARK: - Actions
+
+    private func copyLast() {
+        guard let t = lastTranscription else { return }
+        copy(item: t, toastId: "last")
+    }
+
+    private func copy(item: TranscriptionHistoryItem, toastId: String? = nil) {
+        let pb = NSPasteboard.general
+        pb.declareTypes([.string], owner: nil)
+        pb.setString(item.text, forType: .string)
+
+        let id = toastId ?? item.id.uuidString
+        withAnimation(.easeOut(duration: 0.15)) { copyToast = id }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            if copyToast == id {
+                withAnimation { copyToast = nil }
+            }
+        }
     }
 
     private func actionButton(icon: String, title: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 6) {
+            HStack(spacing: 7) {
                 Image(systemName: icon)
-                    .font(.system(size: 12))
+                    .font(.system(size: 11))
                 Text(title)
                     .font(.system(size: 12, weight: .medium))
+                Spacer()
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 11)
             .padding(.vertical, 7)
-            .background(Capsule().fill(Color.primary.opacity(0.06)))
-            .contentShape(Capsule())
+            .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.05)))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .foregroundColor(.primary)
     }
 
-    private func showMainWindow() {
-        NSApp.activate(ignoringOtherApps: true)
-        if let window = NSApp.windows.first(where: { $0.title.contains("EchoTune") && $0.canBecomeKey }) {
-            window.makeKeyAndOrderFront(nil)
-            window.orderFrontRegardless()
-        } else {
-            if let delegate = NSApp.delegate as? AppDelegate {
-                delegate.showWelcomeNotification()
+    private func toggleRow(icon: String, title: String, isOn: Binding<Bool>) -> some View {
+        HStack(spacing: 9) {
+            Image(systemName: icon)
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+                .frame(width: 16)
+            Text(title)
+                .font(.system(size: 12))
+            Spacer()
+            Toggle("", isOn: isOn)
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .labelsHidden()
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { isOn.wrappedValue.toggle() }
+    }
+}
+
+// MARK: - Recent history row
+
+struct RecentRow: View {
+    let item: TranscriptionHistoryItem
+    let showCheck: Bool
+    let onCopy: () -> Void
+
+    private var timeText: String {
+        let f = DateFormatter()
+        f.timeStyle = .short
+        f.dateStyle = item.date.isSameDay(as: Date()) ? .none : .short
+        return f.string(from: item.date)
+    }
+
+    var body: some View {
+        Button(action: onCopy) {
+            HStack(spacing: 9) {
+                Text(item.text.isEmpty ? "Empty" : item.text)
+                    .font(.system(size: 11))
+                    .foregroundColor(.primary.opacity(0.85))
+                    .lineLimit(1)
+                Spacer(minLength: 6)
+                if showCheck {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.green)
+                        .font(.system(size: 10))
+                } else {
+                    Text(timeText)
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
+                }
+                Image(systemName: "doc.on.doc")
+                    .font(.system(size: 9))
+                    .foregroundColor(.secondary.opacity(0.6))
             }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.035)))
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .help("Click to copy: \(item.text.prefix(80))")
     }
-    
-    private func showSettingsWindow() {
-        if let delegate = NSApp.delegate as? AppDelegate {
-            delegate.showSettings()
-        }
-    }
-    
-    private func quitApp() {
-        NSApp.terminate(nil)
+}
+
+extension Date {
+    func isSameDay(as other: Date) -> Bool {
+        Calendar.current.isDate(self, inSameDayAs: other)
     }
 }
