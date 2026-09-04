@@ -20,6 +20,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     func applicationDidFinishLaunching(_ notification: Notification) {
         debugLog("🚀 EchoTune launching...")
 
+        // Single-instance guard: if another EchoTune is already running, exit.
+        // Two instances = two Whisper models fighting for the same GPU, which
+        // doubles transcription latency and can double-insert text.
+        let selfPID = ProcessInfo.processInfo.processIdentifier
+        let others = NSRunningApplication.runningApplications(withBundleIdentifier: "com.echotune.EchoTune")
+            .filter { $0.processIdentifier != selfPID && !$0.isTerminated }
+        if let other = others.first {
+            debugLog("⚠️ EchoTune already running (pid \(other.processIdentifier)) — activating it and exiting this instance")
+            other.activate()
+            NSApp.terminate(nil)
+            return
+        }
+
         // Initialize status bar (always show for accessory apps)
         statusBarController = StatusBarController()
         debugLog("✓ Menu bar icon created")

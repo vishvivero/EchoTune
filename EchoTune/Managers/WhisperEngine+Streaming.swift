@@ -148,8 +148,6 @@ extension WhisperEngine {
     func endStreamingTranscription(completion: @escaping (Result<WhisperTranscriptionResult, WhisperError>) -> Void) {
         stopLiveTranscriptionTimer()
         debugLog("🛑 Ending streaming transcription (segment-wise)")
-        os_log("🛑 endStreamingTranscription: buffers=%d committedSegments=%d whisperKit=%{public}@", log: wLog, type: .info,
-               audioBuffers.count, liveSegmentTranscripts.count, whisperKitRef == nil ? "nil" : "loaded")
 
         guard let whisperKit = whisperKitRef else {
             os_log("❌ whisperKit nil at endStreaming", log: wLog, type: .error)
@@ -157,6 +155,34 @@ extension WhisperEngine {
             completion(.failure(.modelNotLoaded))
             return
         }
+
+        // If a live tick is mid-decode, let it finish before snapshotting the
+        // tail — otherwise the tail decode fights the tick for the GPU (both
+        // ~double) and the tick's buffers get double-counted in the tail.
+        let proceedToEnd: () -> Void = { [weak self] in
+            self?.finalizeStreaming(whisperKit: whisperKit, completion: completion)
+        }
+
+        if isLiveTranscribing {
+            os_log("⏳ Live tick in flight — waiting for it to finish before tail decode", log: wLog, type: .info)
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                let deadline = Date().addingTimeInterval(3.0)
+                while let self, self.isLiveTranscribing, Date() < deadline {
+                    Thread.sleep(forTimeInterval: 0.05)
+                }
+                DispatchQueue.main.async(execute: proceedToEnd)
+            }
+        } else {
+            proceedToEnd()
+        }
+    }
+
+    /// Runs after any in-flight live tick has settled: snapshots the tail and
+    /// decodes it, then joins committed segments + tail into the final result.
+    private func finalizeStreaming(whisperKit: WhisperKit,
+                                   completion: @escaping (Result<WhisperTranscriptionResult, WhisperError>) -> Void) {
+        os_log("🛑 endStreamingTranscription: buffers=%d committedSegments=%d whisperKit=%{public}@", log: wLog, type: .info,
+               audioBuffers.count, liveSegmentTranscripts.count, whisperKitRef == nil ? "nil" : "loaded")
 
         // Synchronize with audioProcessingQueue to safely snapshot buffers.
         // Buffers already covered by committed live-tick segments are dropped;
