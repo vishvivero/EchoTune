@@ -323,4 +323,13 @@ extension String {
     static func *(lhs: String, rhs: Int) -> String {
         return String(repeating: lhs, count: rhs)
     }
+
+    /// Length of the common leading prefix between two strings.
+    func commonPrefix(with other: String) -> String {
+        var result = ""
+        for (a, b) in zip(self, other) {
+            if a == b { result.append(a) } else { break }
+        }
+        return result
+    }
 }

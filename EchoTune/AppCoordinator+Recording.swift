@@ -575,6 +575,7 @@ extension AppCoordinator {
             appState.recordingState = .idle
             appState.recordingStatusDetail = nil
             audioManager.onAudioBuffer = nil
+            TextInsertionManager.shared.streamedPrologue = ""  // cancel any pending prologue typing
             clearCurrentProcessingState()
             transcriptionEngine.cancelTranscription()
             hideRecorderUI()

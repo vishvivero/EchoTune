@@ -36,6 +36,10 @@ struct WhisperTranscriptionResult {
     let originalText: String
     let translatedText: String?
     let detectedLanguage: String?
+    /// Already-decoded committed segments, available the instant streaming
+    /// ends (before the final tail decode completes). Used for immediate
+    /// streaming insertion at stop.
+    var committedPrefix: String? = nil
 
     var wasTranslated: Bool {
         translatedText != nil

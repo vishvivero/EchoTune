@@ -12,6 +12,10 @@ import UserNotifications
 class TextInsertionManager {
     static let shared = TextInsertionManager()
 
+    /// Serializes all CGEvent typing (prologue + final delta) so chunks never
+    /// interleave or double-type when the prologue and insertion overlap.
+    private let typingQueue = DispatchQueue(label: "com.echotune.typing", qos: .userInitiated)
+
     private init() {
         debugLog("✓ TextInsertionManager initialized")
     }
@@ -91,6 +95,54 @@ class TextInsertionManager {
 
     // MARK: - Streaming Insertion (visual-typing text in word-chunks)
 
+    /// Fire-and-forget: starts typing the pre-decoded committed text into the
+    /// frontmost app IMMEDIATELY at stop (called while the tail still decodes).
+    /// Bookkeeping in `streamedPrologue` lets the final insertion continue
+    /// from where this left off instead of re-typing from zero.
+    var streamedPrologue: String = ""
+
+    func typeStreamingPrologue(_ text: String) {
+        guard hasAccessibilityPermission(), !text.isEmpty else { return }
+        let frontApp = getFrontmostApplication() ?? ""
+        guard !isBrowserApp(frontApp) else { return }  // browsers: paste path only
+        streamedPrologue = text
+
+        let words = text.split(separator: " ", omittingEmptySubsequences: true)
+        var chunks: [String] = []
+        var i = 0
+        while i < words.count {
+            let end = min(i + 3, words.count)
+            chunks.append(words[i..<end].joined(separator: " "))
+            i = end
+        }
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            self?.typingQueue.async { [weak self] in
+            guard let eventSource = CGEventSource(stateID: .combinedSessionState) else { return }
+            for (idx, chunk) in chunks.enumerated() {
+                if Task.isCancelled { return }
+                let chunkText = idx == 0 ? chunk : " " + chunk
+                for scalar in chunkText.unicodeScalars {
+                    if let keyDown = CGEvent(keyboardEventSource: eventSource, virtualKey: 0, keyDown: true) {
+                        keyDown.keyboardSetUnicodeString(stringLength: 1, unicodeString: [UniChar(scalar.value)])
+                        keyDown.post(tap: .cgAnnotatedSessionEventTap)
+                    }
+                    if let keyUp = CGEvent(keyboardEventSource: eventSource, virtualKey: 0, keyDown: false) {
+                        keyUp.post(tap: .cgAnnotatedSessionEventTap)
+                    }
+                }
+                if idx < chunks.count - 1 {
+                    Thread.sleep(forTimeInterval: 0.012)
+                }
+            }
+            DispatchQueue.main.async { [weak self] in
+                debugLog("⚡ Streaming prologue typed (\(text.count) chars)")
+                _ = self // prologue complete; final delta handled downstream
+            }
+            }
+        }
+    }
+
     /// Inserts text by typing it in small word-chunks so the user SEES text
     /// arriving instead of waiting for one big paste. Chunks land a few ms
     /// apart — visually "streaming" but fast overall.
@@ -133,7 +185,9 @@ class TextInsertionManager {
             i = end
         }
 
-        DispatchQueue.global(qos: .userInitiated).async {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            self.typingQueue.async {
             let eventSource = CGEventSource(stateID: .combinedSessionState)
             guard eventSource != nil else {
                 DispatchQueue.main.async { self.insertViaClipboard(processed); completion(.success(())) }
@@ -157,6 +211,7 @@ class TextInsertionManager {
             }
 
             DispatchQueue.main.async { completion(.success(())) }
+            }
         }
     }
 

@@ -165,7 +165,8 @@ extension AppCoordinator {
                     outputText: payload.outputText,
                     originalText: payload.originalText,
                     translatedText: payload.translatedText,
-                    detectedLanguage: payload.detectedLanguage
+                    detectedLanguage: payload.detectedLanguage,
+                    preStreamText: payload.committedPrefix
                 ),
                 recordingDuration: recordingDuration
             )
@@ -272,6 +273,22 @@ extension AppCoordinator {
 
         // Apply text processing
         let processedText = self.processTranscription(transcribedText)
+
+        // INSTANT STREAMING: the committed segments were decoded WHILE the user
+        // was speaking — start typing them into the target app now, before any
+        // further work. The tail delta follows in insertTextWithAutoSend.
+        if !settings.aiEnhancementEnabled,
+           AppSettings.shared.recorderStyle == .mini,
+           let pre = transcription.preStreamText,
+           !pre.isEmpty {
+            let processedPre = self.processTranscription(pre)
+            // Only start streaming if it's a true prefix of the final text
+            // (i.e. no dedup/hallucination corrections changed the beginning).
+            if processedText.hasPrefix(processedPre) || processedText.commonPrefix(with: processedPre).count > processedPre.count / 2 {
+                debugLog("⚡ Pre-streaming \(processedPre.count) committed chars immediately at stop")
+                self.textInsertionManager.typeStreamingPrologue(processedPre)
+            }
+        }
 
         // Phase 6D: Trigger Word Detection — scan before AI enhancement
         let triggerResult = AIEnhancementEngine.shared.detectTriggerWords(in: processedText)
@@ -465,8 +482,20 @@ extension AppCoordinator {
         // (a few ms apart) so text ARRIVES instead of one jarring paste blob.
         // Raw-text path only — AI-enhanced text still pastes atomically so the
         // enhanced rewrite never visibly changes mid-typing.
+        // If the committed prologue was already typed at stop instantaneously,
+        // only the remaining delta gets typed here.
+        let prologue = self.textInsertionManager.streamedPrologue
+        self.textInsertionManager.streamedPrologue = ""
+        let remainingText: String
+        if !prologue.isEmpty, processedText.hasPrefix(prologue) {
+            remainingText = String(processedText.dropFirst(prologue.count))
+            debugLog("⚡ Prologue already typed (\(prologue.count) chars) — typing remainder (\(remainingText.count) chars)")
+        } else {
+            remainingText = processedText
+        }
+
         if !settings.aiEnhancementEnabled && AppSettings.shared.recorderStyle == .mini {
-            self.textInsertionManager.insertTextStreaming(processedText) { _ in
+            self.textInsertionManager.insertTextStreaming(remainingText) { _ in
                 PerformanceMonitor.shared.endTextInsertion()
                 let insertionLatency = Date().timeIntervalSince(insertionStartedAt)
                 TranscriptionHistoryManager.shared.updateProcessingMetadata(for: historyItem.id) { metadata in

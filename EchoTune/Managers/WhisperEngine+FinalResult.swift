@@ -44,11 +44,19 @@ extension WhisperEngine {
 
         let processedText = TranscriptionEngine.shared.processText(combined)
 
+        // Committed segments (already decoded while speaking) flow to the UI
+        // coordinator so insertion can START immediately; any tail delta in
+        // outputText then follows within ~1-2s.
+        let committedPrefix = segments.filter { s in
+            !s.isEmpty && !hallucinations.contains(s.lowercased())
+        }.joined(separator: " ")
+
         let finalResult = WhisperTranscriptionResult(
             outputText: processedText,
             originalText: combined,
             translatedText: nil,
-            detectedLanguage: nil
+            detectedLanguage: nil,
+            committedPrefix: committedPrefix
         )
 
         Task { @MainActor in

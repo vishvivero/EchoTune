@@ -25,6 +25,10 @@ struct FinalizedTranscription {
     let originalText: String
     let translatedText: String?
     let detectedLanguage: String?
+    /// Already-decoded committed segments. When set, this text starts
+    /// streaming into the target app IMMEDIATELY at stop, before the final
+    /// tail decode lands with any corrections in outputText.
+    var preStreamText: String? = nil
 }
 
 enum TranscriptionQualityFeedback: String, CaseIterable, Codable, Identifiable {
