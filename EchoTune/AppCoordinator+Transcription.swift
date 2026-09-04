@@ -517,6 +517,13 @@ extension AppCoordinator {
                 statusBar.updateIcon(for: .idle)
             }
             self.analyticsManager.recordTranscription(duration: recordingDuration, wordCount: wordCount, transcriptionTime: processingMetadata.totalLatency ?? recordingDuration)
+
+            // Feed the Share-stats model (speaking time / time saved). The
+            // AppState call below only tracks word counts and streaks —
+            // without this line TranscriptionStats never receives a session
+            // and "Speaking Time" / "Time Saved" on the Share card stay 0.
+            TranscriptionStats.shared.recordTranscription(duration: recordingDuration, wordCount: wordCount)
+            
             self.recordTranscription(text: processedText)
             return
         }

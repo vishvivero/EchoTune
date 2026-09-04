@@ -15,7 +15,7 @@ import UniformTypeIdentifiers
 
 struct ShareStatsView: View {
     @StateObject private var appState = AppState.shared
-    @StateObject private var stats = TranscriptionStats()
+    @StateObject private var stats = TranscriptionStats.shared
     @StateObject private var whisperEngine = WhisperEngine.shared
     @State private var referral = ReferralManager.shared
     @State private var selectedGradient = 0

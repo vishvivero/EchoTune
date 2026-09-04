@@ -9,6 +9,8 @@ import Combine
 import Foundation
 
 class TranscriptionStats: ObservableObject {
+    static let shared = TranscriptionStats()
+
     // Time metrics
     @Published var totalSpeakingTime: TimeInterval = 0
     @Published var estimatedTypingTime: TimeInterval = 0
