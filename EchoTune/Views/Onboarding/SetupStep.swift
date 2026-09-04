@@ -206,20 +206,16 @@ struct SetupStep: View {
     // MARK: - Chip-fit badge
 
     private func chipFitBadge(model: AIModel) -> some View {
-        let fit = SystemSpecsAnalyzer.shared.fitOf(model)
-        let color: Color
-        switch fit {
-        case .best: color = Color.green
-        case .good: color = OnboardingTheme.accent
-        case .heavy: color = Color.orange
-        }
+        let badge = SystemSpecsAnalyzer.shared.fitBadgeLabel(for: model, availableModels: modelManager.availableModels)
+        if badge.label.isEmpty { return AnyView(EmptyView()) }
+        let color: Color = badge.isBest ? .green : (badge.isHeavy ? .orange : OnboardingTheme.accent)
 
-        return Text(fit.label)
+        return AnyView(Text(badge.label)
             .font(.system(size: 9, weight: .bold))
             .padding(.horizontal, 5)
             .padding(.vertical, 1)
             .background(Capsule().fill(color.opacity(0.14)))
-            .foregroundColor(color)
+            .foregroundColor(color))
     }
 
     // MARK: - Recommended model card

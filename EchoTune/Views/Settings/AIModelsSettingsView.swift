@@ -199,14 +199,10 @@ struct AIModelsSettingsView: View {
     }
 
     private func fitBadge(_ model: AIModel) -> some View {
-        let fit = SystemSpecsAnalyzer.shared.fitOf(model)
-        let color: Color
-        switch fit {
-        case .best: color = .green
-        case .good: color = .accentColor
-        case .heavy: color = .orange
-        }
-        return chip(fit.label, color: color)
+        let badge = SystemSpecsAnalyzer.shared.fitBadgeLabel(for: model, availableModels: modelManager.availableModels)
+        if badge.label.isEmpty { return AnyView(EmptyView()) }
+        let color: Color = badge.isBest ? .green : (badge.isHeavy ? .orange : .accentColor)
+        return AnyView(chip(badge.label, color: color))
     }
 
     private func chip(_ text: String, color: Color) -> some View {

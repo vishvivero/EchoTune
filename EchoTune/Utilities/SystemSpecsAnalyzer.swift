@@ -197,12 +197,37 @@ class SystemSpecsAnalyzer {
         case good
         case heavy
 
+        /// Raw fit label. Views use `fitBadgeLabel(for:)` instead so the
+        /// "Best fit" badge stays unique to the recommended model.
         var label: String {
             switch self {
             case .best: return "Best fit for this chip"
             case .good: return "Works well on this chip"
             case .heavy: return "Heavy for this chip"
             }
+        }
+    }
+
+    /// Badge text + emphasis for a model on this Mac.
+    /// The green "Best for this chip" badge is reserved for the ONE model the
+    /// hardware tier recommends — otherwise every capable chip shows it on
+    /// every row and it stops meaning anything. Runner-ups that still run
+    /// comfortably get the quieter "Runs great"; heavy ones keep the warning.
+    func fitBadgeLabel(for model: AIModel, availableModels: [AIModel]) -> (label: String, isBest: Bool, isHeavy: Bool) {
+        // Apple Speech already carries the "Built-in" chip — no fit badge needed
+        if model.isBuiltIn {
+            return ("", false, false)
+        }
+
+        if let recommended = getRecommendedModel(from: availableModels), recommended.id == model.id {
+            return ("Best for this chip", true, false)
+        }
+
+        switch fitOf(model) {
+        case .best, .good:
+            return ("Runs great", false, false)
+        case .heavy:
+            return ("Heavy for this chip", false, true)
         }
     }
 
