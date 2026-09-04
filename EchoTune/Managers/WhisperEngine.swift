@@ -103,6 +103,8 @@ class WhisperEngine: ObservableObject {
     var liveTranscriptAccumulated: String = ""
     var lastLiveTranscribedBufferCount: Int = 0
     var isLiveTranscribing: Bool = false
+    /// Committed text from each completed 4s live tick (source of truth for final result)
+    var liveSegmentTranscripts: [String] = []
 
     // MARK: - Internal Accessors for Extensions
 
@@ -452,6 +454,7 @@ class WhisperEngine: ObservableObject {
         liveTranscriptAccumulated = ""
         lastLiveTranscribedBufferCount = 0
         isLiveTranscribing = false
+        liveSegmentTranscripts = []
 
         debugLog("🗑️ Whisper model unloaded")
     }

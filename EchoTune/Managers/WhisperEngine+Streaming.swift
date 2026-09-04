@@ -14,6 +14,12 @@ import WhisperKit
 import os.log
 
 // MARK: - Streaming Transcription
+//
+// Segment-wise streaming: every 4s tick transcribes ONLY the audio recorded
+// since the previous tick (instead of re-transcribing the whole recording),
+// and appends the result to liveSegmentTranscripts. On stop, only the final
+// tail is transcribed and the cached segments are joined. This makes
+// end-to-end latency O(tail) instead of O(entire recording).
 
 extension WhisperEngine {
 
@@ -34,6 +40,7 @@ extension WhisperEngine {
         liveTranscriptAccumulated = ""
         lastLiveTranscribedBufferCount = 0
         isLiveTranscribing = false
+        liveSegmentTranscripts = []
 
         debugLog("🎤 Starting streaming transcription...")
         startLiveTranscriptionTimer()
@@ -68,12 +75,13 @@ extension WhisperEngine {
         guard !isLiveTranscribing else { return }
         guard let whisperKit = whisperKitRef else { return }
 
-        // Snapshot current buffers on the processing queue
+        // Snapshot ONLY the buffers recorded since the last committed tick.
+        // (Previously this re-transcribed the entire recording every 4s —
+        // O(n²) work that grew with recording length.)
         let (buffersSnapshot, bufferCount): ([AVAudioPCMBuffer], Int) = audioProcessingQueueRef.sync {
             let count = self.audioBuffers.count
-            // Only transcribe if we have new buffers since last live transcription
             guard count > self.lastLiveTranscribedBufferCount else { return ([], count) }
-            return (Array(self.audioBuffers), count)
+            return (Array(self.audioBuffers[self.lastLiveTranscribedBufferCount...]), count)
         }
 
         guard !buffersSnapshot.isEmpty, bufferCount > lastLiveTranscribedBufferCount else { return }
@@ -87,7 +95,10 @@ extension WhisperEngine {
                 // Quick RMS check — skip if too quiet
                 let rms = sqrt(audioArray.map { $0 * $0 }.reduce(0, +) / Float(max(audioArray.count, 1)))
                 guard rms > 0.001 else {
-                    await MainActor.run { self.isLiveTranscribing = false }
+                    await MainActor.run {
+                        self.isLiveTranscribing = false
+                        self.lastLiveTranscribedBufferCount = bufferCount
+                    }
                     return
                 }
 
@@ -104,21 +115,21 @@ extension WhisperEngine {
                     "subtitle", "subtitles", "subscribe",
                     "please subscribe", "like and subscribe"
                 ]
-                guard !text.isEmpty, !hallucinations.contains(text.lowercased()) else {
-                    await MainActor.run { self.isLiveTranscribing = false }
-                    return
-                }
 
                 await MainActor.run {
-                    self.liveTranscriptAccumulated = text
                     self.lastLiveTranscribedBufferCount = bufferCount
                     self.isLiveTranscribing = false
+
+                    guard !text.isEmpty, !hallucinations.contains(text.lowercased()) else { return }
+
+                    self.liveSegmentTranscripts.append(text)
+                    self.liveTranscriptAccumulated = self.liveSegmentTranscripts.joined(separator: " ")
 
                     // Post live transcription update
                     NotificationCenter.default.post(
                         name: NSNotification.Name("LiveTranscriptionUpdate"),
                         object: nil,
-                        userInfo: ["text": text]
+                        userInfo: ["text": self.liveTranscriptAccumulated]
                     )
                 }
             } catch {
@@ -132,9 +143,9 @@ extension WhisperEngine {
 
     func endStreamingTranscription(completion: @escaping (Result<WhisperTranscriptionResult, WhisperError>) -> Void) {
         stopLiveTranscriptionTimer()
-        debugLog("🛑 Ending streaming transcription")
-        debugLog("📊 Total buffers accumulated: \(audioBuffers.count)")
-        os_log("🛑 endStreamingTranscription: buffers=%d whisperKit=%{public}@", log: wLog, type: .info, audioBuffers.count, whisperKitRef == nil ? "nil" : "loaded")
+        debugLog("🛑 Ending streaming transcription (segment-wise)")
+        os_log("🛑 endStreamingTranscription: buffers=%d committedSegments=%d whisperKit=%{public}@", log: wLog, type: .info,
+               audioBuffers.count, liveSegmentTranscripts.count, whisperKitRef == nil ? "nil" : "loaded")
 
         guard let whisperKit = whisperKitRef else {
             os_log("❌ whisperKit nil at endStreaming", log: wLog, type: .error)
@@ -143,37 +154,42 @@ extension WhisperEngine {
             return
         }
 
-        guard !audioBuffers.isEmpty else {
-            os_log("❌ audioBuffers empty at endStreaming", log: wLog, type: .error)
-            isProcessing = false
-            completion(.failure(.noAudioData))
-            return
-        }
-
-        // Synchronize with audioProcessingQueue to safely snapshot buffers
-        let buffersSnapshot: [AVAudioPCMBuffer] = audioProcessingQueueRef.sync {
-            let snapshot = self.audioBuffers
+        // Synchronize with audioProcessingQueue to safely snapshot buffers.
+        // Buffers already covered by committed live-tick segments are dropped;
+        // only the tail recorded since the last committed tick is decoded.
+        let tailBuffers: [AVAudioPCMBuffer] = audioProcessingQueueRef.sync {
+            let committed = self.lastLiveTranscribedBufferCount
+            let snapshot = committed < self.audioBuffers.count ? Array(self.audioBuffers[committed...]) : []
             self.audioBuffers = []
             return snapshot
         }
 
+        let committedSegments = liveSegmentTranscripts
+
+        // Nothing new since the last committed tick → deliver cached segments only.
+        guard !tailBuffers.isEmpty else {
+            guard !committedSegments.isEmpty else {
+                os_log("❌ audioBuffers empty at endStreaming", log: wLog, type: .error)
+                completion(.failure(.noAudioData))
+                return
+            }
+            deliverFinalResult(segments: committedSegments, tailText: nil, completion: completion)
+            return
+        }
+
         Task {
             do {
-                os_log("🔄 Task started: processing %d buffers", log: wLog, type: .info, buffersSnapshot.count)
+                os_log("🔄 Task started: decoding tail of %d buffers", log: wLog, type: .info, tailBuffers.count)
 
-                // Calculate total frames from all buffers
-                let totalFrameCount = buffersSnapshot.reduce(0) { $0 + Int($1.frameLength) }
-                let sampleRate = buffersSnapshot[0].format.sampleRate
+                // Calculate total frames from tail buffers only
+                let totalFrameCount = tailBuffers.reduce(0) { $0 + Int($1.frameLength) }
+                let sampleRate = tailBuffers[0].format.sampleRate
                 let audioDuration = Double(totalFrameCount) / sampleRate
-                os_log("📊 Audio: %.2fs (%d frames, %.0fHz)", log: wLog, type: .info, audioDuration, totalFrameCount, sampleRate)
+                os_log("📊 Tail audio: %.2fs (%d frames, %.0fHz)", log: wLog, type: .info, audioDuration, totalFrameCount, sampleRate)
 
-                // Convert all buffers to a single Float array
-                let audioArray = try self.convertBuffersToFloatArray(buffersSnapshot)
-                os_log("✅ Converted to %d samples", log: wLog, type: .info, audioArray.count)
-
-                // Calculate RMS to verify audio is present
-                let rms = sqrt(audioArray.map { $0 * $0 }.reduce(0, +) / Float(max(audioArray.count, 1)))
-                os_log("🔊 RMS=%.6f (need >0.001)", log: wLog, type: .info, rms)
+                // Convert tail buffers to a single Float array
+                let audioArray = try self.convertBuffersToFloatArray(tailBuffers)
+                os_log("✅ Converted tail to %d samples", log: wLog, type: .info, audioArray.count)
 
                 // Start performance monitoring for transcription
                 await MainActor.run {
@@ -183,22 +199,20 @@ extension WhisperEngine {
                     )
                 }
 
-                // Transcribe directly from audio array
-                os_log("🎙️ Calling whisperKit.transcribe(audioArray:)...", log: wLog, type: .info)
-                let transcriptionResult = try await self.transcribeWithCurrentSettings(audioArray: audioArray, whisperKit: whisperKit)
-                os_log("📝 Transcription: '%@' (%d words)", log: wLog, type: .info, transcriptionResult.outputText, transcriptionResult.outputText.split(separator: " ").count)
+                // Transcribe the tail (or short final) segment directly
+                os_log("🎙️ Calling whisperKit.transcribe(audioArray:) for final tail...", log: wLog, type: .info)
+                let tailResult = try await self.transcribeWithCurrentSettings(audioArray: audioArray, whisperKit: whisperKit)
+                let tailText = tailResult.outputText.trimmingCharacters(in: .whitespacesAndNewlines)
+                os_log("📝 Tail transcription: '%@'", log: wLog, type: .info, tailText)
 
                 await MainActor.run {
-                    // End performance monitoring with word count
                     PerformanceMonitor.shared.endTranscription(
-                        wordCount: transcriptionResult.outputText.split(separator: " ").count
+                        wordCount: tailResult.outputText.split(separator: " ").count
                     )
-
-                    self.currentText = transcriptionResult.outputText
-                    self.isProcessing = false
-                    os_log("✅ Final cleaned: '%@'", log: wLog, type: .info, transcriptionResult.outputText)
-                    completion(.success(transcriptionResult))
                 }
+
+                deliverFinalResult(segments: committedSegments, tailText: tailText.isEmpty ? nil : tailText,
+                                   completion: completion)
             } catch {
                 os_log("❌ Transcription Task FAILED: %{public}@", log: wLog, type: .error, "\(error)")
                 await MainActor.run {
