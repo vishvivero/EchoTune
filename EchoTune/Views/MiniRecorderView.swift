@@ -145,6 +145,7 @@ struct MiniRecorderContentView: View {
     @ObservedObject private var appState = AppState.shared
     @State private var phase: Double = 0
     @State private var liveText: String = ""
+    @State private var pendingText: String = ""   // in-progress tail — shown dimmed until next tick confirms it
     @State private var textContentHeight: CGFloat = 0
 
     var onHeightChange: ((CGFloat) -> Void)?
@@ -157,23 +158,33 @@ struct MiniRecorderContentView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Transcript — grows upward to a max height, then becomes scrollable
-            if !liveText.isEmpty {
+            if !liveText.isEmpty || !pendingText.isEmpty {
                 ScrollViewReader { proxy in
                     ScrollView(.vertical, showsIndicators: true) {
-                        Text(liveText)
-                            .font(.system(size: 13))
-                            .foregroundColor(.white.opacity(0.9))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 14)
-                            .padding(.top, 10)
-                            .padding(.bottom, 6)
-                            .id("transcriptBottom")
-                            .background(
-                                GeometryReader { textGeo in
-                                    Color.clear
-                                        .preference(key: TextHeightKey.self, value: textGeo.size.height)
-                                }
-                            )
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(liveText)
+                                .font(.system(size: 13))
+                                .foregroundColor(.white.opacity(0.9))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            // In-progress tail — dimmed until the next tick confirms it
+                            if !pendingText.isEmpty {
+                                Text(pendingText)
+                                    .font(.system(size: 13))
+                                    .foregroundColor(.white.opacity(0.45))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .transition(.opacity)
+                            }
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.top, 10)
+                        .padding(.bottom, 6)
+                        .id("transcriptBottom")
+                        .background(
+                            GeometryReader { textGeo in
+                                Color.clear
+                                    .preference(key: TextHeightKey.self, value: textGeo.size.height)
+                            }
+                        )
                     }
                     .onPreferenceChange(TextHeightKey.self) { height in
                         textContentHeight = height
@@ -182,6 +193,11 @@ struct MiniRecorderContentView: View {
                         onHeightChange?(totalHeight)
                     }
                     .onChange(of: liveText) { _ in
+                        withAnimation(.easeOut(duration: 0.1)) {
+                            proxy.scrollTo("transcriptBottom", anchor: .bottom)
+                        }
+                    }
+                    .onChange(of: pendingText) { _ in
                         withAnimation(.easeOut(duration: 0.1)) {
                             proxy.scrollTo("transcriptBottom", anchor: .bottom)
                         }
@@ -261,10 +277,14 @@ struct MiniRecorderContentView: View {
             if let text = n.userInfo?["text"] as? String {
                 liveText = text
             }
+            if let pending = n.userInfo?["pending"] as? String {
+                pendingText = pending
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("TranscriptionComplete"))) { n in
             if let text = n.userInfo?["text"] as? String {
                 liveText = text
+                pendingText = ""
             }
         }
         .onChange(of: appState.recordingState) { _, newState in
@@ -273,6 +293,7 @@ struct MiniRecorderContentView: View {
                     if appState.recordingState == .idle {
                         withAnimation {
                             liveText = ""
+                            pendingText = ""
                         }
                     }
                 }

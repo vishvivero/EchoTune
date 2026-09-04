@@ -125,11 +125,15 @@ extension WhisperEngine {
                     self.liveSegmentTranscripts.append(text)
                     self.liveTranscriptAccumulated = self.liveSegmentTranscripts.joined(separator: " ")
 
-                    // Post live transcription update
+                    // Committed = everything except the latest tick; the latest
+                    // tick is still "pending" (shown dimmed in the live preview)
+                    // until the next tick confirms it or dictation ends.
+                    let committed = self.liveSegmentTranscripts.dropLast().joined(separator: " ")
+
                     NotificationCenter.default.post(
                         name: NSNotification.Name("LiveTranscriptionUpdate"),
                         object: nil,
-                        userInfo: ["text": self.liveTranscriptAccumulated]
+                        userInfo: ["text": committed, "pending": text]
                     )
                 }
             } catch {
