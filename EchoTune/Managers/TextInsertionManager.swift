@@ -30,10 +30,7 @@ class TextInsertionManager {
     // MARK: - Text Insertion
 
     func insertText(_ text: String, completion: @escaping (Result<Void, Error>) -> Void) {
-        debugLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        debugLog("📝 TEXT INSERTION START")
-        debugLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        debugLog("   Original text: \(text.prefix(100))")
+        debugLog("📝 TEXT INSERTION START, original='\(text.prefix(100))'")
 
         // Process text through dictionary replacements FIRST
         let processedText = processTextReplacements(text)
@@ -89,6 +86,77 @@ class TextInsertionManager {
             insertViaClipboard(processedText)
             debugLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
             completion(.success(()))
+        }
+    }
+
+    // MARK: - Streaming Insertion (visual-typing text in word-chunks)
+
+    /// Inserts text by typing it in small word-chunks so the user SEES text
+    /// arriving instead of waiting for one big paste. Chunks land a few ms
+    /// apart — visually "streaming" but fast overall.
+    /// Used for the pre-decoded committed portion at stop; the final tail
+    /// follows afterwards via the normal paste path.
+    func insertTextStreaming(_ text: String,
+                             chunkDelay: TimeInterval = 0.012,
+                             wordsPerChunk: Int = 3,
+                             completion: @escaping (Result<Void, Error>) -> Void) {
+        guard hasAccessibilityPermission() else {
+            insertViaClipboard(processTextReplacements(text))
+            completion(.failure(TextInsertionError.noPermission))
+            return
+        }
+
+        let processed = processTextReplacements(text)
+        guard !processed.isEmpty else {
+            completion(.success(()))
+            return
+        }
+
+        let frontApp = getFrontmostApplication() ?? ""
+        if isBrowserApp(frontApp) {
+            // Browsers: CGEvent typing can fight page editors — single paste is safer/fast
+            if insertViaPaste(processed) {
+                completion(.success(()))
+            } else {
+                typeTextAsync(processed) { completion(.success(())) }
+            }
+            return
+        }
+
+        // Split into word chunks
+        let words = processed.split(separator: " ", omittingEmptySubsequences: true)
+        var chunks: [String] = []
+        var i = 0
+        while i < words.count {
+            let end = min(i + wordsPerChunk, words.count)
+            chunks.append(words[i..<end].joined(separator: " "))
+            i = end
+        }
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let eventSource = CGEventSource(stateID: .combinedSessionState)
+            guard eventSource != nil else {
+                DispatchQueue.main.async { self.insertViaClipboard(processed); completion(.success(())) }
+                return
+            }
+
+            for (idx, chunk) in chunks.enumerated() {
+                let chunkText = idx == 0 ? chunk : " " + chunk
+                for scalar in chunkText.unicodeScalars {
+                    if let keyDown = CGEvent(keyboardEventSource: eventSource, virtualKey: 0, keyDown: true) {
+                        keyDown.keyboardSetUnicodeString(stringLength: 1, unicodeString: [UniChar(scalar.value)])
+                        keyDown.post(tap: .cgAnnotatedSessionEventTap)
+                    }
+                    if let keyUp = CGEvent(keyboardEventSource: eventSource, virtualKey: 0, keyDown: false) {
+                        keyUp.post(tap: .cgAnnotatedSessionEventTap)
+                    }
+                }
+                if idx < chunks.count - 1 {
+                    Thread.sleep(forTimeInterval: chunkDelay)
+                }
+            }
+
+            DispatchQueue.main.async { completion(.success(())) }
         }
     }
 

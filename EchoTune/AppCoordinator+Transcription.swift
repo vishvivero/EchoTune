@@ -461,6 +461,37 @@ extension AppCoordinator {
         let insertionStartedAt = Date()
         PerformanceMonitor.shared.startTextInsertion()
 
+        // Streaming insertion: type the final text in visible word-chunks
+        // (a few ms apart) so text ARRIVES instead of one jarring paste blob.
+        // Raw-text path only — AI-enhanced text still pastes atomically so the
+        // enhanced rewrite never visibly changes mid-typing.
+        if !settings.aiEnhancementEnabled && AppSettings.shared.recorderStyle == .mini {
+            self.textInsertionManager.insertTextStreaming(processedText) { _ in
+                PerformanceMonitor.shared.endTextInsertion()
+                let insertionLatency = Date().timeIntervalSince(insertionStartedAt)
+                TranscriptionHistoryManager.shared.updateProcessingMetadata(for: historyItem.id) { metadata in
+                    metadata.textInsertionLatency = insertionLatency
+                    if let recordingStartedAt = self.recordingStartedAt {
+                        metadata.totalLatency = Date().timeIntervalSince(recordingStartedAt)
+                    }
+                }
+                self.errorLogger.logInfo("Text inserted via streaming", category: "TextInsertion")
+                if AutoSendService.shared.shouldTriggerAutoSend() {
+                    AutoSendService.shared.sendAfterDelay(0.2)
+                }
+                PerformanceMonitor.shared.completeSession()
+                self.clearCurrentProcessingState()
+            }
+            self.appState.recordingState = .idle
+            self.appState.recordingStatusDetail = nil
+            if let appDelegate = NSApp.delegate as? AppDelegate, let statusBar = appDelegate.statusBarController {
+                statusBar.updateIcon(for: .idle)
+            }
+            self.analyticsManager.recordTranscription(duration: recordingDuration, wordCount: wordCount, transcriptionTime: processingMetadata.totalLatency ?? recordingDuration)
+            self.recordTranscription(text: processedText)
+            return
+        }
+
         self.textInsertionManager.insertText(processedText) { result in
             PerformanceMonitor.shared.endTextInsertion()
 
