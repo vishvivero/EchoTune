@@ -235,6 +235,8 @@ class AIEnhancementEngine: ObservableObject {
         debugLog("   Model: \(model.displayName)")
         debugLog("   Transcript length: \(transcript.count) characters")
 
+        let traceStart = Date()
+
         do {
             let enhanced: String
 
@@ -252,15 +254,42 @@ class AIEnhancementEngine: ObservableObject {
             debugLog("✅ Enhancement successful")
             debugLog("   Enhanced length: \(enhanced.count) characters")
 
+            LangfuseTracer.shared.recordGeneration(
+                name: "enhance",
+                provider: model.provider.displayName,
+                model: model.displayName,
+                input: transcript,
+                output: enhanced,
+                latencySeconds: Date().timeIntervalSince(traceStart),
+                status: "success"
+            )
             return enhanced
 
         } catch let error as EnhancementError {
+            LangfuseTracer.shared.recordGeneration(
+                name: "enhance",
+                provider: model.provider.displayName,
+                model: model.displayName,
+                input: transcript,
+                output: "",
+                latencySeconds: Date().timeIntervalSince(traceStart),
+                status: "error: \(error.localizedDescription)"
+            )
             await MainActor.run {
                 lastError = error
             }
             throw error
         } catch {
             let enhancementError = EnhancementError.networkError(error)
+            LangfuseTracer.shared.recordGeneration(
+                name: "enhance",
+                provider: model.provider.displayName,
+                model: model.displayName,
+                input: transcript,
+                output: "",
+                latencySeconds: Date().timeIntervalSince(traceStart),
+                status: "error: \(error.localizedDescription)"
+            )
             await MainActor.run {
                 lastError = enhancementError
             }
