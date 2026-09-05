@@ -58,6 +58,7 @@ class AudioManager: NSObject, ObservableObject {
     
     // Background queue for writing audio to disk
     private let fileWriteQueue = DispatchQueue(label: "com.echotune.AudioManager.fileWriteQueue", qos: .userInitiated)
+    private let whisperConversionQueue = DispatchQueue(label: "com.echotune.AudioManager.whisperConversionQueue", qos: .userInitiated)
 
     // MARK: - Audio Format
 
@@ -78,10 +79,19 @@ class AudioManager: NSObject, ObservableObject {
     private var tapConverter: AVAudioConverter?
     private var normalizedFormat: AVAudioFormat?
 
+    // Dedicated Whisper stream format. Converting once at capture time avoids
+    // constructing a new resampler for every 4-second live transcription tick.
+    private var whisperTapConverter: AVAudioConverter?
+    private var whisperFormat: AVAudioFormat?
+
     // MARK: - Callbacks
 
-    // Callback for live audio streaming
+    // Callback for live audio streaming (native/recording format)
     var onAudioBuffer: ((AVAudioPCMBuffer) -> Void)?
+
+    // Whisper receives a dedicated 16 kHz mono stream so its live ticks do not
+    // repeatedly resample the accumulated native-format recording.
+    var onWhisperAudioBuffer: ((AVAudioPCMBuffer) -> Void)?
 
     // MARK: - Temporary File URL
 
@@ -218,6 +228,20 @@ class AudioManager: NSObject, ObservableObject {
 
         let activeFormat = normalizedFormat ?? hardwareFormat
 
+        // Prepare one stateful converter for the Whisper stream. The converter
+        // runs on a serial queue below, preserving buffer order while keeping
+        // the real-time audio tap free of resampling work.
+        whisperFormat = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 16_000,
+            channels: 1,
+            interleaved: false
+        )
+        if let whisperFormat {
+            whisperTapConverter = AVAudioConverter(from: activeFormat, to: whisperFormat)
+            debugLog("🎙️ Whisper capture stream: \(activeFormat.sampleRate)Hz/\(activeFormat.channelCount)ch → 16kHz mono")
+        }
+
         // Open audio file for writing to disk
         do {
             try? FileManager.default.removeItem(at: tempFileURL)
@@ -286,8 +310,22 @@ class AudioManager: NSObject, ObservableObject {
             // Notify callback of speech detection
             self.onSpeechDetected?(vadResult)
 
-            // Send buffer to live transcription if callback is set
+            // Send the native-format copy to Apple Speech or other consumers.
             self.onAudioBuffer?(safeCopy)
+
+            // Convert once into Whisper's 16 kHz mono format. This replaces
+            // the previous per-tick AVAudioConverter construction in
+            // WhisperEngine.convertBuffersToFloatArray().
+            if self.onWhisperAudioBuffer != nil {
+                self.whisperConversionQueue.async { [weak self] in
+                    guard let self else { return }
+                    guard let whisperBuffer = self.convertToWhisperBuffer(safeCopy) else {
+                        debugLog("⚠️ Failed to convert capture buffer to Whisper format")
+                        return
+                    }
+                    self.onWhisperAudioBuffer?(whisperBuffer)
+                }
+            }
 
             // Write to audio file on background queue to keep memory footprint flat
             self.fileWriteQueue.async { [weak self] in
@@ -346,6 +384,13 @@ class AudioManager: NSObject, ObservableObject {
         audioEngine.stop()
         isRecording = false
 
+        // Flush the dedicated Whisper conversion stream before the caller
+        // starts finalisation, otherwise the final converted buffers could
+        // arrive after WhisperEngine snapshots its tail.
+        whisperConversionQueue.sync {
+            self.flushWhisperConverter()
+        }
+
         // Wait for all remaining disk writes to finish, then close file
         fileWriteQueue.sync {
             self.audioFile = nil
@@ -371,7 +416,66 @@ class AudioManager: NSObject, ObservableObject {
         self.currentChunkFrameOffset = 0
         self.tapConverter = nil
         self.normalizedFormat = nil
+        self.whisperTapConverter = nil
+        self.whisperFormat = nil
         try? FileManager.default.removeItem(at: tempFileURL)
+    }
+
+    /// Converts one captured native-format buffer to the persistent Whisper
+    /// stream format. Called serially, once per capture buffer.
+    private func convertToWhisperBuffer(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+        guard let converter = whisperTapConverter,
+              let whisperFormat else { return nil }
+
+        let ratio = whisperFormat.sampleRate / buffer.format.sampleRate
+        let capacity = AVAudioFrameCount(ceil(Double(buffer.frameLength) * ratio)) + 64
+        guard let output = AVAudioPCMBuffer(pcmFormat: whisperFormat, frameCapacity: capacity) else {
+            return nil
+        }
+
+        var inputConsumed = false
+        var conversionError: NSError?
+        let inputBlock: AVAudioConverterInputBlock = { _, status in
+            if inputConsumed {
+                status.pointee = .noDataNow
+                return nil
+            }
+            inputConsumed = true
+            status.pointee = .haveData
+            return buffer
+        }
+
+        let status = converter.convert(to: output, error: &conversionError, withInputFrom: inputBlock)
+        if let conversionError {
+            debugLog("⚠️ Whisper capture conversion failed: \(conversionError.localizedDescription)")
+            return nil
+        }
+        guard status != .error, output.frameLength > 0 else { return nil }
+        return output
+    }
+
+    /// Flushes the resampler's small delayed tail at end of recording.
+    /// Without an explicit end-of-stream signal, AVAudioConverter can retain
+    /// a few samples from the final capture buffer.
+    private func flushWhisperConverter() {
+        guard let converter = whisperTapConverter,
+              let whisperFormat else { return }
+
+        guard let output = AVAudioPCMBuffer(pcmFormat: whisperFormat, frameCapacity: 1024) else {
+            return
+        }
+
+        var conversionError: NSError?
+        let status = converter.convert(to: output, error: &conversionError) { _, inputStatus in
+            inputStatus.pointee = .endOfStream
+            return nil
+        }
+        if let conversionError {
+            debugLog("⚠️ Whisper capture flush failed: \(conversionError.localizedDescription)")
+            return
+        }
+        guard status != .error, output.frameLength > 0 else { return }
+        onWhisperAudioBuffer?(output)
     }
 
     // MARK: - Duration Helpers

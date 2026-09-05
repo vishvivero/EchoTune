@@ -388,7 +388,8 @@ extension AppCoordinator {
             }
 
             // Set up callback to stream audio buffers to Whisper
-            audioManager.onAudioBuffer = { [weak self] buffer in
+            audioManager.onAudioBuffer = nil
+            audioManager.onWhisperAudioBuffer = { [weak self] buffer in
                 self?.whisperEngine.appendAudioBuffer(buffer)
             }
         } else {
@@ -402,6 +403,7 @@ extension AppCoordinator {
                 }
 
                 // Set up callback to stream audio buffers to Apple Speech
+                audioManager.onWhisperAudioBuffer = nil
                 audioManager.onAudioBuffer = { [weak self] buffer in
                     self?.transcriptionEngine.appendAudioBuffer(buffer)
                 }
@@ -430,12 +432,13 @@ extension AppCoordinator {
         // Hide recording indicator (all styles)
         hideRecorderUI()
 
-        // Clear the audio buffer callback
-        audioManager.onAudioBuffer = nil
-
-        // Stop audio recording with correct engine type (this calculates the duration)
+        // Stop audio recording with correct engine type (this calculates the duration).
+        // Callbacks are cleared only after stopRecording flushes the dedicated
+        // Whisper conversion queue, so the final converted buffers are retained.
         let engineType: AudioManager.AudioEngine = useWhisper ? .whisper : .appleSpeech
         let capturedAudioData = audioManager.stopRecording(forEngine: engineType)
+        audioManager.onAudioBuffer = nil
+        audioManager.onWhisperAudioBuffer = nil
 
         // Store audio data for retention
         self.lastRecordedAudioData = capturedAudioData
@@ -575,6 +578,7 @@ extension AppCoordinator {
             appState.recordingState = .idle
             appState.recordingStatusDetail = nil
             audioManager.onAudioBuffer = nil
+            audioManager.onWhisperAudioBuffer = nil
             TextInsertionManager.shared.streamedPrologue = ""  // cancel any pending prologue typing
             clearCurrentProcessingState()
             transcriptionEngine.cancelTranscription()
