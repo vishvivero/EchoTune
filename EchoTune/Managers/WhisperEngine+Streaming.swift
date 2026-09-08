@@ -57,18 +57,18 @@ extension WhisperEngine {
 
     private func startLiveTranscriptionTimer() {
         stopLiveTranscriptionTimer()
-        DispatchQueue.main.async { [weak self] in
-            self?.liveTranscriptionTimer = Timer.scheduledTimer(withTimeInterval: Self.liveTranscriptionInterval, repeats: true) { [weak self] _ in
-                self?.processLiveTranscriptionChunk()
-            }
+        let source = DispatchSource.makeTimerSource(queue: liveTimerQueue)
+        source.schedule(deadline: .now() + Self.liveTranscriptionInterval, repeating: Self.liveTranscriptionInterval)
+        source.setEventHandler { [weak self] in
+            self?.processLiveTranscriptionChunk()
         }
+        liveTimerSource = source
+        source.resume()
     }
 
     func stopLiveTranscriptionTimer() {
-        DispatchQueue.main.async { [weak self] in
-            self?.liveTranscriptionTimer?.invalidate()
-            self?.liveTranscriptionTimer = nil
-        }
+        liveTimerSource?.cancel()
+        liveTimerSource = nil
     }
 
     private func processLiveTranscriptionChunk() {
@@ -93,7 +93,11 @@ extension WhisperEngine {
                 let audioArray = try self.convertBuffersToFloatArray(buffersSnapshot)
 
                 // Quick RMS check — skip if too quiet
-                let rms = sqrt(audioArray.map { $0 * $0 }.reduce(0, +) / Float(max(audioArray.count, 1)))
+                var sumSquares: Float = 0
+                for sample in audioArray {
+                    sumSquares += sample * sample
+                }
+                let rms = sqrt(sumSquares / Float(max(audioArray.count, 1)))
                 guard rms > 0.001 else {
                     await MainActor.run {
                         self.isLiveTranscribing = false

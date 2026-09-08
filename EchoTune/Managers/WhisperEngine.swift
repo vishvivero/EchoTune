@@ -103,7 +103,8 @@ class WhisperEngine: ObservableObject {
     var streamingTask: Task<Void, Never>?
 
     // Live transcription state
-    var liveTranscriptionTimer: Timer?
+    var liveTimerSource: DispatchSourceTimer?
+    let liveTimerQueue = DispatchQueue(label: "com.echotune.whisper.liveTimer", qos: .utility)
     var liveTranscriptAccumulated: String = ""
     var lastLiveTranscribedBufferCount: Int = 0
     var isLiveTranscribing: Bool = false
@@ -453,8 +454,8 @@ class WhisperEngine: ObservableObject {
         loadedModelName = nil
         isAvailable = false
         audioBuffers = []
-        liveTranscriptionTimer?.invalidate()
-        liveTranscriptionTimer = nil
+        liveTimerSource?.cancel()
+        liveTimerSource = nil
         liveTranscriptAccumulated = ""
         lastLiveTranscribedBufferCount = 0
         isLiveTranscribing = false
