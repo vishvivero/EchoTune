@@ -220,6 +220,10 @@ class AppCoordinator: ObservableObject {
         // 2. Check all permissions (non-prompting)
         checkPermissions()
 
+        // 2b. Ask once on first launch after onboarding. This is a no-op when
+        // the user has already answered macOS's prompt (including Deny).
+        permissionsManager.requestMicrophonePermissionIfNeeded()
+
         // 3. Setup keyboard shortcut
         setupKeyboardShortcut()
 

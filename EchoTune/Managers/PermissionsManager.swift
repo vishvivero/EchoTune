@@ -105,6 +105,24 @@ final class PermissionsManager: ObservableObject {
 
     // MARK: - Requesting
 
+    /// Requests microphone access only when macOS has not asked before.
+    ///
+    /// This is used after onboarding as a first-launch safety net. It must not
+    /// open System Settings for a previously denied permission: macOS will not
+    /// show the native prompt again, and silently opening Settings on launch is
+    /// surprising. The explicit Settings button continues to use
+    /// requestMicrophonePermission(), which handles that denied case.
+    func requestMicrophonePermissionIfNeeded() {
+        guard AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined else {
+            checkMicrophonePermission()
+            return
+        }
+
+        requestMicrophonePermission { granted in
+            debugLog(granted ? "🎙️ Microphone permission granted" : "🎙️ Microphone permission not granted")
+        }
+    }
+
     func requestMicrophonePermission(completion: @escaping (Bool) -> Void) {
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .authorized:
