@@ -51,6 +51,14 @@ class ModelManager: ObservableObject {
     @Published var downloadProgress: Double = 0
     @Published var currentDownloadModel: AIModel?
 
+    // Download detail (MBs + live speed). WhisperKit only reports a 0-1
+    // fraction, so completed bytes derive from the catalog size and the
+    // speed is a smoothed sample between progress ticks. Kept as published
+    // values so any download UI can show "123 MB of 632 MB · 12.4 MB/s".
+    @Published var downloadBytesCompleted: Int64 = 0
+    @Published var downloadBytesTotal: Int64 = 0
+    @Published var downloadSpeedBytesPerSecond: Double = 0
+
     // Storage info
     @Published var availableStorage: Int64 = 0
     @Published var usedStorage: Int64 = 0
@@ -63,6 +71,10 @@ class ModelManager: ObservableObject {
 
     private var cancellables = Set<AnyCancellable>()
     private var observations: [NSKeyValueObservation] = []
+
+    /// Last (completed bytes, date) sample, used to compute download speed.
+    private var downloadSampleBytes: Int64 = 0
+    private var downloadSampleDate = Date.distantPast
     private let modelsDirectory: URL
     let apiKeyPrefix = "apiKey:"
 
@@ -373,6 +385,11 @@ class ModelManager: ObservableObject {
         isDownloading = true
         currentDownloadModel = model
         downloadProgress = 0
+        downloadBytesCompleted = 0
+        downloadBytesTotal = model.size
+        downloadSpeedBytesPerSecond = 0
+        downloadSampleBytes = 0
+        downloadSampleDate = Date()
 
         debugLog("📥 Starting download for \(model.name) (\(model.id))")
 
@@ -427,6 +444,9 @@ class ModelManager: ObservableObject {
                     self.updateStorageInfo()
                     self.isDownloading = false
                     self.currentDownloadModel = nil
+                    self.downloadBytesCompleted = 0
+                    self.downloadBytesTotal = 0
+                    self.downloadSpeedBytesPerSecond = 0
 
                     completion(.success(installedModel))
                 }
@@ -435,6 +455,9 @@ class ModelManager: ObservableObject {
                     debugLog("❌ Download failed: \(error)")
                     self.isDownloading = false
                     self.currentDownloadModel = nil
+                    self.downloadBytesCompleted = 0
+                    self.downloadBytesTotal = 0
+                    self.downloadSpeedBytesPerSecond = 0
                     if error is WhisperValidationError {
                         debugLog("⚠️ Model installation rejected: incomplete or corrupted model files")
                     }
@@ -743,10 +766,18 @@ class ModelManager: ObservableObject {
         for attempt in 1...2 {
             do {
                 let downloadedPath = try await WhisperKit.download(variant: variant, downloadBase: whisperDownloadBase) { progress in
-                    DispatchQueue.main.async {
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self else { return }
                         self.downloadProgress = progress.fractionCompleted
+
+                        // WhisperKit gives us only a fraction, so map it onto the
+                        // catalog size to show real MBs, then sample speed.
+                        let completed = Int64(progress.fractionCompleted * Double(max(self.downloadBytesTotal, 1)))
+                        self.downloadBytesCompleted = min(completed, self.downloadBytesTotal)
+                        self.updateDownloadSpeed(bytes: self.downloadBytesCompleted)
+
                         progressHandler?(progress.fractionCompleted)
-                        debugLog("⏬ Download progress: \(Int(progress.fractionCompleted * 100))%")
+                        debugLog("⏬ Download progress: \(Int(progress.fractionCompleted * 100))% · \(self.downloadProgressSummary)")
                     }
                 }
 
@@ -777,6 +808,53 @@ class ModelManager: ObservableObject {
         }
 
         throw lastError ?? WhisperValidationError(message: "Downloaded model files were incomplete.")
+    }
+
+    // MARK: - Download speed + display helpers
+
+    /// Smoothed speed estimate (bytes/sec) from delta sampling between progress ticks.
+    /// Zeros (stalls) drag the estimate down, bursts push it up — no jumpy numbers.
+    private func updateDownloadSpeed(bytes: Int64) {
+        let now = Date()
+        let dt = now.timeIntervalSince(downloadSampleDate)
+        let delta = bytes - downloadSampleBytes
+        downloadSampleBytes = bytes
+        downloadSampleDate = now
+
+        // Ignore sub-250ms samples; they're too noisy to be meaningful.
+        guard dt >= 0.25 else { return }
+
+        let instantaneous = Double(delta) / dt
+        if downloadSpeedBytesPerSecond <= 0 {
+            downloadSpeedBytesPerSecond = instantaneous
+        } else {
+            downloadSpeedBytesPerSecond = (downloadSpeedBytesPerSecond * 0.7) + (instantaneous * 0.3)
+        }
+    }
+
+    /// Byte string like "123.4 MB" for the download UI.
+    static func downloadByteString(_ bytes: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: max(bytes, 0), countStyle: .file)
+    }
+
+    /// Live speed like "12.4 MB/s" (empty until a real sample exists).
+    var downloadSpeedDisplay: String {
+        guard downloadSpeedBytesPerSecond > 0 else { return "" }
+        return ModelManager.downloadByteString(Int64(downloadSpeedBytesPerSecond)) + "/s"
+    }
+
+    /// " at 12.4 MB/s" (empty until a real sample exists), for caption copy.
+    var downloadSpeedSuffix: String {
+        let speed = downloadSpeedDisplay
+        return speed.isEmpty ? "" : " at \(speed)"
+    }
+
+    /// "123.4 MB of 632 MB · 12.4 MB/s" summary for download rows.
+    var downloadProgressSummary: String {
+        let total = max(downloadBytesTotal, 1)
+        let base = "\(ModelManager.downloadByteString(downloadBytesCompleted)) of \(ModelManager.downloadByteString(total))"
+        let speed = downloadSpeedDisplay
+        return speed.isEmpty ? base : "\(base) · \(speed)"
     }
 
     private func clearExistingModelArtifacts(folderNames: [String], whisperDownloadBase: URL) {

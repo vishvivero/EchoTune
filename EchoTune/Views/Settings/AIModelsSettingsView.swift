@@ -186,6 +186,12 @@ struct AIModelsSettingsView: View {
                     Text("\(Int(modelManager.downloadProgress * 100))%")
                         .font(.system(size: 9))
                         .foregroundColor(.secondary)
+                    Text(modelManager.downloadProgressSummary)
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(.secondary)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                 }
             } else {
                 Button("Download") {

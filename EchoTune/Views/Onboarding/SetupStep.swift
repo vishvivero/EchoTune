@@ -109,7 +109,7 @@ struct SetupStep: View {
                 .disabled(modelManager.isDownloading)
 
                 Text(modelManager.isDownloading
-                     ? "Downloading \(modelManager.currentDownloadModel?.name ?? "model") — you can still continue…"
+                     ? "Downloading \(modelManager.currentDownloadModel?.name ?? "model")\(modelManager.downloadSpeedSuffix) — you can still continue…"
                      : "No download needed — EchoTune starts with Apple Speech.")
                     .font(.caption)
                     .foregroundColor(.secondary)
@@ -315,6 +315,14 @@ struct SetupStep: View {
                                 .font(.system(size: 11, weight: .bold))
                                 .foregroundColor(OnboardingTheme.accent)
                         }
+                        // Live MB + speed readout so a slow download reads as
+                        // "working", not frozen.
+                        Text(modelManager.downloadProgressSummary)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.secondary)
+                            .monospacedDigit()
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
                     }
                 } else if isLoadingThis {
                     VStack(alignment: .leading, spacing: 4) {

@@ -280,7 +280,7 @@ class WhisperEngine: ObservableObject {
                             self.loadingProgress = 0.15 + (fraction * 0.40)
                             let pct = Int(fraction * 100)
                             if pct < 100 {
-                                self.loadingStage = "Downloading model... \(pct)%"
+                                self.loadingStage = "Downloading model... \(pct)% · \(ModelManager.shared.downloadProgressSummary)"
                             } else {
                                 self.loadingStage = "Download complete!"
                             }
