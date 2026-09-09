@@ -4,6 +4,18 @@ EchoTune
 Copyright © 2026 Vishnu Raj
 Licensed under the GNU General Public License v3.0 (see `LICENSE`).
 
+## Inspiration
+
+EchoTune's dictation experience was inspired by **VoiceInk**
+(https://github.com/Beingpax/VoiceInk), an open-source macOS dictation app
+by **Prakash Joshi Pax**, licensed under GPL-3.0 (https://tryvoiceink.com).
+EchoTune began as a learning exercise while studying VoiceInk's approach to
+on-device dictation, born from a desire for a cleaner interface and a fully
+self-hosted audio stack. It is an independent implementation — its
+dictation-related source was rewritten from behavior specifications, with no
+code reuse from VoiceInk. In the spirit of that lineage, EchoTune is likewise
+released under GPL-3.0. See [`CREDITS.md`](CREDITS.md) for the full account.
+
 ## Bundled / Dependent Open-Source Components
 
 EchoTune builds on the following third-party packages, retrieved via Swift

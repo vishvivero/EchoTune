@@ -69,7 +69,8 @@ Dependencies are resolved automatically via Swift Package Manager.
 
 EchoTune is licensed under the **GNU General Public License v3.0** — see
 [`LICENSE`](LICENSE). Attributions and third-party components are listed in
-[`NOTICE.md`](NOTICE.md).
+[`NOTICE.md`](NOTICE.md), and the project's lineage and inspirations in
+[`CREDITS.md`](CREDITS.md).
 
 Free for everyone to use, modify, and share. If you'd like to support
 development, a Polar license or a small donation goes a long way.
