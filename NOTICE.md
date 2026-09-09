@@ -11,6 +11,13 @@ EchoTune's dictation experience was inspired by **VoiceInk**
 licensed under GPL-3.0. EchoTune is an independent implementation; its
 dictation-related source was rewritten from behavior specifications. In the
 spirit of that lineage, EchoTune is likewise released under GPL-3.0.
+by **Prakash Joshi Pax**, licensed under GPL-3.0 (https://tryvoiceink.com).
+EchoTune began as a learning exercise while studying VoiceInk's approach to
+on-device dictation, born from a desire for a cleaner interface and a fully
+self-hosted audio stack. It is an independent implementation — its
+dictation-related source was rewritten from behavior specifications, with no
+code reuse from VoiceInk. In the spirit of that lineage, EchoTune is likewise
+released under GPL-3.0. See [`CREDITS.md`](CREDITS.md) for the full account.
 
 ## Bundled / Dependent Open-Source Components
 
