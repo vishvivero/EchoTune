@@ -18,7 +18,7 @@ class StatusBarController: NSObject {
     override init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         popover = NSPopover()
-        popover.contentSize = NSSize(width: 280, height: 360)
+        popover.contentSize = NSSize(width: 280, height: 430)
         popover.behavior = .transient
         
         let contentView = MenuBarPopoverView()
@@ -125,6 +125,7 @@ struct MenuBarPopoverView: View {
     @EnvironmentObject var settings: AppSettings
     @EnvironmentObject var coordinator: AppCoordinator
     @ObservedObject private var history = TranscriptionHistoryManager.shared
+    @ObservedObject private var learner = CorrectionLearner.shared
     @State private var copyToast: String? = nil
     
     var body: some View {
@@ -140,6 +141,25 @@ struct MenuBarPopoverView: View {
             .padding(.horizontal, 18)
             .padding(.top, 16)
             .padding(.bottom, 14)
+
+            // Self-learning suggestions — the “Echo remembers” moments
+            if !learner.suggestions.isEmpty {
+                VStack(spacing: 8) {
+                    HStack {
+                        Label("Echo can learn", systemImage: "brain.head.profile")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.accentColor)
+                        Spacer()
+                    }
+                    ForEach(learner.suggestions.prefix(2)) { suggestion in
+                        suggestionRow(suggestion)
+                    }
+                    Divider().opacity(0.5)
+                        .padding(.vertical, 8)
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 4)
+            }
 
             // Settings
             VStack(spacing: 0) {
@@ -193,6 +213,15 @@ struct MenuBarPopoverView: View {
                 .disabled(lastTranscription == nil)
                 .opacity(lastTranscription == nil ? 0.45 : 1)
                 Spacer(minLength: 4)
+                Button(action: openEchoProfile) {
+                    Image(systemName: "brain.head.profile")
+                        .font(.system(size: 13, weight: .medium))
+                        .frame(width: 30, height: 30)
+                        .background(Capsule().fill(Color.primary.opacity(0.06)))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .help("Echo Profile — your personal operating model")
                 Button(action: quitApp) {
                     Image(systemName: "power")
                         .font(.system(size: 13, weight: .medium))
@@ -329,6 +358,39 @@ struct MenuBarPopoverView: View {
         .foregroundColor(.primary)
     }
 
+    private func suggestionRow(_ suggestion: CorrectionCandidate) -> some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("“\(suggestion.spoken)” → “\(suggestion.written)”")
+                    .font(.system(size: 12, weight: .medium))
+                Text("Corrected \(suggestion.count) times · teach Echo?")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+            }
+            Spacer()
+            Button {
+                learner.teach(suggestion)
+            } label: {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundColor(.green)
+            }
+            .buttonStyle(.plain)
+            .help("Teach EchoTune this fix")
+            Button {
+                learner.dismiss(suggestion)
+            } label: {
+                Image(systemName: "xmark.circle")
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Dismiss suggestion")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color.primary.opacity(0.05))
+        .cornerRadius(8)
+    }
+
     private func showMainWindow() {
         NSApp.activate(ignoringOtherApps: true)
         if let window = NSApp.windows.first(where: { $0.title.contains("EchoTune") && $0.canBecomeKey }) {
@@ -341,6 +403,12 @@ struct MenuBarPopoverView: View {
         }
     }
     
+    private func openEchoProfile() {
+        if let delegate = NSApp.delegate as? AppDelegate {
+            delegate.showEchoProfile()
+        }
+    }
+
     private func showSettingsWindow() {
         if let delegate = NSApp.delegate as? AppDelegate {
             delegate.showSettings()

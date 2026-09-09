@@ -474,6 +474,19 @@ extension AppCoordinator {
             processingMetadata: processingMetadata
         )
 
+        // Local Personal Operating Model — record what was said, with which
+        // model, and in which app, so the profile/coach can learn locally.
+        let frontmost = NSWorkspace.shared.frontmostApplication?.localizedName
+        let windowTitle = self.textInsertionManager.activeWindowTitle()
+        EchoMemoryManager.shared.recordTranscription(
+            text: processedText,
+            duration: recordingDuration,
+            modelID: processingMetadata.transcriptionModel,
+            provider: processingMetadata.transcriptionProvider,
+            frontmostApp: frontmost,
+            windowTitle: windowTitle
+        )
+
         // Insert text directly with performance monitoring
         let insertionStartedAt = Date()
         PerformanceMonitor.shared.startTextInsertion()
@@ -505,6 +518,9 @@ extension AppCoordinator {
                     }
                 }
                 self.errorLogger.logInfo("Text inserted via streaming", category: "TextInsertion")
+                // Self-learning loop: read the field back shortly after the user
+                // has had a chance to fix anything, and learn from corrections.
+                CorrectionLearner.shared.scheduleReadBack(afterInserting: processedText)
                 if AutoSendService.shared.shouldTriggerAutoSend() {
                     AutoSendService.shared.sendAfterDelay(0.2)
                 }
@@ -546,6 +562,10 @@ extension AppCoordinator {
             switch result {
             case .success:
                 self.errorLogger.logInfo("Text inserted directly", category: "TextInsertion")
+
+                // Self-learning loop: read the field back shortly after the user
+                // has had a chance to fix anything, and learn from corrections.
+                CorrectionLearner.shared.scheduleReadBack(afterInserting: processedText)
 
                 // Phase 6A: Auto-Send After Paste (if enabled)
                 if AutoSendService.shared.shouldTriggerAutoSend() {

@@ -13,6 +13,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     var statusBarController: StatusBarController?
     var settingsWindow: NSWindow?
     var onboardingWindow: NSWindow?
+    var echoProfileWindowController: EchoProfileWindowController?
     private let onboardingState = OnboardingStateStore.shared
     private let dashboardSize = NSSize(width: 960, height: 720)
     private let dashboardMinimumSize = NSSize(width: 900, height: 600)
@@ -168,6 +169,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         settingsWindow?.makeKeyAndOrderFront(nil)
         // REMOVED: NSApp.activate(ignoringOtherApps: true) - this steals focus!
         debugLog("⚙️ Settings window shown (without stealing focus)")
+    }
+
+    @objc func showEchoProfile() {
+        if echoProfileWindowController == nil {
+            echoProfileWindowController = EchoProfileWindowController()
+            echoProfileWindowController?.window?.delegate = self
+        }
+        echoProfileWindowController?.window?.center()
+        echoProfileWindowController?.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        debugLog("🧠 Echo Profile window shown")
     }
 
     func showWelcomeNotification() {

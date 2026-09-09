@@ -536,6 +536,19 @@ class TextInsertionManager {
         return nil
     }
 
+    /// Best-effort title of the frontmost window, via the AX API.
+    func activeWindowTitle() -> String? {
+        guard let frontApp = NSWorkspace.shared.frontmostApplication else { return nil }
+        let app = AXUIElementCreateApplication(frontApp.processIdentifier)
+        var value: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &value)
+        guard result == .success, let window = value else { return nil }
+        var titleRef: CFTypeRef?
+        let titleResult = AXUIElementCopyAttributeValue(window as! AXUIElement, kAXTitleAttribute as CFString, &titleRef)
+        guard titleResult == .success, let title = titleRef as? String, !title.isEmpty else { return nil }
+        return title
+    }
+
     func isTextFieldFocused() -> Bool {
         let systemWideElement = AXUIElementCreateSystemWide()
         var focusedElement: AnyObject?
@@ -547,6 +560,36 @@ class TextInsertionManager {
         )
 
         return result == .success && focusedElement != nil
+    }
+
+    /// Reads the current value of the focused UI element (text field / text area)
+    /// so EchoTune can detect what the user changed after an insertion.
+    func readFocusedFieldText() -> String? {
+        guard hasAccessibilityPermission() else { return nil }
+        let systemWideElement = AXUIElementCreateSystemWide()
+        var focusedRef: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(
+            systemWideElement,
+            kAXFocusedUIElementAttribute as CFString,
+            &focusedRef
+        )
+        guard result == .success, let element = focusedRef else { return nil }
+        let axElement = element as! AXUIElement
+
+        // Plain text fields expose their contents as AXValue.
+        var valueRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(axElement, kAXValueAttribute as CFString, &valueRef) == .success,
+           let string = valueRef as? String {
+            return string
+        }
+        // Some rich editors only expose AXValue as an AXValue object; read via
+        // selected text as a best-effort fallback.
+        var selectedRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(axElement, kAXSelectedTextAttribute as CFString, &selectedRef) == .success,
+           let string = selectedRef as? String {
+            return string
+        }
+        return nil
     }
 
     // MARK: - Notifications

@@ -69,6 +69,15 @@ class TranscriptionHistoryManager: ObservableObject {
     }
     
     func updateTranscriptionText(for item: TranscriptionHistoryItem, newText: String) {
+        // Self-learning loop: when the user corrects a dictated word, feed the
+        // before → after pair to the correction learner so it can offer to
+        // teach the fix once it has been seen enough times.
+        let before = item.rawTranscriptionText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let after = newText
+        if !before.isEmpty, after != before {
+            CorrectionLearner.shared.recordCorrection(from: before, to: after)
+        }
+
         if let index = transcriptions.firstIndex(where: { $0.id == item.id }) {
             transcriptions[index].text = newText
             if transcriptions[index].processingMetadata != nil {
