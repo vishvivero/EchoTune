@@ -222,23 +222,36 @@ class WhisperEngine: ObservableObject {
                 debugLog("📂 Model folder: \(modelFolderPath)")
                 debugLog("   Exists: \(modelExists)")
 
-                // P3: Check for pre-compiled CoreML models bundled in the app.
-                // Symlink them into the WhisperKit models directory to skip compilation.
-                if let compiledDir = Bundle.main.resourceURL?.appendingPathComponent("CompiledModels") {
-                    if FileManager.default.fileExists(atPath: compiledDir.path) {
-                        debugLog("⚡ Found pre-compiled CoreML models in bundle")
-                        let destCompiledDir = modelFolderPath + "/compiled"
-                        try? FileManager.default.createDirectory(atPath: destCompiledDir, withIntermediateDirectories: true)
-                        if let entries = try? FileManager.default.contentsOfDirectory(atPath: compiledDir.path) {
-                            for entry in entries {
-                                let src = compiledDir.appendingPathComponent(entry)
-                                let dst = URL(fileURLWithPath: destCompiledDir).appendingPathComponent(entry)
-                                try? FileManager.default.removeItem(at: dst)
-                                try? FileManager.default.linkItem(at: src, to: dst)
-                            }
-                            debugLog("   Symlinked \(entries.count) compiled models → skipping CoreML compilation")
+                // Phase 3: use the compiled CoreML models bundled with the app, but
+                // only when they provably match the model we're about to load.
+                //
+                // WhisperKit loads <modelFolder>/<Name>.mlmodelc directly
+                // (ModelUtilities.detectModelURL), so the bundles go at the top
+                // level of the model folder — not a "compiled/" subdir. They are
+                // symlinked because a .mlmodelc is a directory bundle and macOS
+                // forbids hard-linking directories (the previous linkItem always
+                // failed silently).
+                switch CompiledModelBundleCheck.validate(
+                    modelId: model.id,
+                    bundleResourceURL: Bundle.main.resourceURL
+                ) {
+                case .success(let compiledDir):
+                    let linkStart = CFAbsoluteTimeGetCurrent()
+                    var linked = 0
+                    if let entries = try? FileManager.default.contentsOfDirectory(atPath: compiledDir.path) {
+                        for entry in entries where entry.hasSuffix(".mlmodelc") {
+                            let src = compiledDir.appendingPathComponent(entry)
+                            let dst = URL(fileURLWithPath: modelFolderPath).appendingPathComponent(entry)
+                            // Never clobber a bundle the downloader already produced.
+                            guard !FileManager.default.fileExists(atPath: dst.path) else { continue }
+                            try? FileManager.default.createSymbolicLink(at: dst, withDestinationURL: src)
+                            linked += 1
                         }
                     }
+                    let linkMS = Int((CFAbsoluteTimeGetCurrent() - linkStart) * 1000)
+                    debugLog("⚡ Compiled models verified — linked \(linked) bundles into the model folder (\(linkMS) ms)")
+                case .failure(let reason):
+                    debugLog("ℹ️ Not using bundled compiled models: \(reason) — CoreML will compile on load")
                 }
 
                 await MainActor.run {
@@ -285,19 +298,31 @@ class WhisperEngine: ObservableObject {
                         self.loadingStage = "Downloading model — this may take a few minutes..."
                     }
 
-                    // Download with progress tracking before initializing WhisperKit
-                    let downloadedModelURL = try await WhisperKit.download(variant: model.id, downloadBase: whisperBaseDir) { progress in
-                        let fraction = progress.fractionCompleted
-                        Task { @MainActor in
-                            // Map download progress to 0.15 → 0.55 range
-                            self.loadingProgress = 0.15 + (fraction * 0.40)
-                            let pct = Int(fraction * 100)
-                            if pct < 100 {
-                                self.loadingStage = "Downloading model... \(pct)% · \(ModelManager.shared.downloadProgressSummary)"
-                            } else {
-                                self.loadingStage = "Download complete!"
+                    // ModelManager owns staging, resumable Hub downloads,
+                    // integrity validation, and archive-on-replace. Keep this
+                    // load path on the same transaction as Settings downloads.
+                    let downloadedModel = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<AIModel, Error>) in
+                        ModelManager.shared.downloadModel(model, progressHandler: { fraction in
+                            Task { @MainActor in
+                                self.loadingProgress = 0.15 + (fraction * 0.40)
+                                let pct = Int(fraction * 100)
+                                if pct < 100 {
+                                    self.loadingStage = "Downloading model... \(pct)% · \(ModelManager.shared.downloadProgressSummary)"
+                                } else {
+                                    self.loadingStage = "Download complete!"
+                                }
+                            }
+                        }) { result in
+                            switch result {
+                            case .success(let installed):
+                                continuation.resume(returning: installed)
+                            case .failure(let error):
+                                continuation.resume(throwing: error)
                             }
                         }
+                    }
+                    guard let downloadedModelURL = downloadedModel.localPath else {
+                        throw WhisperError.modelNotFound
                     }
 
                     await MainActor.run {

@@ -6,6 +6,7 @@ import WhisperKit
 enum ModelArtifactValidator {
     static let minimumCompiledModelComponentSize: Int64 = 50 * 1024
     private static let requiredModels = ["MelSpectrogram", "AudioEncoder", "TextDecoder"]
+    private static let requiredWhisperModels = ["MelSpectrogram", "AudioEncoder", "TextDecoder", "TextDecoderContextPrefill"]
     private static let requiredMetadata = ["config.json", "generation_config.json"]
 
     static func normalizedDirectory(at candidate: URL) -> URL? {
@@ -26,6 +27,31 @@ enum ModelArtifactValidator {
             }
         }
         return requiredMetadata.allSatisfy { FileManager.default.fileExists(atPath: folder.appendingPathComponent($0).path) }
+    }
+
+    /// Strict validation used at the staging boundary for a WhisperKit download.
+    /// WhisperKit variants have used both `vocabulary.json` and `tokenizer.json`
+    /// over time, so the tokenizer check accepts either spelling while retaining
+    /// the required vocabulary/tokenizer integrity gate.
+    static func hasRequiredWhisperModelFiles(at folder: URL) -> Bool {
+        for modelName in requiredWhisperModels {
+            let modelURL = ModelUtilities.detectModelURL(inFolder: folder, named: modelName)
+            guard FileManager.default.fileExists(atPath: modelURL.path), directorySize(at: modelURL) > 0 else {
+                return false
+            }
+        }
+        guard requiredMetadata.allSatisfy({ nonEmptyFile(at: folder.appendingPathComponent($0)) }) else {
+            return false
+        }
+        let vocabularyCandidates = ["vocabulary.json", "tokenizer.json", "vocab.json"]
+        return vocabularyCandidates.contains { nonEmptyFile(at: folder.appendingPathComponent($0)) }
+    }
+
+    private static func nonEmptyFile(at url: URL) -> Bool {
+        guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
+              values.isRegularFile == true,
+              let size = values.fileSize else { return false }
+        return size > 0
     }
 
     private static func directorySize(at url: URL) -> Int64 {

@@ -29,6 +29,20 @@ Thanks for your interest in improving EchoTune!
 - If you change behavior a user can see, add a line to `CHANGELOG.md` under
   "Unreleased".
 
+## Release checklist (maintainers)
+
+Before `xcodebuild archive` for a release build, run:
+
+```sh
+./Scripts/bundle_default_model.sh
+```
+
+This populates the git-ignored `EchoTune/Resources/CompiledModels/` folder with the
+default model's CoreML model bundles plus `compiled-manifest.json`, so the DMG carries
+the verified artifacts needed by the bundled-model load path. The exact first-load
+latency still depends on WhisperKit/CoreML device specialization; the app falls back
+to normal loading when the manifest is absent or stale.
+
 ## Reporting bugs
 
 Open an issue with steps to reproduce, your macOS version, and whether you're

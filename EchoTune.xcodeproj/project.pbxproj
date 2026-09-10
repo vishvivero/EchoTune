@@ -10,6 +10,7 @@
 		6A7ACFC92EAE9C0200D8C6EE /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 6A7ACFC82EAE9C0200D8C6EE /* WhisperKit */; };
 		A1B2C3D42EAF000100D8C6EE /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D32EAF000100D8C6EE /* Sentry */; };
 		B2C3D4E62EAF000200D8C6EE /* FluidAudio in Frameworks */ = {isa = PBXBuildFile; productRef = B2C3D4E52EAF000200D8C6EE /* FluidAudio */; };
+		C3D4E5F62EAF000300D8C6EE /* CompiledModels */ = {isa = PBXBuildFile; fileRef = C3D4E5F52EAF000300D8C6EE /* CompiledModels */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -33,6 +34,7 @@
 		6A7ACEA62EAD27FB00D8C6EE /* EchoTune.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = EchoTune.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6A7ACEB32EAD27FB00D8C6EE /* EchoTuneTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = EchoTuneTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		6A7ACEBD2EAD27FB00D8C6EE /* EchoTuneUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = EchoTuneUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		C3D4E5F52EAF000300D8C6EE /* CompiledModels */ = {isa = PBXFileReference; lastKnownFileType = folder; name = CompiledModels; path = EchoTune/Resources/CompiledModels; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -40,6 +42,13 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
+				Resources,
+				Resources/CompiledModels,
+				Resources/CompiledModels/AudioEncoder.mlmodelc,
+				Resources/CompiledModels/MelSpectrogram.mlmodelc,
+				Resources/CompiledModels/TextDecoder.mlmodelc,
+				Resources/CompiledModels/TextDecoderContextPrefill.mlmodelc,
+				Resources/CompiledModels/compiled-manifest.json,
 			);
 			target = 6A7ACEA52EAD27FB00D8C6EE /* EchoTune */;
 		};
@@ -100,6 +109,7 @@
 				6A7ACEA82EAD27FB00D8C6EE /* EchoTune */,
 				6A7ACEB62EAD27FB00D8C6EE /* EchoTuneTests */,
 				6A7ACEC02EAD27FB00D8C6EE /* EchoTuneUITests */,
+				C3D4E5F52EAF000300D8C6EE /* CompiledModels */,
 				6A7ACFC72EAE9C0200D8C6EE /* Frameworks */,
 				6A7ACEA72EAD27FB00D8C6EE /* Products */,
 			);
@@ -250,6 +260,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C3D4E5F62EAF000300D8C6EE /* CompiledModels */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

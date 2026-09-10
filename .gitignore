@@ -147,6 +147,10 @@ generate_license_key.sh
 # Local Netlify folder
 .netlify
 
+# Phase 3: compiled CoreML models are generated per release by
+# Scripts/bundle_default_model.sh, not committed (hundreds of MB).
+EchoTune/Resources/CompiledModels/
+
 # Added for 4.0.0 public release
 *.log
 *.corrupted

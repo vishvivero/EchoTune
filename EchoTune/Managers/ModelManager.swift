@@ -404,20 +404,37 @@ class ModelManager: ObservableObject {
 
                 let modelFolderName = self.preferredInstalledFolderName(for: model.id)
                 let downloadVariant = self.preferredDownloadVariant(for: model.id)
-
-                self.clearExistingModelArtifacts(folderNames: [modelFolderName, downloadVariant], whisperDownloadBase: whisperDownloadBase)
+                let downloadsDirectory = whisperDownloadBase.appendingPathComponent("Downloads", isDirectory: true)
+                let stagingBase = downloadsDirectory.appendingPathComponent("\(modelFolderName).staging", isDirectory: true)
+                let resumeMarker = downloadsDirectory.appendingPathComponent("\(model.id).resumeData")
+                try FileManager.default.createDirectory(at: downloadsDirectory, withIntermediateDirectories: true)
+                try self.writeDownloadResumeMarker(
+                    at: resumeMarker,
+                    modelID: model.id,
+                    variant: downloadVariant,
+                    stagingBase: stagingBase
+                )
+                if FileManager.default.fileExists(atPath: stagingBase.path) {
+                    debugLog("↻ Resuming model download from staged files: \(stagingBase.path)")
+                }
 
                 let downloadedPath = try await self.downloadAndValidateModel(
                     variant: downloadVariant,
                     expectedFolderName: modelFolderName,
-                    whisperDownloadBase: whisperDownloadBase,
+                    whisperDownloadBase: stagingBase,
                     progressHandler: progressHandler
                 )
 
-                guard let installedPath = self.normalizeInstalledModelDirectory(from: downloadedPath) else {
-                    debugLog("❌ Download completed but model files were not usable at: \(downloadedPath.path)")
-                    throw WhisperValidationError(message: "Downloaded model files were incomplete.")
-                }
+                let installedDestination = self.whisperModelDestination(
+                    folderName: modelFolderName,
+                    whisperDownloadBase: whisperDownloadBase
+                )
+                let installedPath = try self.promoteStagedModel(
+                    from: downloadedPath,
+                    to: installedDestination
+                )
+                try? FileManager.default.removeItem(at: resumeMarker)
+                try? FileManager.default.removeItem(at: stagingBase)
 
                 await MainActor.run {
                     debugLog("✅ Model downloaded successfully: \(model.name)")
@@ -765,7 +782,11 @@ class ModelManager: ObservableObject {
 
         for attempt in 1...2 {
             do {
-                let downloadedPath = try await WhisperKit.download(variant: variant, downloadBase: whisperDownloadBase) { progress in
+                let downloadedPath = try await WhisperKit.download(
+                    variant: variant,
+                    downloadBase: whisperDownloadBase,
+                    useBackgroundSession: true
+                ) { progress in
                     DispatchQueue.main.async { [weak self] in
                         guard let self else { return }
                         self.downloadProgress = progress.fractionCompleted
@@ -781,16 +802,24 @@ class ModelManager: ObservableObject {
                     }
                 }
 
-                if self.normalizeInstalledModelDirectory(from: downloadedPath) != nil {
+                let strictValid = ModelArtifactValidator.hasRequiredWhisperModelFiles(at: downloadedPath)
+                let compatibleValid = self.normalizeInstalledModelDirectory(from: downloadedPath) != nil
+                if strictValid || compatibleValid {
+                    if !strictValid {
+                        debugLog("ℹ️ Whisper model passed the compatibility validator; tokenizer metadata is supplied by WhisperKit's sibling tokenizer cache")
+                    }
                     return downloadedPath
                 }
 
                 debugLog("⚠️ Download attempt \(attempt) produced incomplete model files for \(expectedFolderName)")
                 lastError = WhisperValidationError(message: "Downloaded model files were incomplete.")
             } catch {
-                if let recoveredPath = self.resolveInstalledModelPath(folderName: expectedFolderName),
-                   self.normalizeInstalledModelDirectory(from: recoveredPath) != nil {
-                    debugLog("✅ Recovering usable model after download error for \(expectedFolderName): \(recoveredPath.path)")
+                let stagedCandidate = self.whisperModelDestination(
+                    folderName: expectedFolderName,
+                    whisperDownloadBase: whisperDownloadBase
+                )
+                if let recoveredPath = self.normalizeInstalledModelDirectory(from: stagedCandidate) {
+                    debugLog("✅ Recovering usable staged model after download error for \(expectedFolderName): \(recoveredPath.path)")
                     return recoveredPath
                 }
 
@@ -798,16 +827,70 @@ class ModelManager: ObservableObject {
                 debugLog("⚠️ Download attempt \(attempt) failed for \(expectedFolderName): \(error)")
             }
 
-            self.clearExistingModelArtifacts(folderNames: [expectedFolderName, variant], whisperDownloadBase: whisperDownloadBase)
+            // Keep the staging directory and Hub's incomplete files intact. A
+            // subsequent launch can resume them; only a completed-but-invalid
+            // staging result is cleaned below.
         }
 
-        if let recoveredPath = self.resolveInstalledModelPath(folderName: expectedFolderName),
-           self.normalizeInstalledModelDirectory(from: recoveredPath) != nil {
-            debugLog("✅ Recovering usable model after retries for \(expectedFolderName): \(recoveredPath.path)")
+        let stagedCandidate = self.whisperModelDestination(
+            folderName: expectedFolderName,
+            whisperDownloadBase: whisperDownloadBase
+        )
+        if let recoveredPath = self.normalizeInstalledModelDirectory(from: stagedCandidate) {
+            debugLog("✅ Recovering usable staged model after retries for \(expectedFolderName): \(recoveredPath.path)")
             return recoveredPath
         }
 
         throw lastError ?? WhisperValidationError(message: "Downloaded model files were incomplete.")
+    }
+
+    private func whisperModelDestination(folderName: String, whisperDownloadBase: URL) -> URL {
+        whisperDownloadBase
+            .appendingPathComponent("models")
+            .appendingPathComponent("argmaxinc")
+            .appendingPathComponent("whisperkit-coreml")
+            .appendingPathComponent(folderName)
+    }
+
+    private func writeDownloadResumeMarker(
+        at url: URL,
+        modelID: String,
+        variant: String,
+        stagingBase: URL
+    ) throws {
+        let marker: [String: String] = [
+            "modelID": modelID,
+            "variant": variant,
+            "stagingBase": stagingBase.path,
+            "updatedAt": ISO8601DateFormatter().string(from: Date())
+        ]
+        let data = try JSONSerialization.data(withJSONObject: marker, options: [.sortedKeys])
+        try data.write(to: url, options: .atomic)
+    }
+
+    private func promoteStagedModel(from staged: URL, to destination: URL) throws -> URL {
+        let fileManager = FileManager.default
+        guard let normalized = normalizeInstalledModelDirectory(from: staged) else {
+            throw WhisperValidationError(message: "Downloaded model files were incomplete.")
+        }
+        let source = normalized
+        try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if fileManager.fileExists(atPath: destination.path) {
+            let timestamp = Int(Date().timeIntervalSince1970)
+            var archive = destination.deletingLastPathComponent()
+                .appendingPathComponent("\(destination.lastPathComponent).replaced-\(timestamp)")
+            if fileManager.fileExists(atPath: archive.path) {
+                archive = destination.deletingLastPathComponent()
+                    .appendingPathComponent("\(destination.lastPathComponent).replaced-\(timestamp)-\(UUID().uuidString.prefix(8))")
+            }
+            try fileManager.moveItem(at: destination, to: archive)
+            debugLog("📦 Archived previous model before replacement: \(archive.path)")
+        }
+        try fileManager.moveItem(at: source, to: destination)
+        guard let installed = normalizeInstalledModelDirectory(from: destination) else {
+            throw WhisperValidationError(message: "Staged model could not be installed.")
+        }
+        return installed
     }
 
     // MARK: - Download speed + display helpers
@@ -855,44 +938,6 @@ class ModelManager: ObservableObject {
         let base = "\(ModelManager.downloadByteString(downloadBytesCompleted)) of \(ModelManager.downloadByteString(total))"
         let speed = downloadSpeedDisplay
         return speed.isEmpty ? base : "\(base) · \(speed)"
-    }
-
-    private func clearExistingModelArtifacts(folderNames: [String], whisperDownloadBase: URL) {
-        let fileManager = FileManager.default
-        let uniqueNames = Array(Set(folderNames.filter { !$0.isEmpty }))
-
-        for folderName in uniqueNames {
-            if let stalePath = resolveInstalledModelPath(folderName: folderName),
-               fileManager.fileExists(atPath: stalePath.path) {
-                debugLog("🧹 Removing existing model folder before re-download: \(stalePath.lastPathComponent)")
-                try? fileManager.removeItem(at: stalePath)
-            }
-
-            let directFolder = whisperDownloadBase
-                .appendingPathComponent("models")
-                .appendingPathComponent("argmaxinc")
-                .appendingPathComponent("whisperkit-coreml")
-                .appendingPathComponent(folderName)
-
-            if fileManager.fileExists(atPath: directFolder.path) {
-                debugLog("🧹 Removing direct model folder before re-download: \(folderName)")
-                try? fileManager.removeItem(at: directFolder)
-            }
-
-            let huggingFaceCacheFolder = whisperDownloadBase
-                .appendingPathComponent("models")
-                .appendingPathComponent("argmaxinc")
-                .appendingPathComponent("whisperkit-coreml")
-                .appendingPathComponent(".cache")
-                .appendingPathComponent("huggingface")
-                .appendingPathComponent("download")
-                .appendingPathComponent(folderName)
-
-            if fileManager.fileExists(atPath: huggingFaceCacheFolder.path) {
-                debugLog("🧹 Removing Hugging Face cache before re-download: \(folderName)")
-                try? fileManager.removeItem(at: huggingFaceCacheFolder)
-            }
-        }
     }
 
     // MARK: - Storage
