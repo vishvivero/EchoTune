@@ -14,6 +14,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     var settingsWindow: NSWindow?
     var onboardingWindow: NSWindow?
     var echoProfileWindowController: EchoProfileWindowController?
+    var commitmentsWindowController: CommitmentsWindowController?
     private let onboardingState = OnboardingStateStore.shared
     private let dashboardSize = NSSize(width: 960, height: 720)
     private let dashboardMinimumSize = NSSize(width: 900, height: 600)
@@ -180,6 +181,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         echoProfileWindowController?.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         debugLog("🧠 Echo Profile window shown")
+    }
+
+    @objc func showCommitments() {
+        if commitmentsWindowController == nil {
+            commitmentsWindowController = CommitmentsWindowController()
+            commitmentsWindowController?.window?.delegate = self
+        }
+        commitmentsWindowController?.window?.center()
+        commitmentsWindowController?.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        debugLog("✅ Tasks window shown")
     }
 
     func showWelcomeNotification() {

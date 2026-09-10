@@ -112,6 +112,7 @@ enum NavigationItem: String, CaseIterable, Identifiable {
     case history = "History"
     case dictionary = "Dictionary"
     case notes = "Notes"
+    case tasks = "Tasks"
     case settings = "Settings"
     case share = "Share"
     case helpFeedback = "Help"
@@ -124,6 +125,7 @@ enum NavigationItem: String, CaseIterable, Identifiable {
         case .history: return "clock.arrow.circlepath"
         case .dictionary: return "book.fill"
         case .notes: return "note.text"
+        case .tasks: return "checklist"
         case .settings: return "gearshape.fill"
         case .share: return "square.and.arrow.up.fill"
         case .helpFeedback: return "questionmark.circle"
@@ -134,7 +136,7 @@ enum NavigationItem: String, CaseIterable, Identifiable {
     static var sidebarItems: [NavigationItem] {
         [
             .home,
-            .history, .dictionary, .notes, .settings, .share, .helpFeedback
+            .history, .dictionary, .notes, .tasks, .settings, .share, .helpFeedback
         ]
     }
 }
@@ -431,6 +433,8 @@ struct DetailView: View {
                 DictionaryContentView()
             case .notes:
                 NotesContentView()
+            case .tasks:
+                CommitmentsView(showsCloseButton: false)
             case .settings:
                 SettingsContentView()
             case .share:

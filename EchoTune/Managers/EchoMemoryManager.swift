@@ -61,6 +61,8 @@ class EchoMemoryManager: ObservableObject {
         loadProfile()
         updateProfile()
         updateCoach()
+        // Populate task memory from whatever this user already dictated, once.
+        CommitmentMemoryManager.shared.backfillIfNeeded(from: entries)
     }
 
     // MARK: - Public API
@@ -91,6 +93,11 @@ class EchoMemoryManager: ObservableObject {
         saveEntries()
         updateProfile()
         updateCoach()
+
+        // Task memory rides on the same local transcript stream: mine the
+        // sentence for a commitment, or for confirmation that a known one is
+        // finished.
+        CommitmentMemoryManager.shared.ingest(text: text, sourceEntryID: entry.id, date: entry.date)
     }
 
     /// Mark an entry as edited (user changed the text after insertion).
@@ -248,6 +255,9 @@ class EchoMemoryManager: ObservableObject {
         coachInsight = nil
         saveEntries()
         saveProfile()
+        // Tasks are mined from these transcriptions — drop them together so
+        // clearing memory never leaves orphan records behind.
+        CommitmentMemoryManager.shared.clearAll()
     }
 }
 

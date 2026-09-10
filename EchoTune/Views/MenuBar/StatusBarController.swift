@@ -222,6 +222,15 @@ struct MenuBarPopoverView: View {
                 }
                 .buttonStyle(.plain)
                 .help("Echo Profile — your personal operating model")
+                Button(action: openCommitments) {
+                    Image(systemName: "checklist")
+                        .font(.system(size: 13, weight: .medium))
+                        .frame(width: 30, height: 30)
+                        .background(Capsule().fill(Color.primary.opacity(0.06)))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .help("Tasks — things you said you'd do")
                 Button(action: quitApp) {
                     Image(systemName: "power")
                         .font(.system(size: 13, weight: .medium))
@@ -406,6 +415,12 @@ struct MenuBarPopoverView: View {
     private func openEchoProfile() {
         if let delegate = NSApp.delegate as? AppDelegate {
             delegate.showEchoProfile()
+        }
+    }
+
+    private func openCommitments() {
+        if let delegate = NSApp.delegate as? AppDelegate {
+            delegate.showCommitments()
         }
     }
 
