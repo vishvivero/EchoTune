@@ -45,6 +45,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         statusBarController = StatusBarController()
         debugLog("✓ Menu bar icon created")
 
+        // Memory is a lazy singleton, so nothing else touches it until the user
+        // dictates or opens Echo Profile. Start it here so task memory can
+        // backfill from transcriptions that already exist on disk.
+        _ = EchoMemoryManager.shared
+
         UNUserNotificationCenter.current().delegate = self
         NotificationManager.shared.setupNotificationCategories()
 
