@@ -44,6 +44,9 @@ struct GeneralSettingsView: View {
                 
                 Toggle("Insert Space After Paste", isOn: $settings.insertSpaceAfterText)
                     .help("Automatically append a trailing space when pasting transcription.")
+
+                Toggle("Warm Up Model After Launch & Wake", isOn: $settings.warmupEnabled)
+                    .help("Run one throwaway decode once the model loads, so your first dictation is instant instead of paying the warm-up cost. Runs in the background and never blocks. Turn off to restore the previous behaviour.")
             }
             .padding(.bottom, 8)
             

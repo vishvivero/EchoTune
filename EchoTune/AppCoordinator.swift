@@ -297,9 +297,12 @@ class AppCoordinator: ObservableObject {
             return
         }
 
-        // Skip if already loaded (e.g., rapid re-init)
+        // Skip if already loaded (e.g., rapid re-init). Still warm the
+        // decoder so a resident-but-cold model is ready for instant dictation
+        // (e.g. after the Mac wakes from sleep).
         if whisperEngine.isAvailable && whisperEngine.loadedModelName == currentModel.name {
-            debugLog("ℹ️ Model \(currentModel.name) already loaded — skipping preload")
+            debugLog("ℹ️ Model \(currentModel.name) already loaded — warming instead of reloading")
+            whisperEngine.warmupIfNeeded()
             return
         }
 
@@ -402,7 +405,11 @@ class AppCoordinator: ObservableObject {
     @objc private func handleSystemWake() {
         debugLog("🔋 System woke from sleep — pre-loading default model in 3 seconds")
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
-            self?.preloadDefaultModel()
+            guard let self else { return }
+            // preloadDefaultModel() now warms when the model is already
+            // resident, so this covers both cold (load then warm) and warm
+            // (warm only) cases without a second timer.
+            self.preloadDefaultModel()
         }
     }
 }

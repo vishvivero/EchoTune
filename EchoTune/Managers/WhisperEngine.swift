@@ -110,6 +110,14 @@ class WhisperEngine: ObservableObject {
     /// Committed text from each completed 4s live tick (source of truth for final result)
     var liveSegmentTranscripts: [String] = []
 
+    // Warmup state (Phase 1). Set/read in the extension file; owned by the
+    // main class because the default-actor-isolation build rule wants stored
+    // properties here. `isWarmingUp` is only touched on the main actor.
+    var isWarmingUp = false
+    var lastWarmupAt: Date?
+    /// Counts completed warmups; used as a test seam.
+    var warmupCompletionCount = 0
+
     // MARK: - Internal Accessors for Extensions
 
     /// Provides read-only access to the WhisperKit instance for extension files.
@@ -354,6 +362,11 @@ class WhisperEngine: ObservableObject {
                     debugLog("✅ Whisper model loaded with Metal acceleration: \(model.name)")
                     debugLog("⚡ Skipping blocking prewarm so onboarding can continue immediately")
                     completion(.success(()))
+
+                    // Phase 1: warm the decoder so the first dictation is
+                    // instant. Non-blocking — this returns right away and the
+                    // decode runs on a utility task.
+                    self.warmupIfNeeded()
 
                     // Drain pending completions
                     let pending = self.pendingLoadCompletions

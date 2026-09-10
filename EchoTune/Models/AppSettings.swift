@@ -70,6 +70,12 @@ class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(autoCorrection, forKey: "autoCorrection") }
     }
 
+    // Toggle for the post-load/wake decoder warmup (Phase 1). On by default;
+    // turning it off restores the "first dictation pays warmup cost" behaviour.
+    @Published var warmupEnabled: Bool {
+        didSet { UserDefaults.standard.set(warmupEnabled, forKey: "warmupEnabled") }
+    }
+
     // Audio Feedback Settings
     @Published var playSoundOnStartStop: Bool {
         didSet { UserDefaults.standard.set(playSoundOnStartStop, forKey: "playSoundOnStartStop") }
@@ -240,6 +246,13 @@ class AppSettings: ObservableObject {
             self.autoCorrection = true // default ON
         }
 
+        // Initialize warmup toggle
+        if UserDefaults.standard.object(forKey: "warmupEnabled") != nil {
+            self.warmupEnabled = UserDefaults.standard.bool(forKey: "warmupEnabled")
+        } else {
+            self.warmupEnabled = true // default ON
+        }
+
         // Audio Feedback Settings
         if UserDefaults.standard.object(forKey: "playSoundOnStartStop") != nil {
             self.playSoundOnStartStop = UserDefaults.standard.bool(forKey: "playSoundOnStartStop")
@@ -408,6 +421,7 @@ class AppSettings: ObservableObject {
         self.smartCapitalization = true
         self.insertSpaceAfterText = true
         self.autoCorrection = true
+        self.warmupEnabled = true
         self.playSoundOnStartStop = true
         self.muteBackgroundAudio = true
     }
