@@ -13,9 +13,11 @@ import Combine
 
 private let memoryKey = "echoMemoryData"
 private let profileKey = "echoProfileData"
+/// Raw transcript payload kept aside when part of the stored blob was unreadable.
+private let memoryUnreadableKey = "echoMemoryDataUnreadable"
 
 /// Represents a single stored memory entry (one transcription + its outcome).
-struct EchoMemoryEntry: Codable, Identifiable {
+nonisolated struct EchoMemoryEntry: Codable, Identifiable {
     let id: UUID
     let date: Date
     let text: String
@@ -100,6 +102,39 @@ class EchoMemoryManager: ObservableObject {
         CommitmentMemoryManager.shared.ingest(text: text, sourceEntryID: entry.id, date: entry.date)
     }
 
+    /// Outcome of decoding the stored transcript blob.
+    nonisolated struct MemoryDecodeResult {
+        let entries: [EchoMemoryEntry]
+        /// Set when part (or all) of the blob could not be decoded, so the
+        /// caller can preserve the original bytes instead of overwriting them.
+        let unreadablePayload: Data?
+    }
+
+    /// Decode stored transcriptions one record at a time, so a single bad
+    /// record can never cost the whole history.
+    nonisolated static func decodeEntries(from data: Data) -> MemoryDecodeResult {
+        if let decoded = try? JSONDecoder().decode([EchoMemoryEntry].self, from: data) {
+            return MemoryDecodeResult(entries: decoded, unreadablePayload: nil)
+        }
+
+        guard let raw = try? JSONSerialization.jsonObject(with: data) as? [Any] else {
+            // Not even an array of records — keep every byte for the user.
+            return MemoryDecodeResult(entries: [], unreadablePayload: data)
+        }
+
+        var recovered: [EchoMemoryEntry] = []
+        var lostOne = false
+        for element in raw {
+            guard let elementData = try? JSONSerialization.data(withJSONObject: element),
+                  let entry = try? JSONDecoder().decode(EchoMemoryEntry.self, from: elementData) else {
+                lostOne = true
+                continue
+            }
+            recovered.append(entry)
+        }
+        return MemoryDecodeResult(entries: recovered, unreadablePayload: lostOne ? data : nil)
+    }
+
     /// Mark an entry as edited (user changed the text after insertion).
     func markEntryAsEdited(id: UUID) {
         guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
@@ -124,11 +159,13 @@ class EchoMemoryManager: ObservableObject {
 
     private func loadEntries() {
         guard let data = UserDefaults.standard.data(forKey: memoryKey) else { return }
-        do {
-            entries = try JSONDecoder().decode([EchoMemoryEntry].self, from: data)
-        } catch {
-            debugLog("❌ EchoMemoryManager: failed to decode entries: \(error)")
-            entries = []
+        let result = EchoMemoryManager.decodeEntries(from: data)
+        entries = result.entries
+        if let payload = result.unreadablePayload {
+            // Keep the original bytes: the next save rewrites this key, and a
+            // single unreadable record must not cost the whole history.
+            UserDefaults.standard.set(payload, forKey: memoryUnreadableKey)
+            debugLog("⚠️ EchoMemoryManager: recovered \(result.entries.count) entries, parked the unreadable payload in \(memoryUnreadableKey)")
         }
     }
 
