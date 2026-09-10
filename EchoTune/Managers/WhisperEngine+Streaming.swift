@@ -27,6 +27,10 @@ extension WhisperEngine {
     private static let liveTranscriptionInterval: TimeInterval = 4.0
 
     func startStreamingTranscription(completion: @escaping (Result<WhisperTranscriptionResult, WhisperError>) -> Void) {
+        // A new live session resets the language pin so detection starts
+        // fresh — regardless of what a previous session pinned.
+        resetSessionLanguage()
+
         os_log("🎤 startStreamingTranscription, whisperKit=%{public}@, isAvailable=%d", log: wLog, type: .info, whisperKitRef == nil ? "nil" : "loaded", isAvailable ? 1 : 0)
         guard whisperKitRef != nil else {
             os_log("❌ whisperKit is nil — modelNotLoaded", log: wLog, type: .error)
@@ -54,6 +58,17 @@ extension WhisperEngine {
     }
 
     // MARK: - Live Transcription Timer
+
+    /// Live preview ticks detect language only on the first tick of the
+    /// session; afterwards the pinned language is reused.
+    var liveTickDetectLanguage: Bool { sessionDetectedLanguage == nil }
+
+    /// The final tail re-detects when translate-to-English is on so the
+    /// translation pass gets the true language, even if live ticks were
+    /// pinned to a different language.
+    var finalTailDetectLanguage: Bool {
+        sessionDetectedLanguage == nil || AppSettings.shared.translateToEnglish
+    }
 
     private func startLiveTranscriptionTimer() {
         stopLiveTranscriptionTimer()
@@ -102,7 +117,12 @@ extension WhisperEngine {
                     return
                 }
 
-                let result = try await self.transcribeWithCurrentSettings(audioArray: audioArray, whisperKit: whisperKit)
+                let result = try await self.transcribeWithCurrentSettings(
+                    audioArray: audioArray,
+                    whisperKit: whisperKit,
+                    detectLanguage: self.liveTickDetectLanguage,
+                    mode: .live
+                )
                 let text = result.outputText.trimmingCharacters(in: .whitespacesAndNewlines)
 
                 // Filter Whisper hallucinations (common silence outputs)
@@ -231,7 +251,12 @@ extension WhisperEngine {
 
                 // Transcribe the tail (or short final) segment directly
                 os_log("🎙️ Calling whisperKit.transcribe(audioArray:) for final tail...", log: wLog, type: .info)
-                let tailResult = try await self.transcribeWithCurrentSettings(audioArray: audioArray, whisperKit: whisperKit)
+                let tailResult = try await self.transcribeWithCurrentSettings(
+                    audioArray: audioArray,
+                    whisperKit: whisperKit,
+                    detectLanguage: self.finalTailDetectLanguage,
+                    mode: .final
+                )
                 let tailText = tailResult.outputText.trimmingCharacters(in: .whitespacesAndNewlines)
                 os_log("📝 Tail transcription: '%@'", log: wLog, type: .info, tailText)
 

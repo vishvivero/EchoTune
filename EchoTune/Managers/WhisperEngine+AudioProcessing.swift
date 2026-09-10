@@ -137,21 +137,53 @@ extension WhisperEngine {
 
     // MARK: - Transcription With App Settings
 
-    func transcribeWithCurrentSettings(audioArray: [Float], whisperKit: WhisperKit) async throws -> WhisperTranscriptionResult {
+    /// Whether a decode is for a live preview tick or a final/finished
+    /// dictation. `live` skips the temperature-fallback chain; `final`
+    /// reproduces the full WhisperKit defaults for accuracy.
+    enum DecodeMode {
+        case live
+        case final
+    }
+
+    /// Pure factory — testable without a live model. Builds the options for
+    /// one decode pass given a `mode` and whether to run language detection.
+    /// `mode == .final` must reproduce WhisperKit's defaults so batch output
+    /// stays byte-identical to 7.1.0.
+    func makeDecodingOptions(mode: DecodeMode, detectLanguage: Bool, language: String?) -> DecodingOptions {
+        DecodingOptions(
+            task: .transcribe,
+            language: language,
+            temperature: 0.0,
+            temperatureFallbackCount: mode == .live ? 0 : 5,
+            detectLanguage: detectLanguage,
+            skipSpecialTokens: false
+        )
+    }
+
+    func transcribeWithCurrentSettings(
+        audioArray: [Float],
+        whisperKit: WhisperKit,
+        detectLanguage: Bool? = nil,
+        mode: DecodeMode = .final
+    ) async throws -> WhisperTranscriptionResult {
         let settings = AppSettings.shared
         let preferredLanguage = settings.preferredLanguage.components(separatedBy: "-").first
 
-        let transcriptionOptions = DecodingOptions(
-            task: .transcribe,
-            // When auto-detecting, pass the preferred language as a strong hint
-            // instead of nil — WhisperKit's detection window (30s) is longer than
-            // typical speech chunks (8s), causing false language IDs (e.g. en→es).
-            // A hint biases detection towards the correct language while still
-            // allowing override for genuinely multilingual scenarios.
-            language: settings.autoDetectLanguage ? preferredLanguage : preferredLanguage,
-            detectLanguage: settings.autoDetectLanguage || settings.translateToEnglish
+        let shouldDetect = detectLanguage ?? (settings.autoDetectLanguage || settings.translateToEnglish)
+        let languageForDecode = sessionDetectedLanguage ?? preferredLanguage
+        let transcriptionOptions = makeDecodingOptions(
+            mode: mode,
+            detectLanguage: shouldDetect,
+            language: languageForDecode
         )
         let transcriptionPass = try await whisperKit.transcribe(audioArray: audioArray, decodeOptions: transcriptionOptions)
+
+        // Pin the detected language on the first decode of the session so
+        // subsequent live ticks reuse it instead of re-detecting.
+        if sessionDetectedLanguage == nil, let detected = transcriptionPass.first?.language, !detected.isEmpty {
+            sessionDetectedLanguage = detected
+        }
+
         let originalText = TranscriptionEngine.shared.processText(
             transcriptionPass
                 .map { $0.text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) }

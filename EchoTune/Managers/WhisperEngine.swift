@@ -110,6 +110,19 @@ class WhisperEngine: ObservableObject {
     /// Committed text from each completed 4s live tick (source of truth for final result)
     var liveSegmentTranscripts: [String] = []
 
+    /// Language detected on the first decode of the current dictation session.
+    /// Live ticks reuse it instead of running a fresh detection pass on every
+    /// 4s tick (Phase 2). Reset at the start of every session — see
+    /// `resetSessionLanguage()`. Settable internally so the pin transitions
+    /// are unit-testable without a loaded model.
+    var sessionDetectedLanguage: String?
+
+    /// Clears the session language pin. Every dictation — live or batch —
+    /// calls this before decoding, because a new dictation is a new session.
+    func resetSessionLanguage() {
+        sessionDetectedLanguage = nil
+    }
+
     // MARK: - Internal Accessors for Extensions
 
     /// Provides read-only access to the WhisperKit instance for extension files.
@@ -395,8 +408,13 @@ class WhisperEngine: ObservableObject {
         isProcessing = true
         currentText = ""
 
+        // A new batch dictation is a new session: drop any language pinned by
+        // a previous session so detection starts from scratch.
+        resetSessionLanguage()
+
         debugLog("🎯 Starting Whisper transcription (direct buffer mode)...")
         debugLog("   Audio data size: \(audioData.count) bytes")
+
 
         // Start performance monitoring
         PerformanceMonitor.shared.startAudioConversion(dataSize: audioData.count)
