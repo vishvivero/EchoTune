@@ -29,22 +29,26 @@ enum ModelArtifactValidator {
         return requiredMetadata.allSatisfy { FileManager.default.fileExists(atPath: folder.appendingPathComponent($0).path) }
     }
 
-    /// Strict validation used at the staging boundary for a WhisperKit download.
-    /// WhisperKit variants have used both `vocabulary.json` and `tokenizer.json`
-    /// over time, so the tokenizer check accepts either spelling while retaining
-    /// the required vocabulary/tokenizer integrity gate.
+    /// Strict validation used at the staging boundary when tokenizer artifacts
+    /// are present in the downloaded snapshot.
     static func hasRequiredWhisperModelFiles(at folder: URL) -> Bool {
+        guard hasRequiredWhisperModelCoreFiles(at: folder) else { return false }
+        let vocabularyCandidates = ["vocabulary.json", "tokenizer.json", "vocab.json"]
+        return vocabularyCandidates.contains { nonEmptyFile(at: folder.appendingPathComponent($0)) }
+    }
+
+    /// WhisperKit 0.15.0 downloads tokenizer data into its sibling Hub cache,
+    /// not always into the variant folder. This core gate therefore validates
+    /// every model component and metadata before staging promotion while the
+    /// strict method above additionally verifies an in-folder tokenizer file.
+    static func hasRequiredWhisperModelCoreFiles(at folder: URL) -> Bool {
         for modelName in requiredWhisperModels {
             let modelURL = ModelUtilities.detectModelURL(inFolder: folder, named: modelName)
             guard FileManager.default.fileExists(atPath: modelURL.path), directorySize(at: modelURL) > 0 else {
                 return false
             }
         }
-        guard requiredMetadata.allSatisfy({ nonEmptyFile(at: folder.appendingPathComponent($0)) }) else {
-            return false
-        }
-        let vocabularyCandidates = ["vocabulary.json", "tokenizer.json", "vocab.json"]
-        return vocabularyCandidates.contains { nonEmptyFile(at: folder.appendingPathComponent($0)) }
+        return requiredMetadata.allSatisfy { nonEmptyFile(at: folder.appendingPathComponent($0)) }
     }
 
     private static func nonEmptyFile(at url: URL) -> Bool {

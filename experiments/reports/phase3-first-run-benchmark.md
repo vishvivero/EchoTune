@@ -43,9 +43,22 @@ It then timed `WhisperKit(modelFolder:..., computeOptions: cpuAndGPU, load: true
 
 The direct path is not a clean pre/post control: CoreML's process/system caches make later runs much faster. It is included to show the cache effect, not as an A/B claim.
 
+## Compute-unit follow-up
+
+To rule out a simple compute configuration mistake, additional fresh bundled-path processes measured:
+
+| WhisperKit compute units | Load time |
+|---|---:|
+| `.cpuOnly` | 28.827 s |
+| `.cpuAndGPU` | 31.808 s |
+| `.cpuAndNeuralEngine` | 146.128 s |
+| `.all` | 153.980 s |
+
+No supported compute-unit choice reaches the PRD's `<10 s` target.
+
 ## Interpretation
 
-The resource and load-path implementation is functioning, but this run does **not** validate the PRD target of `<10 s` first load. The available model directory contains top-level `.mlmodelc` bundles, not the original `.mlpackage` artifacts or a separate device-specialized compiled set. WhisperKit 0.15.0 calls `MLModel.load(contentsOf:configuration:)` on the top-level bundles; the remaining first-process cost appears to be CoreML/device specialization and is not eliminated by shipping these same `.mlmodelc` packages.
+The resource and load-path implementation is functioning, but this run does **not** validate the PRD target of `<10 s` first load. The available model directory contains top-level `.mlmodelc` bundles, not the original `.mlpackage` artifacts or a separate device-specialized compiled set. WhisperKit 0.15.0 calls `MLModel.load(contentsOf:configuration:)` on the top-level bundles; the remaining first-process cost appears to be CoreML/device specialization and is not eliminated by shipping these same `.mlmodelc` packages. A clean compute-unit matrix reproduced the same conclusion.
 
 Therefore:
 

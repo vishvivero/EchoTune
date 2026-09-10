@@ -803,10 +803,10 @@ class ModelManager: ObservableObject {
                 }
 
                 let strictValid = ModelArtifactValidator.hasRequiredWhisperModelFiles(at: downloadedPath)
-                let compatibleValid = self.normalizeInstalledModelDirectory(from: downloadedPath) != nil
-                if strictValid || compatibleValid {
+                let coreValid = ModelArtifactValidator.hasRequiredWhisperModelCoreFiles(at: downloadedPath)
+                if strictValid || coreValid {
                     if !strictValid {
-                        debugLog("ℹ️ Whisper model passed the compatibility validator; tokenizer metadata is supplied by WhisperKit's sibling tokenizer cache")
+                        debugLog("ℹ️ Whisper model passed the core artifact validator; tokenizer metadata is supplied by WhisperKit's sibling tokenizer cache")
                     }
                     return downloadedPath
                 }
@@ -818,9 +818,9 @@ class ModelManager: ObservableObject {
                     folderName: expectedFolderName,
                     whisperDownloadBase: whisperDownloadBase
                 )
-                if let recoveredPath = self.normalizeInstalledModelDirectory(from: stagedCandidate) {
-                    debugLog("✅ Recovering usable staged model after download error for \(expectedFolderName): \(recoveredPath.path)")
-                    return recoveredPath
+                if ModelArtifactValidator.hasRequiredWhisperModelCoreFiles(at: stagedCandidate) {
+                    debugLog("✅ Recovering usable staged model after download error for \(expectedFolderName): \(stagedCandidate.path)")
+                    return stagedCandidate
                 }
 
                 lastError = error
@@ -836,9 +836,9 @@ class ModelManager: ObservableObject {
             folderName: expectedFolderName,
             whisperDownloadBase: whisperDownloadBase
         )
-        if let recoveredPath = self.normalizeInstalledModelDirectory(from: stagedCandidate) {
-            debugLog("✅ Recovering usable staged model after retries for \(expectedFolderName): \(recoveredPath.path)")
-            return recoveredPath
+        if ModelArtifactValidator.hasRequiredWhisperModelCoreFiles(at: stagedCandidate) {
+            debugLog("✅ Recovering usable staged model after retries for \(expectedFolderName): \(stagedCandidate.path)")
+            return stagedCandidate
         }
 
         throw lastError ?? WhisperValidationError(message: "Downloaded model files were incomplete.")
@@ -870,10 +870,10 @@ class ModelManager: ObservableObject {
 
     private func promoteStagedModel(from staged: URL, to destination: URL) throws -> URL {
         let fileManager = FileManager.default
-        guard let normalized = normalizeInstalledModelDirectory(from: staged) else {
+        guard ModelArtifactValidator.hasRequiredWhisperModelCoreFiles(at: staged) else {
             throw WhisperValidationError(message: "Downloaded model files were incomplete.")
         }
-        let source = normalized
+        let source = staged
         try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
         if fileManager.fileExists(atPath: destination.path) {
             let timestamp = Int(Date().timeIntervalSince1970)
