@@ -32,13 +32,13 @@ actor EnhancementProviderCatalog {
         var googleETag = cached?.googleETag
         var didRefresh = false
 
-        if !groqAPIKey.isEmpty, let result = await fetchGroqModels(apiKey: groqAPIKey, etag: groqETag), !result.ids.isEmpty {
+        if !groqAPIKey.isEmpty, let result = await fetchGroqModels(apiKey: groqAPIKey, etag: groqETag), !result.notModified {
             ids.subtract(ids.filter { $0.hasPrefix("llama-") })
             ids.formUnion(result.ids)
             groqETag = result.etag ?? groqETag
             didRefresh = true
         }
-        if !geminiAPIKey.isEmpty, let result = await fetchGoogleModels(apiKey: geminiAPIKey, etag: googleETag), !result.ids.isEmpty {
+        if !geminiAPIKey.isEmpty, let result = await fetchGoogleModels(apiKey: geminiAPIKey, etag: googleETag), !result.notModified {
             ids.subtract(ids.filter { $0.hasPrefix("gemini-") })
             ids.formUnion(result.ids)
             googleETag = result.etag ?? googleETag
@@ -56,6 +56,7 @@ actor EnhancementProviderCatalog {
     private struct FetchResult {
         let ids: Set<String>
         let etag: String?
+        let notModified: Bool
     }
 
     private func fetchGroqModels(apiKey: String, etag: String?) async -> FetchResult? {
@@ -89,10 +90,10 @@ actor EnhancementProviderCatalog {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse else { return nil }
             let etag = http.value(forHTTPHeaderField: "ETag")
-            if http.statusCode == 304 { return FetchResult(ids: [], etag: etag) }
+            if http.statusCode == 304 { return FetchResult(ids: [], etag: etag, notModified: true) }
             guard http.statusCode == 200,
                   let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-            return FetchResult(ids: parse(json), etag: etag)
+            return FetchResult(ids: parse(json), etag: etag, notModified: false)
         } catch {
             return nil
         }

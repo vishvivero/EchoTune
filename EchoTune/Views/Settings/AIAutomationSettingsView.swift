@@ -42,7 +42,9 @@ struct AIAutomationSettingsView: View {
                                 .foregroundColor(.secondary)
                             Picker("Enhancement Model", selection: $settings.selectedEnhancementModel) {
                                 ForEach(enhancementEngine.availableEnhancementModels) { model in
-                                    Text(model.displayName).tag(model.rawValue)
+                                    Text(model.displayName)
+                                        .tag(model.rawValue)
+                                        .disabled(model == .localOllama && !enhancementEngine.localProvider.isAvailable)
                                 }
                             }
                             .pickerStyle(.menu)
