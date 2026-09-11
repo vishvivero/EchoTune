@@ -110,7 +110,9 @@ final class DeepgramStreamingService: CloudStreamingSession {
             }
         }
         // Deepgram can deliver the final Results frame after CloseStream.
-        try? await Task.sleep(for: .milliseconds(1500))
+        // Keep the stop path responsive; latestTranscript remains available if
+        // the provider's final frame arrives after this bounded wait.
+        try? await Task.sleep(for: .milliseconds(900))
         task.cancel(with: .normalClosure, reason: nil)
         receiveTask?.cancel()
         receiveTask = nil

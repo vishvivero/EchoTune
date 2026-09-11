@@ -91,6 +91,7 @@ class AppCoordinator: ObservableObject {
     lazy var parakeetEngine = ParakeetEngine.shared
     var cloudStreamingSession: (any CloudStreamingSession)?
     var cloudStreamingTask: Task<Void, Never>?
+    var cloudLiveCommittedText = ""
     let modelManager = ModelManager.shared  // Safe — no permission triggers
     lazy var textInsertionManager = TextInsertionManager.shared
     let licenseManager = LicenseManager.shared  // Safe — no permission triggers

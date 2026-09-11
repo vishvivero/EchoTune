@@ -202,6 +202,7 @@ extension AppCoordinator {
         // Show recording indicator (style-aware)
         showRecorderUI()
 
+        cloudLiveCommittedText = ""
         let liveDeepgram: DeepgramStreamingService?
         if model.backend == .deepgram, settings.deepgramLiveEnabled, !settings.deepgramAPIKey.isEmpty {
             let session = DeepgramStreamingService()
@@ -249,11 +250,21 @@ extension AppCoordinator {
     }
 
     private func handleCloudPartial(_ partial: CloudPartial) {
+        // Deepgram interim transcripts are rolling replacements, not deltas.
+        // Keep confirmed segments here so a newer interim cannot erase text
+        // already shown in the mini recorder.
+        if partial.isFinal, !partial.text.isEmpty {
+            if !cloudLiveCommittedText.isEmpty {
+                cloudLiveCommittedText += " "
+            }
+            cloudLiveCommittedText += partial.text
+        }
+
         NotificationCenter.default.post(
             name: NSNotification.Name("LiveTranscriptionUpdate"),
             object: nil,
             userInfo: [
-                "text": partial.isFinal ? partial.text : "",
+                "text": cloudLiveCommittedText,
                 "pending": partial.isFinal ? "" : partial.text
             ]
         )
