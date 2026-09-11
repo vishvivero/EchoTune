@@ -233,6 +233,18 @@ class ModelManager: ObservableObject {
                 continue
             }
 
+            if model.backend == .parakeet {
+                if #available(macOS 14.0, *), ParakeetEngine.isModelInstalled(for: model.id) {
+                    var m = model; m.isInstalled = true
+                    foundInstalled.append(m)
+                    installFlags.append((id: model.id, isInstalled: true, localPath: nil))
+                    debugLog("   ✅ Found installed Parakeet model: \(model.name)")
+                } else {
+                    debugLog("   ❌ Parakeet model not found: \(model.name)")
+                }
+                continue
+            }
+
             guard let whisperVariant = whisperVariant(for: model.id) else { continue }
 
             let whisperKitModelName = preferredInstalledFolderName(for: whisperVariant)
@@ -340,6 +352,10 @@ class ModelManager: ObservableObject {
         if model.isBuiltIn { return true }
         switch model.category {
         case .local:
+            if model.backend == .parakeet {
+                if #available(macOS 14.0, *) { return true }
+                return false
+            }
             // Usable only if WhisperKit supports download for this variant
             return canDownload(model)
         case .cloud:
@@ -367,6 +383,42 @@ class ModelManager: ObservableObject {
         // Don't download built-in models
         guard !model.isBuiltIn else {
             completion(.success(model))
+            return
+        }
+
+        if model.backend == .parakeet {
+            guard #available(macOS 14.0, *) else {
+                completion(.failure(.invalidModel))
+                return
+            }
+            isDownloading = true
+            currentDownloadModel = model
+            downloadProgress = 0
+            Task {
+                do {
+                    try await ParakeetEngine.shared.prepareModel(model)
+                    await MainActor.run {
+                        progressHandler?(1)
+                        self.isDownloading = false
+                        self.currentDownloadModel = nil
+                        self.downloadProgress = 1
+                        var installed = model
+                        installed.isInstalled = true
+                        self.installedModels.removeAll { $0.id == model.id }
+                        self.installedModels.append(installed)
+                        if let index = self.availableModels.firstIndex(where: { $0.id == model.id }) {
+                            self.availableModels[index] = installed
+                        }
+                        completion(.success(installed))
+                    }
+                } catch {
+                    await MainActor.run {
+                        self.isDownloading = false
+                        self.currentDownloadModel = nil
+                        completion(.failure(.downloadFailed))
+                    }
+                }
+            }
             return
         }
 
@@ -579,6 +631,9 @@ class ModelManager: ObservableObject {
     }
 
     func resolvedInstalledModelPath(for model: AIModel) -> URL? {
+        if model.backend == .parakeet {
+            return nil
+        }
         guard let whisperVariant = whisperVariant(for: model.id) else {
             return nil
         }
@@ -609,6 +664,10 @@ class ModelManager: ObservableObject {
 
     // Public check for UI to enable/disable downloads
     func canDownload(_ model: AIModel) -> Bool {
+        if model.backend == .parakeet {
+            if #available(macOS 14.0, *) { return true }
+            return false
+        }
         return whisperVariant(for: model.id) != nil
     }
 
@@ -734,6 +793,12 @@ class ModelManager: ObservableObject {
 
         switch installedModel.category {
         case .local:
+            if installedModel.backend == .parakeet {
+                if #available(macOS 14.0, *) {
+                    return ParakeetEngine.isModelInstalled(for: installedModel.id)
+                }
+                return false
+            }
             guard let resolvedPath = resolvedInstalledModelPath(for: installedModel) else { return false }
             return normalizeInstalledModelDirectory(from: resolvedPath) != nil
         case .cloud:

@@ -68,7 +68,7 @@ extension AppCoordinator {
                     let transcribedText: String
                     let metadata: TranscriptionProcessingMetadata
 
-                    if currentModel.id.contains("groq") || currentModel.name.lowercased().contains("groq") {
+                    if currentModel.backend == .groq {
                         let apiKey = settings.groqAPIKey
                         guard !apiKey.isEmpty else {
                             await MainActor.run { completion(nil) }
@@ -80,7 +80,7 @@ extension AppCoordinator {
                             apiKey: apiKey
                         )
                         metadata = buildMetadata(provider: "Groq", model: "whisper-large-v3-turbo")
-                    } else if currentModel.id.contains("deepgram") || currentModel.name.lowercased().contains("deepgram") {
+                    } else if currentModel.backend == .deepgram {
                         let apiKey = settings.deepgramAPIKey
                         guard !apiKey.isEmpty else {
                             await MainActor.run { completion(nil) }
@@ -126,8 +126,28 @@ extension AppCoordinator {
                 }
             }
         } else {
+            if currentModel.backend == .parakeet {
+                guard #available(macOS 14.0, *) else { completion(nil); return }
+                Task {
+                    do {
+                        try await ParakeetEngine.shared.prepareModel(currentModel)
+                        let payload = try await ParakeetEngine.shared.transcribe(audioData: audioData)
+                        await MainActor.run {
+                            completion(RetranscriptionResult(
+                                text: payload.outputText,
+                                rawTranscriptionText: payload.outputText,
+                                processingMetadata: buildMetadata(provider: "Parakeet", model: currentModel.name)
+                            ))
+                        }
+                    } catch {
+                        await MainActor.run { completion(nil) }
+                    }
+                }
+                return
+            }
+
             // For local Whisper models, load and transcribe
-            if currentModel.category == .local && !currentModel.isBuiltIn {
+            if currentModel.backend == .whisper && !currentModel.isBuiltIn {
                 let finishLocal: (WhisperTranscriptionResult) -> Void = { payload in
                     let metadata = buildMetadata(provider: "Local Whisper", model: currentModel.name)
                     debugLog("✅ Re-transcription (Whisper) successful")

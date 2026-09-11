@@ -74,6 +74,53 @@ extension TranscriptionEngine {
         }
     }
 
+    @available(macOS 14.0, *)
+    func routeToParakeet(_ audioData: Data, selectedModel: String, completion: @escaping (Result<String, TranscriptionError>) -> Void) {
+        guard let model = ModelManager.shared.availableModels.first(where: { $0.id == selectedModel }) else {
+            completion(.failure(.processingError))
+            return
+        }
+
+        let engine = ParakeetEngine.shared
+        let fallbackToWhisper: (Error) -> Void = { error in
+            guard let fallback = ModelManager.shared.installedModels.first(where: {
+                $0.backend == .whisper && ModelManager.shared.isInstalledAndUsable($0)
+            }) else {
+                debugLog("❌ Parakeet failed and no installed Whisper fallback exists: \(error)")
+                completion(.failure(.recognitionError(error)))
+                return
+            }
+            debugLog("↩️ Parakeet failed; falling back to Whisper \(fallback.id)")
+            self.routeToWhisper(audioData, selectedModel: fallback.id, completion: completion)
+        }
+        let transcribe: () -> Void = {
+            Task {
+                do {
+                    let result = try await engine.transcribe(audioData: audioData)
+                    await MainActor.run {
+                        completion(.success(self.processText(result.outputText)))
+                    }
+                } catch {
+                    fallbackToWhisper(error)
+                }
+            }
+        }
+
+        if engine.isAvailable && engine.currentModelID == model.id {
+            transcribe()
+        } else {
+            engine.loadModel(model) { result in
+                switch result {
+                case .success:
+                    transcribe()
+                case .failure(let error):
+                    debugLog("❌ Failed to load Parakeet model: \(error)")
+                    fallbackToWhisper(error)
+                }
+            }
+        }
+    }
+
     func routeToWhisper(_ audioData: Data, selectedModel: String, completion: @escaping (Result<String, TranscriptionError>) -> Void) {
         debugLog("🎙️ Routing to local Whisper engine: \(selectedModel)")
 

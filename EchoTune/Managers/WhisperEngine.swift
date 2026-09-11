@@ -96,7 +96,9 @@ class WhisperEngine: ObservableObject {
     private var currentModelID: String?
 
     private let audioProcessingQueue = DispatchQueue(label: "com.echotune.whisperProcessing", qos: .userInitiated)
-    private var pendingLoadCompletions: [(Result<Void, WhisperError>) -> Void] = []
+    // Completions are keyed by the requested model. A request for model B
+    // arriving while model A loads must never receive A's success result.
+    private var pendingLoadCompletions: [String: [(Result<Void, WhisperError>) -> Void]] = [:]
 
     // Streaming state (stored properties must remain in main class file)
     var audioBuffers: [AVAudioPCMBuffer] = []
@@ -173,7 +175,7 @@ class WhisperEngine: ObservableObject {
         // Guard against concurrent loads — enqueue completion for when current load finishes
         guard !isLoading else {
             debugLog("⚠️ Model is already loading, enqueueing completion for \(model.name)")
-            pendingLoadCompletions.append(completion)
+            pendingLoadCompletions[model.id, default: []].append(completion)
             return
         }
 
@@ -396,10 +398,15 @@ class WhisperEngine: ObservableObject {
                     debugLog("⚡ Skipping blocking prewarm so onboarding can continue immediately")
                     completion(.success(()))
 
-                    // Drain pending completions
-                    let pending = self.pendingLoadCompletions
-                    self.pendingLoadCompletions.removeAll()
+                    // Drain only waiters for the model that actually loaded.
+                    // Other model requests are rejected and can retry explicitly.
+                    let pending = self.pendingLoadCompletions.removeValue(forKey: model.id) ?? []
                     for cb in pending { cb(.success(())) }
+                    let superseded = self.pendingLoadCompletions
+                    self.pendingLoadCompletions.removeAll()
+                    for callbacks in superseded.values {
+                        for cb in callbacks { cb(.failure(.modelNotLoaded)) }
+                    }
                 }
             } catch {
                 await MainActor.run {
@@ -411,10 +418,13 @@ class WhisperEngine: ObservableObject {
                     debugLog("❌ Failed to load Whisper model: \(error)")
                     completion(.failure(.modelLoadFailed(error)))
 
-                    // Drain pending completions
-                    let pending = self.pendingLoadCompletions
-                    self.pendingLoadCompletions.removeAll()
+                    let pending = self.pendingLoadCompletions.removeValue(forKey: model.id) ?? []
                     for cb in pending { cb(.failure(.modelLoadFailed(error))) }
+                    let superseded = self.pendingLoadCompletions
+                    self.pendingLoadCompletions.removeAll()
+                    for callbacks in superseded.values {
+                        for cb in callbacks { cb(.failure(.modelNotLoaded)) }
+                    }
                 }
             }
         }

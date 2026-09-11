@@ -87,6 +87,8 @@ class AppCoordinator: ObservableObject {
     lazy var launchAtLoginManager = LaunchAtLoginManager.shared
     lazy var transcriptionEngine = TranscriptionEngine.shared
     lazy var whisperEngine = WhisperEngine.shared
+    @available(macOS 14.0, *)
+    lazy var parakeetEngine = ParakeetEngine.shared
     let modelManager = ModelManager.shared  // Safe — no permission triggers
     lazy var textInsertionManager = TextInsertionManager.shared
     let licenseManager = LicenseManager.shared  // Safe — no permission triggers
@@ -99,10 +101,15 @@ class AppCoordinator: ObservableObject {
 
     // Track which engine to use
     var useWhisper: Bool {
-        guard let currentModel = modelManager.currentModel else { return false }
-        // Use Whisper engine only for local, non-built-in models if they are installed and usable
-        guard currentModel.category == .local && !currentModel.isBuiltIn else { return false }
+        guard let currentModel = modelManager.currentModel,
+              currentModel.backend == .whisper else { return false }
         return modelManager.isInstalledAndUsable(currentModel)
+    }
+
+    var useParakeet: Bool {
+        guard #available(macOS 14.0, *),
+              let currentModel = modelManager.currentModel else { return false }
+        return currentModel.backend == .parakeet
     }
 
     // Track if we muted system output during this recording session

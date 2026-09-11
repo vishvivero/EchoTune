@@ -43,7 +43,7 @@ extension AppCoordinator {
         }
 
         // Notify user about dynamic fallback to Apple Speech if a local Whisper model is selected but not installed
-        let isWhisperPreferred = currentModel.category == .local && !currentModel.isBuiltIn
+        let isWhisperPreferred = currentModel.backend == .whisper
         if isWhisperPreferred && !modelManager.isInstalledAndUsable(currentModel) {
             os_log("⚠️ Local Whisper model %{public}@ is selected but not installed/usable on disk. Falling back to Apple Speech.", log: appLog, type: .error, currentModel.name)
             debugLog("⚠️ Local Whisper model \(currentModel.name) is missing from disk. Dynamic fallback to Apple Speech.")
@@ -57,6 +57,13 @@ extension AppCoordinator {
 
         debugLog("📍 Using model: \(currentModel.name) (Whisper: \(useWhisper))")
         os_log("📍 Model: %{public}@ category=%{public}@ isBuiltIn=%d useWhisper=%d", log: appLog, type: .info, currentModel.name, currentModel.category.rawValue, currentModel.isBuiltIn ? 1 : 0, useWhisper ? 1 : 0)
+
+        // FluidAudio owns Parakeet's download/cache. Prepare it before opening
+        // the microphone so a first-use download never records into a cold engine.
+        if useParakeet {
+            loadParakeetModelAndStart(currentModel)
+            return
+        }
 
         // Load Whisper model if needed
         if useWhisper {
@@ -143,6 +150,31 @@ extension AppCoordinator {
 
         // Start recording with local model
         beginRecording()
+    }
+
+    @available(macOS 14.0, *)
+    private func loadParakeetModelAndStart(_ model: AIModel) {
+        appState.recordingState = .loadingModel(model.name)
+        notificationManager.showNotification(
+            title: "Setting Up Parakeet",
+            body: "Preparing \(model.name) — the first download may take a moment.",
+            sound: false
+        )
+        parakeetEngine.loadModel(model) { [weak self] result in
+            guard let self else { return }
+            DispatchQueue.main.async {
+                self.notificationManager.dismissProcessingNotification()
+                switch result {
+                case .success:
+                    self.appState.recordingState = .idle
+                    self.beginRecording()
+                case .failure(let error):
+                    self.appState.recordingState = .idle
+                    debugLog("❌ Parakeet load failed: \(error). Whisper/Apple fallback remains available.")
+                    self.showErrorAlert(message: "Parakeet could not be loaded. Select a Whisper model or try again.")
+                }
+            }
+        }
     }
 
     // MARK: - Cloud Recording (Groq/Deepgram)
@@ -254,7 +286,7 @@ extension AppCoordinator {
                 let transcribedText: String
 
                 // Route to appropriate cloud service
-                if currentModel.id.contains("groq") || currentModel.name.lowercased().contains("groq") {
+                if currentModel.backend == .groq {
                     // Use Groq
                     let apiKey = settings.groqAPIKey
                     guard !apiKey.isEmpty else {
@@ -277,7 +309,7 @@ extension AppCoordinator {
                     )
                     os_log("✅ %{public}@ returned: '%@'", log: appLog, type: .info, providerName, transcribedText)
 
-                } else if currentModel.id.contains("deepgram") || currentModel.name.lowercased().contains("deepgram") {
+                } else if currentModel.backend == .deepgram {
                     // Use Deepgram
                     let apiKey = settings.deepgramAPIKey
                     guard !apiKey.isEmpty else {
@@ -392,7 +424,7 @@ extension AppCoordinator {
             audioManager.onWhisperAudioBuffer = { [weak self] buffer in
                 self?.whisperEngine.appendAudioBuffer(buffer)
             }
-        } else {
+        } else if !useParakeet {
             // Apple Speech live transcription
             if let audioFormat = audioManager.audioEngine?.inputNode.inputFormat(forBus: 0) {
                 debugLog("🎯 Starting Apple Speech live transcription")
@@ -435,7 +467,7 @@ extension AppCoordinator {
         // Stop audio recording with correct engine type (this calculates the duration).
         // Callbacks are cleared only after stopRecording flushes the dedicated
         // Whisper conversion queue, so the final converted buffers are retained.
-        let engineType: AudioManager.AudioEngine = useWhisper ? .whisper : .appleSpeech
+        let engineType: AudioManager.AudioEngine = (useWhisper || useParakeet) ? .whisper : .appleSpeech
         let capturedAudioData = audioManager.stopRecording(forEngine: engineType)
         audioManager.onAudioBuffer = nil
         audioManager.onWhisperAudioBuffer = nil
@@ -510,6 +542,49 @@ extension AppCoordinator {
             whisperEngine.endStreamingTranscription { [weak self] result in
                 guard let self = self else { return }
                 self.handleWhisperResult(result)
+            }
+        } else if useParakeet {
+            debugLog("🛑 Ending Parakeet batch transcription")
+            let modelName = modelManager.currentModel?.name ?? "Parakeet"
+            beginTranscriptionAudit(provider: "Parakeet", model: modelName, detail: "Transcribing locally with Parakeet…")
+            PerformanceMonitor.shared.startTranscription(engine: "Parakeet", model: modelName)
+            guard let capturedAudioData else {
+                handleTranscriptionError("Failed to capture audio data")
+                return
+            }
+            Task { [weak self] in
+                guard let self else { return }
+                do {
+                    let result = try await ParakeetEngine.shared.transcribe(audioData: capturedAudioData)
+                    await MainActor.run { self.handleWhisperResult(.success(result)) }
+                } catch {
+                    let fallback = self.modelManager.installedModels.first(where: {
+                        $0.backend == .whisper && self.modelManager.isInstalledAndUsable($0)
+                    })
+                    if let fallback {
+                        debugLog("↩️ Parakeet failed; falling back to Whisper \(fallback.id)")
+                        self.transcriptionEngine.routeToWhisper(
+                            capturedAudioData,
+                            selectedModel: fallback.id
+                        ) { result in
+                            switch result {
+                            case .success(let text):
+                                self.handleWhisperResult(.success(WhisperTranscriptionResult(
+                                    outputText: text,
+                                    originalText: text,
+                                    translatedText: nil,
+                                    detectedLanguage: "en"
+                                )))
+                            case .failure(let routeError):
+                                self.handleWhisperResult(.failure(.transcriptionFailed(routeError)))
+                            }
+                        }
+                    } else {
+                        await MainActor.run {
+                            self.handleWhisperResult(.failure(.transcriptionFailed(error)))
+                        }
+                    }
+                }
             }
         } else {
             debugLog("🛑 Ending Apple Speech transcription")
@@ -631,8 +706,8 @@ extension AppCoordinator {
 
         // Only check Apple Speech Recognition authorization when using Apple Speech engine
         // WhisperKit and cloud models (Groq, etc.) don't need this permission
-        if !useWhisper, let currentModel = modelManager.currentModel,
-           !currentModel.id.contains("groq") && !currentModel.id.contains("deepgram") && currentModel.category != .cloud {
+        if !useWhisper, !useParakeet, let currentModel = modelManager.currentModel,
+           currentModel.backend == .appleSpeech {
             if transcriptionEngine.authorizationStatus != .authorized {
                 debugLog("⚠️ Speech recognition not authorized - requesting permission")
                 transcriptionEngine.requestAuthorization { granted in

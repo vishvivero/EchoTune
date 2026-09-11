@@ -9,8 +9,20 @@ import Foundation
 
 // MARK: - AIModel
 
+enum AIModelBackend: String, CaseIterable, Codable, Hashable {
+    case appleSpeech
+    case whisper
+    case parakeet
+    case senseVoice
+    case paraformer
+    case groq
+    case deepgram
+    case openAI
+}
+
 struct AIModel: Identifiable, Equatable, Hashable {
     let id: String
+    let backend: AIModelBackend
     let name: String
     let size: Int64
     let description: String
@@ -25,8 +37,9 @@ struct AIModel: Identifiable, Equatable, Hashable {
     var isInstalled: Bool = false
     var localPath: URL?
 
-    init(id: String, name: String, size: Int64, description: String, language: String, url: URL, type: ModelSize, category: ModelCategory = .recommended, speedRating: Int = 3, accuracyRating: Int = 3, isBuiltIn: Bool = false) {
+    init(id: String, name: String, size: Int64, description: String, language: String, url: URL, type: ModelSize, category: ModelCategory = .recommended, speedRating: Int = 3, accuracyRating: Int = 3, isBuiltIn: Bool = false, backend: AIModelBackend? = nil) {
         self.id = id
+        self.backend = backend ?? Self.defaultBackend(for: id, isBuiltIn: isBuiltIn, category: category)
         self.name = name
         self.size = size
         self.description = description
@@ -37,6 +50,13 @@ struct AIModel: Identifiable, Equatable, Hashable {
         self.speedRating = speedRating
         self.accuracyRating = accuracyRating
         self.isBuiltIn = isBuiltIn
+    }
+
+    private static func defaultBackend(for id: String, isBuiltIn: Bool, category: ModelCategory) -> AIModelBackend {
+        if isBuiltIn || id == "apple-speech" { return .appleSpeech }
+        if id.hasPrefix("groq-") { return .groq }
+        if id.hasPrefix("deepgram-") { return .deepgram }
+        return category == .local ? .whisper : .whisper
     }
 
     var filename: String {

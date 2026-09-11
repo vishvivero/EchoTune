@@ -26,7 +26,8 @@ extension ModelManager {
                 category: .local,
                 speedRating: 4,
                 accuracyRating: 3,
-                isBuiltIn: true
+                isBuiltIn: true,
+                backend: .appleSpeech
             ),
 
             // MARK: - Local Models (WhisperKit / CoreML)
@@ -118,6 +119,50 @@ extension ModelManager {
                 accuracyRating: 3
             ),
 
+            // MARK: - Parakeet (FluidAudio / CoreML)
+
+            AIModel(
+                id: "parakeet-tdt-0.6b-v2",
+                name: "Parakeet TDT v2",
+                size: 600 * 1024 * 1024,
+                description: "Very fast on-device English transcription using FluidAudio and the Neural Engine.",
+                language: "English",
+                url: URL(string: "https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v2-coreml")!,
+                type: .fast,
+                category: .local,
+                speedRating: 5,
+                accuracyRating: 4,
+                backend: .parakeet
+            ),
+
+            AIModel(
+                id: "parakeet-tdt-0.6b-v3",
+                name: "Parakeet TDT v3",
+                size: 600 * 1024 * 1024,
+                description: "Latest fast on-device English transcription using FluidAudio and the Neural Engine.",
+                language: "English",
+                url: URL(string: "https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v3-coreml")!,
+                type: .fast,
+                category: .local,
+                speedRating: 5,
+                accuracyRating: 4,
+                backend: .parakeet
+            ),
+
+            AIModel(
+                id: "parakeet-unified-en-0.6b",
+                name: "Parakeet Unified (English)",
+                size: 600 * 1024 * 1024,
+                description: "FluidAudio's unified Parakeet English model; available when the pinned FluidAudio API exposes it.",
+                language: "English",
+                url: URL(string: "https://huggingface.co/FluidInference/parakeet-unified-en-0.6b-coreml")!,
+                type: .fast,
+                category: .comingSoon,
+                speedRating: 5,
+                accuracyRating: 4,
+                backend: .parakeet
+            ),
+
             // MARK: - Cloud Models
 
             AIModel(
@@ -131,7 +176,8 @@ extension ModelManager {
                 category: .cloud,
                 speedRating: 5,
                 accuracyRating: 5,
-                isBuiltIn: false
+                isBuiltIn: false,
+                backend: .groq
             ),
 
             AIModel(
@@ -145,7 +191,8 @@ extension ModelManager {
                 category: .cloud,
                 speedRating: 5,
                 accuracyRating: 4,
-                isBuiltIn: false
+                isBuiltIn: false,
+                backend: .deepgram
             ),
         ]
     }

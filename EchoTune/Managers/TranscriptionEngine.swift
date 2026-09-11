@@ -138,32 +138,43 @@ class TranscriptionEngine: NSObject, ObservableObject {
         // with ModelManager.currentModel via setCurrentModel().
         var selectedModel = AppSettings.shared.defaultTranscriptionModel
 
-        // Fall back to Apple Speech if local Whisper model is selected but not installed on disk
-        if selectedModel != "apple-speech" && !selectedModel.hasPrefix("groq-") && !selectedModel.hasPrefix("deepgram-") {
-            if let model = ModelManager.shared.availableModels.first(where: { $0.id == selectedModel }),
-               !ModelManager.shared.isInstalledAndUsable(model) {
-                debugLog("⚠️ Whisper model \(selectedModel) is not installed/usable. Falling back to Apple Speech.")
-                selectedModel = "apple-speech"
-            }
-        }
-        
-        debugLog("🎯 Using transcription model: \(selectedModel)")
+        let selectedAIModel = ModelManager.shared.availableModels.first(where: { $0.id == selectedModel })
+        var backend = selectedAIModel?.backend ?? .appleSpeech
 
-        // Route to cloud services
-        if selectedModel.hasPrefix("groq-") {
+        // Whisper models require a local WhisperKit installation. Parakeet's
+        // FluidAudio manager owns its own cache and performs first-use download.
+        if backend == .whisper,
+           let model = selectedAIModel,
+           !ModelManager.shared.isInstalledAndUsable(model) {
+            debugLog("⚠️ Whisper model \(selectedModel) is not installed/usable. Falling back to Apple Speech.")
+            selectedModel = "apple-speech"
+            backend = .appleSpeech
+        }
+
+        debugLog("🎯 Using transcription model: \(selectedModel) backend=\(backend.rawValue)")
+
+        switch backend {
+        case .groq:
             routeToGroq(audioData, completion: completion)
             return
-        } else if selectedModel.hasPrefix("deepgram-") {
+        case .deepgram:
             routeToDeepgram(audioData, completion: completion)
             return
-        } else if selectedModel != "apple-speech" {
-            // Any non-Apple-Speech, non-cloud model is a local Whisper model
-            debugLog("🎙️ Routing to local Whisper engine")
+        case .parakeet:
+            if #available(macOS 14.0, *) {
+                routeToParakeet(audioData, selectedModel: selectedModel, completion: completion)
+            } else {
+                completion(.failure(.unavailable))
+            }
+            return
+        case .whisper:
             routeToWhisper(audioData, selectedModel: selectedModel, completion: completion)
             return
+        case .appleSpeech, .senseVoice, .paraformer, .openAI:
+            break
         }
 
-        // Default to Apple Speech for "apple-speech" or unrecognized models
+        // Default to Apple Speech for "apple-speech" or unsupported backends
         debugLog("🍎 Using Apple Speech (default)")
 
         guard isAvailable else {
