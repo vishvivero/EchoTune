@@ -120,8 +120,10 @@ class WhisperEngine: ObservableObject {
     var isLiveTranscribing: Bool = false
     /// Committed text from each completed preview tick (source of truth for final result)
     var liveSegmentTranscripts: [String] = []
-    /// Agreement state for the live display. The current decoder path only
-    /// supplies confidence when word timestamps are explicitly enabled.
+    /// Cumulative word candidates assembled from completed ticks. Keeping the
+    /// candidate stream cumulative lets AgreementEngine compare the same
+    /// positional frontier across successive delta decodes.
+    var liveAgreementWords: [AgreementWord] = []
     var agreementEngine = AgreementEngine()
 
     /// VAD failures must never drop speech or flood the log on every tick.
@@ -548,6 +550,7 @@ class WhisperEngine: ObservableObject {
         lastLiveTranscribedBufferCount = 0
         isLiveTranscribing = false
         liveSegmentTranscripts = []
+        liveAgreementWords = []
         agreementEngine.reset()
         didLogVADDecodeFailure = false
 

@@ -25,6 +25,7 @@ struct LiveDecodingOptionsTests {
         #expect(live.temperature == 0.0)
         #expect(live.temperatureFallbackCount == 0)
         #expect(live.detectLanguage == true)
+        #expect(live.wordTimestamps == true)
 
         let liveNoDetect = engine.makeDecodingOptions(mode: .live, detectLanguage: false, language: "fr")
         #expect(liveNoDetect.temperature == 0.0)
@@ -40,6 +41,7 @@ struct LiveDecodingOptionsTests {
         #expect(final.temperature == 0.0)
         #expect(final.temperatureFallbackCount == 5)
         #expect(final.skipSpecialTokens == false)
+        #expect(final.wordTimestamps == false)
     }
 
     @Test func optionsPreserveTheLanguageHint() {

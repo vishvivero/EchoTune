@@ -50,6 +50,7 @@ extension WhisperEngine {
         lastLiveTranscribedBufferCount = 0
         isLiveTranscribing = false
         liveSegmentTranscripts = []
+        liveAgreementWords = []
         agreementEngine.reset()
 
         debugLog("🎤 Starting streaming transcription...")
@@ -178,13 +179,11 @@ extension WhisperEngine {
                     let notificationText: String
                     let notificationPending: String
                     if let agreementWords, !agreementWords.isEmpty {
-                        let update = self.agreementEngine.ingest(agreementWords)
+                        self.liveAgreementWords.append(contentsOf: agreementWords)
+                        let update = self.agreementEngine.ingest(self.liveAgreementWords)
                         notificationText = update.confirmed.joined(separator: " ")
                         notificationPending = update.hypothesis.joined(separator: " ")
                     } else {
-                        // WhisperKit word timestamps are not enabled until
-                        // their per-tick cost is benchmarked. Preserve the
-                        // established one-tick pending display meanwhile.
                         notificationText = self.liveSegmentTranscripts.dropLast().joined(separator: " ")
                         notificationPending = text
                     }

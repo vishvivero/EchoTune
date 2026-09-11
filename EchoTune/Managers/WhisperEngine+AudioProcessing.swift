@@ -221,7 +221,7 @@ extension WhisperEngine {
         detectLanguage: Bool,
         language: String?,
         promptTokens: [Int]? = nil,
-        wordTimestamps: Bool = false
+        wordTimestamps: Bool? = nil
     ) -> DecodingOptions {
         DecodingOptions(
             task: .transcribe,
@@ -230,7 +230,7 @@ extension WhisperEngine {
             temperatureFallbackCount: mode == .live ? 0 : 5,
             detectLanguage: detectLanguage,
             skipSpecialTokens: false,
-            wordTimestamps: wordTimestamps,
+            wordTimestamps: wordTimestamps ?? (mode == .live),
             promptTokens: promptTokens
         )
     }
@@ -271,7 +271,10 @@ extension WhisperEngine {
             mode: mode,
             detectLanguage: shouldDetect,
             language: languageForDecode,
-            promptTokens: promptTokens
+            promptTokens: promptTokens,
+            // WhisperKit's word-timestamp alignment is enabled only for live
+            // ticks; the final path retains its pre-Phase-7 defaults.
+            wordTimestamps: mode == .live
         )
         let transcriptionPass = try await whisperKit.transcribe(audioArray: audioArray, decodeOptions: transcriptionOptions)
         let agreementWords: [AgreementWord]? = transcriptionOptions.wordTimestamps
