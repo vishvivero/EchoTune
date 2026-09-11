@@ -33,3 +33,9 @@ Branch: `phase/8-cloud-live-streaming`
 3. Confirm no key material appears in captured logs.
 4. Review the Deepgram query/model pricing against current provider docs before
    release; local price values are estimates only.
+
+The benchmark attempt on 2026-09-11 was blocked before making any network
+request: the macOS Keychain has no `deepgramAPIKey` entry. No credential was
+printed or requested through the shared activity layer. Add the key through
+EchoTune Settings → Cloud API Keys, then rerun the benchmark; the live toggle
+remains off by default until that manual check is complete.
