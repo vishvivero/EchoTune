@@ -89,6 +89,8 @@ class AppCoordinator: ObservableObject {
     lazy var whisperEngine = WhisperEngine.shared
     @available(macOS 14.0, *)
     lazy var parakeetEngine = ParakeetEngine.shared
+    var cloudStreamingSession: (any CloudStreamingSession)?
+    var cloudStreamingTask: Task<Void, Never>?
     let modelManager = ModelManager.shared  // Safe — no permission triggers
     lazy var textInsertionManager = TextInsertionManager.shared
     let licenseManager = LicenseManager.shared  // Safe — no permission triggers

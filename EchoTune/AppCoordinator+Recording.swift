@@ -202,8 +202,43 @@ extension AppCoordinator {
         // Show recording indicator (style-aware)
         showRecorderUI()
 
+        let liveDeepgram: DeepgramStreamingService?
+        if model.backend == .deepgram, settings.deepgramLiveEnabled, !settings.deepgramAPIKey.isEmpty {
+            let session = DeepgramStreamingService()
+            liveDeepgram = session
+            cloudStreamingSession = session
+            cloudStreamingTask = Task { [weak self, session] in
+                do {
+                    try await session.start(config: CloudStreamingConfig(
+                        apiKey: self?.settings.deepgramAPIKey ?? "",
+                        model: "nova-3",
+                        language: self?.settings.autoDetectLanguage == true ? nil : self?.settings.preferredLanguage.components(separatedBy: "-").first
+                    ))
+                    for await partial in session.interim {
+                        guard !Task.isCancelled else { return }
+                        await MainActor.run {
+                            self?.handleCloudPartial(partial)
+                        }
+                    }
+                } catch {
+                    debugLog("⚠️ Deepgram live session unavailable; batch fallback will be used")
+                }
+            }
+        } else {
+            liveDeepgram = nil
+        }
+
         // Start audio recording - we'll use the recorded audio for cloud transcription
         audioManager.startRecording()
+        if let liveDeepgram {
+            let session = liveDeepgram
+            audioManager.onAudioBuffer = nil
+            audioManager.onWhisperAudioBuffer = { [weak session] buffer in
+                guard let session, let channel = buffer.floatChannelData?.pointee else { return }
+                let samples = Array(UnsafeBufferPointer(start: channel, count: Int(buffer.frameLength)))
+                Task { await session.send(samples) }
+            }
+        }
         debugLog("✓ Cloud recording started for: \(model.name)")
 
         // Update status bar icon
@@ -211,6 +246,17 @@ extension AppCoordinator {
            let statusBar = appDelegate.statusBarController {
             statusBar.updateIcon(for: .recording)
         }
+    }
+
+    private func handleCloudPartial(_ partial: CloudPartial) {
+        NotificationCenter.default.post(
+            name: NSNotification.Name("LiveTranscriptionUpdate"),
+            object: nil,
+            userInfo: [
+                "text": partial.isFinal ? partial.text : "",
+                "pending": partial.isFinal ? "" : partial.text
+            ]
+        )
     }
 
     func stopCloudRecording() {
@@ -247,6 +293,10 @@ extension AppCoordinator {
         currentProcessingMetadata.audioByteCount = audioData.count
 
         let recordingDuration = audioManager.lastRecordingDuration
+        let liveSession = cloudStreamingSession
+        cloudStreamingSession = nil
+        audioManager.onAudioBuffer = nil
+        audioManager.onWhisperAudioBuffer = nil
         PerformanceMonitor.shared.endRecording(
             duration: recordingDuration,
             bufferCount: 0
@@ -258,6 +308,9 @@ extension AppCoordinator {
         if VADManager.shared.config.enabled {
             let hasSignificantSpeech = audioManager.hasSignificantSpeech()
             if !hasSignificantSpeech {
+                liveSession?.cancel()
+                cloudStreamingTask?.cancel()
+                cloudStreamingTask = nil
                 debugLog("⚠️ No significant speech detected - skipping cloud transcription")
                 notificationManager.showNotification(
                     title: "No Speech Detected",
@@ -283,10 +336,45 @@ extension AppCoordinator {
 
         Task {
             do {
-                let transcribedText: String
+                var transcribedText: String
+
+                // Deepgram live is opt-in. Any connection, empty-result, or
+                // degraded-session failure falls through to the unchanged REST
+                // batch path for the same captured recording.
+                if currentModel.backend == .deepgram, let liveSession {
+                    do {
+                        let streamedText = try await liveSession.finish()
+                        guard !streamedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                            throw DeepgramStreamingService.StreamingError.socketClosed
+                        }
+                        transcribedText = streamedText
+                        UsageMeter.shared.record(UsageRecord(
+                            provider: "Deepgram",
+                            model: "nova-3",
+                            seconds: recordingDuration,
+                            startedAt: Date().addingTimeInterval(-recordingDuration),
+                            disposition: "streamed"
+                        ))
+                    } catch {
+                        UsageMeter.shared.record(UsageRecord(
+                            provider: "Deepgram",
+                            model: "nova-3",
+                            seconds: recordingDuration,
+                            startedAt: Date().addingTimeInterval(-recordingDuration),
+                            disposition: "batchFallback"
+                        ))
+                        transcribedText = try await DeepgramTranscriptionService.shared.transcribeToText(
+                            audioData: audioData,
+                            model: .nova,
+                            language: AppSettings.shared.autoDetectLanguage ? nil : settings.preferredLanguage.components(separatedBy: "-").first,
+                            apiKey: settings.deepgramAPIKey
+                        )
+                    }
+                    cloudStreamingTask?.cancel()
+                    cloudStreamingTask = nil
 
                 // Route to appropriate cloud service
-                if currentModel.backend == .groq {
+                } else if currentModel.backend == .groq {
                     // Groq realtime STT is not a documented stable contract as
                     // of 2026-09-11; keep the existing REST batch path. See
                     // experiments/2026-09-11-groq-streaming-decision.md.
