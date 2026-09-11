@@ -63,6 +63,10 @@ session. The remaining acceptance caveat is the streamed-disposition path:
 this fixture stayed below the 0.6 confidence frontier, so a verified
 high-confidence corpus or physical microphone session is still needed to
 measure first confirmed-word latency and prove streamed (non-fallback) commit.
+The observed stop-to-final times (3.300–3.871s) are substantially better than
+an arbitrary polling wait but do not meet the PRD's aspirational 0.7s target;
+three final passes or a full-audio fallback are model-bound operations on the
+cached Large v3 Turbo model.
 
 A temporary fixture-driven app probe was run against the cached model. The
 first Samantha fixture produced no text and was not counted. A verified Daniel
