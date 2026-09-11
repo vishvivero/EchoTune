@@ -40,6 +40,9 @@ struct WhisperTranscriptionResult {
     /// ends (before the final tail decode completes). Used for immediate
     /// streaming insertion at stop.
     var committedPrefix: String? = nil
+    /// Word-level confidence from WhisperKit when timestamp alignment is
+    /// enabled. Nil means the decoder returned text without word timings.
+    var agreementWords: [AgreementWord]? = nil
 
     var wasTranslated: Bool {
         translatedText != nil
@@ -115,8 +118,11 @@ class WhisperEngine: ObservableObject {
     var liveTranscriptAccumulated: String = ""
     var lastLiveTranscribedBufferCount: Int = 0
     var isLiveTranscribing: Bool = false
-    /// Committed text from each completed 4s live tick (source of truth for final result)
+    /// Committed text from each completed preview tick (source of truth for final result)
     var liveSegmentTranscripts: [String] = []
+    /// Agreement state for the live display. The current decoder path only
+    /// supplies confidence when word timestamps are explicitly enabled.
+    var agreementEngine = AgreementEngine()
 
     /// VAD failures must never drop speech or flood the log on every tick.
     var didLogVADDecodeFailure = false
@@ -542,6 +548,7 @@ class WhisperEngine: ObservableObject {
         lastLiveTranscribedBufferCount = 0
         isLiveTranscribing = false
         liveSegmentTranscripts = []
+        agreementEngine.reset()
         didLogVADDecodeFailure = false
 
         debugLog("🗑️ Whisper model unloaded")

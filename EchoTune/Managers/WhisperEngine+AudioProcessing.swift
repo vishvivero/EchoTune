@@ -220,7 +220,8 @@ extension WhisperEngine {
         mode: DecodeMode,
         detectLanguage: Bool,
         language: String?,
-        promptTokens: [Int]? = nil
+        promptTokens: [Int]? = nil,
+        wordTimestamps: Bool = false
     ) -> DecodingOptions {
         DecodingOptions(
             task: .transcribe,
@@ -229,6 +230,7 @@ extension WhisperEngine {
             temperatureFallbackCount: mode == .live ? 0 : 5,
             detectLanguage: detectLanguage,
             skipSpecialTokens: false,
+            wordTimestamps: wordTimestamps,
             promptTokens: promptTokens
         )
     }
@@ -272,6 +274,11 @@ extension WhisperEngine {
             promptTokens: promptTokens
         )
         let transcriptionPass = try await whisperKit.transcribe(audioArray: audioArray, decodeOptions: transcriptionOptions)
+        let agreementWords: [AgreementWord]? = transcriptionOptions.wordTimestamps
+            ? transcriptionPass.flatMap { result in
+                result.allWords.map { AgreementWord(text: $0.word, confidence: $0.probability) }
+            }
+            : nil
 
         // Pin the detected language on the first decode of the session so
         // subsequent live ticks reuse it instead of re-detecting.
@@ -305,7 +312,8 @@ extension WhisperEngine {
                 outputText: translatedText,
                 originalText: originalText,
                 translatedText: translatedText,
-                detectedLanguage: detectedLanguage
+                detectedLanguage: detectedLanguage,
+                agreementWords: agreementWords
             )
         }
 
@@ -313,7 +321,8 @@ extension WhisperEngine {
             outputText: originalText,
             originalText: originalText,
             translatedText: nil,
-            detectedLanguage: detectedLanguage
+            detectedLanguage: detectedLanguage,
+            agreementWords: agreementWords
         )
     }
 }

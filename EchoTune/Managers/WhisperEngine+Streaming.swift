@@ -50,6 +50,7 @@ extension WhisperEngine {
         lastLiveTranscribedBufferCount = 0
         isLiveTranscribing = false
         liveSegmentTranscripts = []
+        agreementEngine.reset()
 
         debugLog("🎤 Starting streaming transcription...")
         startLiveTranscriptionTimer()
@@ -151,6 +152,7 @@ extension WhisperEngine {
                     mode: .live
                 )
                 let text = result.outputText.trimmingCharacters(in: .whitespacesAndNewlines)
+                let agreementWords = result.agreementWords
 
                 // Filter Whisper hallucinations (common silence outputs)
                 let hallucinations: Set<String> = [
@@ -173,15 +175,24 @@ extension WhisperEngine {
                     self.liveSegmentTranscripts.append(text)
                     self.liveTranscriptAccumulated = self.liveSegmentTranscripts.joined(separator: " ")
 
-                    // Committed = everything except the latest tick; the latest
-                    // tick is still "pending" (shown dimmed in the live preview)
-                    // until the next tick confirms it or dictation ends.
-                    let committed = self.liveSegmentTranscripts.dropLast().joined(separator: " ")
+                    let notificationText: String
+                    let notificationPending: String
+                    if let agreementWords, !agreementWords.isEmpty {
+                        let update = self.agreementEngine.ingest(agreementWords)
+                        notificationText = update.confirmed.joined(separator: " ")
+                        notificationPending = update.hypothesis.joined(separator: " ")
+                    } else {
+                        // WhisperKit word timestamps are not enabled until
+                        // their per-tick cost is benchmarked. Preserve the
+                        // established one-tick pending display meanwhile.
+                        notificationText = self.liveSegmentTranscripts.dropLast().joined(separator: " ")
+                        notificationPending = text
+                    }
 
                     NotificationCenter.default.post(
                         name: NSNotification.Name("LiveTranscriptionUpdate"),
                         object: nil,
-                        userInfo: ["text": committed, "pending": text]
+                        userInfo: ["text": notificationText, "pending": notificationPending]
                     )
                 }
             } catch is CancellationError {
