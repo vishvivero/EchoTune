@@ -137,6 +137,16 @@ class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(stripEnhancementWrappers, forKey: "stripEnhancementWrappers") }
     }
 
+    /// Enables the optional Ollama local enhancement row. Detection is lazy and
+    /// performed off the main thread; this preference only gates the feature.
+    @Published var localEnhancementEnabled: Bool {
+        didSet { UserDefaults.standard.set(localEnhancementEnabled, forKey: "localEnhancementEnabled") }
+    }
+
+    @Published var localEnhancementModel: String {
+        didSet { UserDefaults.standard.set(localEnhancementModel, forKey: "localEnhancementModel") }
+    }
+
     /// Stable per-install id used to key the hosted fair-use quota. Persisted once.
     let enhancementUserID: String
 
@@ -193,7 +203,7 @@ class AppSettings: ObservableObject {
         }
     }
 
-    func apiKey(for provider: AIEnhancementEngine.EnhancementProvider) -> String {
+    func apiKey(for provider: AIEnhancementEngine.ProviderKind) -> String {
         switch provider {
         case .hosted:
             return "" // Hosted path uses the proxy; no user key.
@@ -203,6 +213,8 @@ class AppSettings: ObservableObject {
             return geminiAPIKey
         case .openai:
             return openaiAPIKey
+        case .localCLI:
+            return ""
         }
     }
 
@@ -320,6 +332,8 @@ class AppSettings: ObservableObject {
         self.selectedEnhancementModel = Self.migratedEnhancementModelSelection(UserDefaults.standard.string(forKey: "selectedEnhancementModel"))
         self.customEnhancementPrompt = UserDefaults.standard.string(forKey: "customEnhancementPrompt") ?? ""
         self.stripEnhancementWrappers = UserDefaults.standard.object(forKey: "stripEnhancementWrappers") as? Bool ?? true
+        self.localEnhancementEnabled = UserDefaults.standard.object(forKey: "localEnhancementEnabled") as? Bool ?? true
+        self.localEnhancementModel = UserDefaults.standard.string(forKey: "localEnhancementModel") ?? "llama3.2:1b"
 
         // Phase 6A: Initialize API Keys (from Keychain)
         self.groqAPIKey = KeychainHelper.load(forKey: "groqAPIKey")

@@ -22,6 +22,7 @@ class AIEnhancementEngine: ObservableObject {
         case groqLlama = "llama-3.3-70b-versatile"
         case gemini25Flash = "gemini-2.5-flash"
         case gemini25FlashLite = "gemini-2.5-flash-lite"
+        case localOllama = "ollama-local"
 
         var id: String { rawValue }
 
@@ -31,6 +32,7 @@ class AIEnhancementEngine: ObservableObject {
             case .groqLlama: return "Fast · Free (your key) — Groq Llama 70B"
             case .gemini25Flash: return "Balanced · Free (your key) — Gemini 2.5"
             case .gemini25FlashLite: return "Light · Free (your key) — Gemini 2.5 Lite"
+            case .localOllama: return "Local · Ollama (no network)"
             }
         }
 
@@ -40,10 +42,11 @@ class AIEnhancementEngine: ObservableObject {
             case .groqLlama: return "Groq Llama 70B"
             case .gemini25Flash: return "Gemini 2.5"
             case .gemini25FlashLite: return "Gemini 2.5 Lite"
+            case .localOllama: return "Ollama Local"
             }
         }
 
-        var provider: EnhancementProvider {
+        var provider: ProviderKind {
             switch self {
             case .hosted:
                 return .hosted
@@ -51,15 +54,18 @@ class AIEnhancementEngine: ObservableObject {
                 return .groq
             case .gemini25Flash, .gemini25FlashLite:
                 return .google
+            case .localOllama:
+                return .localCLI
             }
         }
     }
 
-    enum EnhancementProvider {
+    enum ProviderKind {
         case hosted
         case groq
         case google
         case openai
+        case localCLI
 
         var displayName: String {
             switch self {
@@ -67,6 +73,7 @@ class AIEnhancementEngine: ObservableObject {
             case .groq: return "Groq"
             case .google: return "Gemini"
             case .openai: return "OpenAI"
+            case .localCLI: return "Ollama (local)"
             }
         }
     }
@@ -95,6 +102,8 @@ class AIEnhancementEngine: ObservableObject {
 
     @Published var isEnhancing = false
     @Published var lastError: EnhancementError?
+    @Published private(set) var availableEnhancementModels: [EnhancementModel] = EnhancementModel.allCases
+    let localProvider: LocalCLIEnhancementProvider
 
     // MARK: - Trigger Words
 
@@ -104,8 +113,32 @@ class AIEnhancementEngine: ObservableObject {
     // MARK: - Init
 
     private init() {
+        self.localProvider = LocalCLIEnhancementProvider(modelName: UserDefaults.standard.string(forKey: "localEnhancementModel") ?? "llama3.2:1b")
         loadTriggerWordRules()
         debugLog("✅ AIEnhancementEngine initialized with \(triggerWordRules.count) trigger word rules")
+        Task { [weak self] in
+            await self?.refreshLocalProviderAvailability()
+        }
+    }
+
+    func refreshLocalProviderAvailability() async {
+        guard AppSettings.shared.localEnhancementEnabled else {
+            await MainActor.run { [weak self] in
+                self?.availableEnhancementModels = EnhancementModel.allCases.filter { $0.provider != .localCLI }
+            }
+            return
+        }
+        await localProvider.refreshAvailability()
+        let modelIDs = await EnhancementProviderCatalog.shared.modelIDs(
+            groqAPIKey: AppSettings.shared.groqAPIKey,
+            geminiAPIKey: AppSettings.shared.geminiAPIKey
+        )
+        await MainActor.run { [weak self] in
+            guard let self else { return }
+            self.availableEnhancementModels = EnhancementModel.allCases.filter {
+                $0 == .hosted || $0 == .localOllama || modelIDs.contains($0.rawValue)
+            }
+        }
     }
 
     // MARK: - Trigger Word Detection
@@ -213,8 +246,8 @@ class AIEnhancementEngine: ObservableObject {
             return transcript
         }
 
-        // BYO-key models require a key. The hosted path does not (uses the proxy).
-        if model.provider != .hosted && apiKey.isEmpty {
+        // BYO-key models require a key. Hosted and local paths do not.
+        if model.provider != .hosted && model.provider != .localCLI && apiKey.isEmpty {
             throw EnhancementError.noAPIKey
         }
 
@@ -246,6 +279,9 @@ class AIEnhancementEngine: ObservableObject {
                 rawEnhanced = try await enhanceWithGemini(transcript, model: model, apiKey: apiKey, customPrompt: customPrompt, dictionaryContext: dictionaryContext, screenContext: screenContext)
             case .openai:
                 rawEnhanced = try await enhanceWithOpenAI(transcript, model: model, apiKey: apiKey, customPrompt: customPrompt, dictionaryContext: dictionaryContext, screenContext: screenContext)
+            case .localCLI:
+                let prompt = buildEnhancementPrompt(customPrompt: customPrompt, dictionaryContext: dictionaryContext, screenContext: screenContext)
+                rawEnhanced = try await localProvider.polish(transcript, prompt: prompt)
             }
 
             // One choke point for every provider response. The local CLI path

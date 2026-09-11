@@ -29,6 +29,11 @@ struct AIAutomationSettingsView: View {
                     
                     Toggle("Enable AI Enhancement globally", isOn: $settings.aiEnhancementEnabled)
                         .toggleStyle(.switch)
+                    Toggle("Offer local Ollama enhancement", isOn: $settings.localEnhancementEnabled)
+                        .toggleStyle(.switch)
+                        .onChange(of: settings.localEnhancementEnabled) { _, _ in
+                            Task { await enhancementEngine.refreshLocalProviderAvailability() }
+                        }
                     
                     if settings.aiEnhancementEnabled {
                         VStack(alignment: .leading, spacing: 10) {
@@ -36,7 +41,7 @@ struct AIAutomationSettingsView: View {
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                             Picker("Enhancement Model", selection: $settings.selectedEnhancementModel) {
-                                ForEach(AIEnhancementEngine.EnhancementModel.allCases) { model in
+                                ForEach(enhancementEngine.availableEnhancementModels) { model in
                                     Text(model.displayName).tag(model.rawValue)
                                 }
                             }
@@ -65,6 +70,17 @@ struct AIAutomationSettingsView: View {
                                                 .font(.caption)
                                                 .foregroundColor(.orange)
                                         }
+                                    }
+                                case .localCLI:
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        Label(enhancementEngine.localProvider.isAvailable ? "Local Ollama detected — no network used." : "Ollama not found — install Ollama to enable local enhancement.", systemImage: enhancementEngine.localProvider.isAvailable ? "checkmark.circle" : "arrow.down.circle")
+                                            .font(.caption)
+                                            .foregroundColor(enhancementEngine.localProvider.isAvailable ? .secondary : .orange)
+                                        TextField("Ollama model", text: $settings.localEnhancementModel)
+                                            .textFieldStyle(.roundedBorder)
+                                            .onChange(of: settings.localEnhancementModel) { _, newValue in
+                                                enhancementEngine.localProvider.updateModelName(newValue)
+                                            }
                                     }
                                 }
                             }
