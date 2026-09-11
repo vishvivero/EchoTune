@@ -47,6 +47,12 @@ class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(translateToEnglish, forKey: "translateToEnglish") }
     }
 
+    /// Inject explicitly configured vocabulary into decoder prompts. The
+    /// post-hoc dictionary safety net remains active regardless of this flag.
+    @Published var vocabularyBiasingEnabled: Bool {
+        didSet { UserDefaults.standard.set(vocabularyBiasingEnabled, forKey: "vocabularyBiasingEnabled") }
+    }
+
     // Privacy Settings
     @Published var keepAudioHistory: Bool {
         didSet { UserDefaults.standard.set(keepAudioHistory, forKey: "keepAudioHistory") }
@@ -229,6 +235,7 @@ class AppSettings: ObservableObject {
         self.preferredLanguage = UserDefaults.standard.string(forKey: "preferredLanguage") ?? "en-US"
         self.autoDetectLanguage = UserDefaults.standard.object(forKey: "autoDetectLanguage") as? Bool ?? true
         self.translateToEnglish = UserDefaults.standard.object(forKey: "translateToEnglish") as? Bool ?? false
+        self.vocabularyBiasingEnabled = UserDefaults.standard.object(forKey: "vocabularyBiasingEnabled") as? Bool ?? true
         self.keepAudioHistory = UserDefaults.standard.bool(forKey: "keepAudioHistory")
         self.autoPunctuation = UserDefaults.standard.bool(forKey: "autoPunctuation")
         self.smartCapitalization = UserDefaults.standard.bool(forKey: "smartCapitalization")
@@ -403,6 +410,7 @@ class AppSettings: ObservableObject {
         self.preferredLanguage = "en-US"
         self.autoDetectLanguage = true
         self.translateToEnglish = false
+        self.vocabularyBiasingEnabled = true
         self.keepAudioHistory = false
         self.autoPunctuation = true
         self.smartCapitalization = true

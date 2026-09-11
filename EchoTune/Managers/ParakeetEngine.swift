@@ -163,6 +163,14 @@ final class ParakeetEngine: ObservableObject {
 
     /// Transcribes 16 kHz mono Float32 samples. FluidAudio handles long audio
     /// through its streaming-threshold/disk-backed batch path.
+    ///
+    /// Phase 6 vocabulary context is intentionally not injected into this
+    /// batch path: FluidAudio 0.15.5 exposes `configureVocabularyBoosting`
+    /// only on `SlidingWindowAsrManager`, while this engine uses the direct
+    /// `AsrManager` batch API. That hook also requires a separate CTC model
+    /// download. We do not silently switch batch semantics or guess token IDs;
+    /// the existing dictionary post-processing remains the safety net until a
+    /// supported batch context API is available.
     func transcribe(audioArray: [Float]) async throws -> WhisperTranscriptionResult {
         guard let manager = asrManager, let loadedVersion else {
             throw ParakeetError.modelNotLoaded

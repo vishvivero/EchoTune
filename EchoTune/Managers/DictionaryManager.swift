@@ -52,8 +52,11 @@ class DictionaryManager: ObservableObject {
         var result = text
 
         for replacement in wordReplacements where replacement.isEnabled {
-            // Replace whole words only (not parts of words)
-            let pattern = "\\b\(NSRegularExpression.escapedPattern(for: replacement.spokenForm))\\b"
+            // Use explicit Unicode-aware lookarounds instead of \\b. This
+            // handles punctuation terms (C++, Boötes-) and prevents matching
+            // inside a larger Unicode word. NSRegularExpression remains
+            // locale-naive for case folding; preserve the existing behavior.
+            let pattern = boundaryPattern(for: replacement.spokenForm)
 
             if let regex = try? NSRegularExpression(pattern: pattern, options: replacement.caseSensitive ? [] : [.caseInsensitive]) {
                 let range = NSRange(result.startIndex..., in: result)
@@ -96,7 +99,7 @@ class DictionaryManager: ObservableObject {
 
         for spelling in correctSpellings where spelling.isEnabled {
             for variation in spelling.variations {
-                let pattern = "\\b\(NSRegularExpression.escapedPattern(for: variation))\\b"
+                let pattern = boundaryPattern(for: variation)
 
                 if let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) {
                     let range = NSRange(result.startIndex..., in: result)
@@ -106,6 +109,12 @@ class DictionaryManager: ObservableObject {
         }
 
         return result
+    }
+
+    /// Matches a complete term without treating punctuation as a word boundary.
+    /// Unicode letters, numbers, and underscore are considered part of words.
+    private func boundaryPattern(for term: String) -> String {
+        "(?<![\\p{L}\\p{N}_])\(NSRegularExpression.escapedPattern(for: term))(?![\\p{L}\\p{N}_])"
     }
 
     // Apply all dictionary transformations

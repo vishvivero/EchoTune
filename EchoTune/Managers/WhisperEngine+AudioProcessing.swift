@@ -216,14 +216,20 @@ extension WhisperEngine {
     /// one decode pass given a `mode` and whether to run language detection.
     /// `mode == .final` must reproduce WhisperKit's defaults so batch output
     /// stays byte-identical to 7.1.0.
-    func makeDecodingOptions(mode: DecodeMode, detectLanguage: Bool, language: String?) -> DecodingOptions {
+    func makeDecodingOptions(
+        mode: DecodeMode,
+        detectLanguage: Bool,
+        language: String?,
+        promptTokens: [Int]? = nil
+    ) -> DecodingOptions {
         DecodingOptions(
             task: .transcribe,
             language: language,
             temperature: 0.0,
             temperatureFallbackCount: mode == .live ? 0 : 5,
             detectLanguage: detectLanguage,
-            skipSpecialTokens: false
+            skipSpecialTokens: false,
+            promptTokens: promptTokens
         )
     }
 
@@ -238,10 +244,32 @@ extension WhisperEngine {
 
         let shouldDetect = detectLanguage ?? (settings.autoDetectLanguage || settings.translateToEnglish)
         let languageForDecode = sessionDetectedLanguage ?? preferredLanguage
+        let vocabularyTerms: [String]
+        if settings.vocabularyBiasingEnabled {
+            let collected = VocabularyBiasing.terms(
+                dictionary: DictionaryManager.shared,
+                learner: CorrectionLearner.shared
+            )
+            vocabularyTerms = VocabularyBiasing.filterByLanguage(collected, language: languageForDecode)
+        } else {
+            vocabularyTerms = []
+        }
+        let promptTokens: [Int]?
+        if let tokenizer = whisperKit.tokenizer, !vocabularyTerms.isEmpty {
+            let encoded = VocabularyBiasing.promptTokens(
+                for: vocabularyTerms,
+                language: languageForDecode,
+                encode: { tokenizer.encode(text: $0) }
+            )
+            promptTokens = encoded.isEmpty ? nil : encoded
+        } else {
+            promptTokens = nil
+        }
         let transcriptionOptions = makeDecodingOptions(
             mode: mode,
             detectLanguage: shouldDetect,
-            language: languageForDecode
+            language: languageForDecode,
+            promptTokens: promptTokens
         )
         let transcriptionPass = try await whisperKit.transcribe(audioArray: audioArray, decodeOptions: transcriptionOptions)
 

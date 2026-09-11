@@ -62,6 +62,15 @@ struct GeneralSettingsView: View {
                 Toggle("Translate to English", isOn: $settings.translateToEnglish)
                     .help("Translate foreign speech to English on-the-fly.")
             }
+            .padding(.bottom, 8)
+
+            Section("Vocabulary") {
+                Toggle("Bias decoding with my vocabulary", isOn: $settings.vocabularyBiasingEnabled)
+                    .help("Give dictionary entries and learned corrections to the decoder before transcription. Post-hoc corrections remain enabled.")
+                Text("Enabled terms influence live and final local decodes. Turn this off when comparing regression benchmarks.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
         }
         .formStyle(.grouped)
     }
