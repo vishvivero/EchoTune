@@ -107,7 +107,7 @@ extension WhisperEngine {
     /// Selects a bounded suffix without copying PCM data. Audio tap buffers
     /// are small enough that retaining the first buffer beyond the boundary is
     /// preferable to partial PCM copying and keeps channel formats intact.
-    private static func trailingBuffers(
+    nonisolated private static func trailingBuffers(
         _ buffers: [AVAudioPCMBuffer],
         maximumSeconds: TimeInterval
     ) -> [AVAudioPCMBuffer] {
@@ -126,7 +126,7 @@ extension WhisperEngine {
     /// Removes the longest word overlap between consecutive rolling windows.
     /// If decoding rewrites the overlap completely, retaining the new text is
     /// safer than dropping speech; the agreement layer can keep it pending.
-    private static func deltaText(previous: String, current: String) -> String {
+    nonisolated private static func deltaText(previous: String, current: String) -> String {
         let previousWords = previous.split(whereSeparator: { $0.isWhitespace }).map(String.init)
         let currentWords = current.split(whereSeparator: { $0.isWhitespace }).map(String.init)
         guard !currentWords.isEmpty, !previousWords.isEmpty else { return current }
@@ -141,7 +141,7 @@ extension WhisperEngine {
         return current
     }
 
-    private static func deltaWords(
+    nonisolated private static func deltaWords(
         previous: [AgreementWord],
         current: [AgreementWord]
     ) -> [AgreementWord] {
@@ -157,7 +157,7 @@ extension WhisperEngine {
         return current
     }
 
-    private static func normalizedWord(_ word: String) -> String {
+    nonisolated private static func normalizedWord(_ word: String) -> String {
         word.trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
             .trimmingCharacters(in: .punctuationCharacters)
@@ -344,7 +344,12 @@ extension WhisperEngine {
         // only the tail recorded since the last committed tick is decoded.
         let (fullBuffers, tailBuffers): ([AVAudioPCMBuffer], [AVAudioPCMBuffer]) = audioProcessingQueueRef.sync {
             let full = Array(self.audioBuffers)
-            let committed = self.lastLiveTranscribedBufferCount
+            // If no live segment was successfully committed, retain the
+            // entire recording for final/batch decoding. A tick that produced
+            // no text must never make speech disappear from the tail.
+            let committed = self.liveSegmentTranscripts.isEmpty
+                ? 0
+                : self.lastLiveTranscribedBufferCount
             let tail = committed < full.count ? Array(full[committed...]) : []
             self.audioBuffers = []
             return (full, tail)

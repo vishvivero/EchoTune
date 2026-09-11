@@ -52,3 +52,11 @@ The remaining P7 acceptance work is runtime validation: record preview lag and
 per-tier scheduler behavior over a real session, then compare the fixed-window
 path against the classic rollback path. This direct model benchmark does not
 measure scheduler cadence or first-visible-word lag.
+
+A temporary fixture-driven app probe was attempted with the cached model and
+all three tiers. Model preparation and VAD startup made the app-level decode
+much slower than the isolated harness; the probe did not produce a reliable
+first-update sample before its timeout and is not counted as acceptance. The
+probe also exposed a safety issue where a no-text tick could advance the
+committed buffer index; finalization now retains the full recording whenever no
+live segment was successfully committed, preventing speech loss.
