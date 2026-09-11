@@ -1,4 +1,5 @@
 import Foundation
+import os.log
 
 /// Deepgram live WebSocket transcription. The caller owns fallback to the
 /// existing REST service when this session throws or is marked degraded.
@@ -27,6 +28,8 @@ final class DeepgramStreamingService: CloudStreamingSession {
     private var sendChain: Task<Void, Never>?
     private var partialContinuation: AsyncStream<CloudPartial>.Continuation?
     private var finalSegments: [String] = []
+    private var latestTranscript = ""
+    private var receivedResultCount = 0
     private var active = false
     private var reconnectFailures = 0
     private var configuration: CloudStreamingConfig?
@@ -50,6 +53,8 @@ final class DeepgramStreamingService: CloudStreamingSession {
         active = true
         degraded = false
         finalSegments.removeAll(keepingCapacity: true)
+        latestTranscript = ""
+        receivedResultCount = 0
         reconnectFailures = 0
         task.resume()
         receiveTask = Task { [weak self] in
@@ -110,7 +115,10 @@ final class DeepgramStreamingService: CloudStreamingSession {
         receiveTask?.cancel()
         receiveTask = nil
         active = false
-        let result = finalSegments.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalText = finalSegments.joined(separator: " ")
+        let result = (finalText.isEmpty ? latestTranscript : finalText)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        os_log("Deepgram stream closed: results=%d finalSegments=%d chars=%d", log: appLog, type: .info, receivedResultCount, finalSegments.count, result.count)
         partialContinuation?.finish()
         partialContinuation = nil
         socket = nil
@@ -170,11 +178,13 @@ final class DeepgramStreamingService: CloudStreamingSession {
                 @unknown default: data = nil
                 }
                 guard let data, let partial = DeepgramMessage.parse(data) else { continue }
-                    if partial.isFinal, !partial.text.isEmpty {
+                receivedResultCount += 1
+                latestTranscript = partial.text
+                if partial.isFinal, !partial.text.isEmpty {
                     finalSegments.append(partial.text)
                 }
                 let continuation = partialContinuation
-                    continuation?.yield(partial)
+                continuation?.yield(partial)
             } catch {
                 guard active, reconnectFailures < 2, let configuration else {
                     degraded = active

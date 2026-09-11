@@ -307,8 +307,7 @@ extension AppCoordinator {
         // VAD: Check if there's significant speech
         if VADManager.shared.config.enabled {
             let hasSignificantSpeech = audioManager.hasSignificantSpeech()
-            if !hasSignificantSpeech {
-                liveSession?.cancel()
+            if !hasSignificantSpeech && liveSession == nil {
                 cloudStreamingTask?.cancel()
                 cloudStreamingTask = nil
                 debugLog("⚠️ No significant speech detected - skipping cloud transcription")
