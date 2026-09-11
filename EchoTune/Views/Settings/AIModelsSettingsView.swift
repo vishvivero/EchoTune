@@ -38,7 +38,37 @@ struct AIModelsSettingsView: View {
                 .cornerRadius(14)
                 .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.06), lineWidth: 1))
 
-                // Section 2: Cloud Model API Keys
+                // Section 2: Cloud Models
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Cloud Models")
+                        .font(.title3)
+                        .fontWeight(.semibold)
+
+                    Text("Select a cloud transcription provider. Live Deepgram streaming is opt-in and billable; Groq remains batch-only.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    let cloudModels = modelManager.availableModels.filter {
+                        $0.category == .cloud && modelManager.isCloudEnabled($0)
+                    }
+                    if cloudModels.isEmpty {
+                        Text("Add a provider key below to enable its model.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    } else {
+                        VStack(spacing: 10) {
+                            ForEach(cloudModels) { model in
+                                modelRow(model)
+                            }
+                        }
+                    }
+                }
+                .padding()
+                .background(Color.primary.opacity(0.02))
+                .cornerRadius(14)
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.06), lineWidth: 1))
+
+                // Section 3: Cloud Model API Keys
                 VStack(alignment: .leading, spacing: 14) {
                     Text("Cloud API Keys")
                         .font(.title3)
@@ -153,6 +183,13 @@ struct AIModelsSettingsView: View {
                 let _ = modelManager.setCurrentModel(model)
             }
             .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(isActive)
+        } else if isInstalled, model.category == .cloud {
+            Button(isActive ? "Active" : "Use") {
+                _ = modelManager.setCurrentModel(model)
+            }
+            .buttonStyle(.borderedProminent)
             .controlSize(.small)
             .disabled(isActive)
         } else if isInstalled {
