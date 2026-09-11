@@ -69,6 +69,13 @@ struct AIModelsSettingsView: View {
                         Link("Get a \(selectedProvider.displayName) API key", destination: selectedProvider.keyURL)
                             .font(.caption)
                             .foregroundColor(.accentColor)
+
+                        if selectedProvider == .deepgram {
+                            Toggle("Deepgram Live Streaming", isOn: $settings.deepgramLiveEnabled)
+                            Text("Shows interim words while speaking. Streaming is billable and defaults off; batch transcription remains unchanged when disabled.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
                     }
                 }
                 .padding()

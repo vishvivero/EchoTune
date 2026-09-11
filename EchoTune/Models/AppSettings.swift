@@ -151,6 +151,11 @@ class AppSettings: ObservableObject {
         }
     }
 
+    /// Enables billable Deepgram WebSocket previews. Off by default for cost control.
+    @Published var deepgramLiveEnabled: Bool {
+        didSet { UserDefaults.standard.set(deepgramLiveEnabled, forKey: "deepgramLiveEnabled") }
+    }
+
     @Published var deepgramAPIKey: String {
         didSet {
             KeychainHelper.save(deepgramAPIKey, forKey: "deepgramAPIKey")
@@ -295,6 +300,7 @@ class AppSettings: ObservableObject {
         // Phase 6A: Initialize API Keys (from Keychain)
         self.groqAPIKey = KeychainHelper.load(forKey: "groqAPIKey")
         self.openaiAPIKey = KeychainHelper.load(forKey: "openaiAPIKey")
+        self.deepgramLiveEnabled = UserDefaults.standard.object(forKey: "deepgramLiveEnabled") as? Bool ?? false
         self.deepgramAPIKey = KeychainHelper.load(forKey: "deepgramAPIKey")
         self.geminiAPIKey = KeychainHelper.load(forKey: "geminiAPIKey")
 

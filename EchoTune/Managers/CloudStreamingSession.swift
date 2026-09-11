@@ -4,6 +4,7 @@ import Foundation
 /// Implementations must tolerate frequent `send` calls without retaining an
 /// unbounded audio queue. On an unexpected connection loss they may retry at
 /// most twice; after that they must fail so the caller can use batch fallback.
+@MainActor
 protocol CloudStreamingSession: AnyObject {
     var providerName: String { get }
 
