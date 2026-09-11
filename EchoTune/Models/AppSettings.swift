@@ -11,6 +11,7 @@ import SwiftUI
 
 class AppSettings: ObservableObject {
     static let shared = AppSettings()
+    private var applyingModelLanguageDefault = false
     // General Settings
     @Published var recordingMode: RecordingMode {
         didSet { UserDefaults.standard.set(recordingMode.rawValue, forKey: "recordingMode") }
@@ -42,7 +43,24 @@ class AppSettings: ObservableObject {
     }
 
     @Published var preferredLanguage: String {
-        didSet { UserDefaults.standard.set(preferredLanguage, forKey: "preferredLanguage") }
+        didSet {
+            UserDefaults.standard.set(preferredLanguage, forKey: "preferredLanguage")
+            guard !applyingModelLanguageDefault,
+                  let modelID = UserDefaults.standard.string(forKey: "defaultTranscriptionModel") else { return }
+            UserDefaults.standard.set(true, forKey: "languageOverriddenFor_\(modelID)")
+        }
+    }
+
+    /// Applies a fixed-language model's initial default without marking it as
+    /// a user override. Later manual edits to preferredLanguage are preserved.
+    func applyModelLanguageDefault(_ language: String, modelID: String) {
+        guard !language.isEmpty,
+              !UserDefaults.standard.bool(forKey: "languageOverriddenFor_\(modelID)") else { return }
+        applyingModelLanguageDefault = true
+        if preferredLanguage != language {
+            preferredLanguage = language
+        }
+        applyingModelLanguageDefault = false
     }
 
     @Published var autoDetectLanguage: Bool {

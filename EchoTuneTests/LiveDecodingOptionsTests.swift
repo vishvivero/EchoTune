@@ -98,3 +98,53 @@ struct LiveDecodingOptionsTests {
         #expect(engine.sessionDetectedLanguage == nil)
     }
 }
+
+@MainActor
+struct LanguageDefaultTests {
+    @Test func fixedLanguageAppliesOnceAndRespectsOverride() {
+        let settings = AppSettings.shared
+        let modelID = "test-paraformer-language"
+        let previousLanguage = settings.preferredLanguage
+        let previousModel = UserDefaults.standard.string(forKey: "defaultTranscriptionModel")
+        defer {
+            settings.preferredLanguage = previousLanguage
+            if let previousModel { UserDefaults.standard.set(previousModel, forKey: "defaultTranscriptionModel") }
+            else { UserDefaults.standard.removeObject(forKey: "defaultTranscriptionModel") }
+            UserDefaults.standard.removeObject(forKey: "languageOverriddenFor_\(modelID)")
+        }
+
+        UserDefaults.standard.set(modelID, forKey: "defaultTranscriptionModel")
+        UserDefaults.standard.removeObject(forKey: "languageOverriddenFor_\(modelID)")
+        settings.preferredLanguage = "en-US"
+        UserDefaults.standard.removeObject(forKey: "languageOverriddenFor_\(modelID)")
+        settings.applyModelLanguageDefault("zh-CN", modelID: modelID)
+        #expect(settings.preferredLanguage == "zh-CN")
+
+        UserDefaults.standard.set(true, forKey: "languageOverriddenFor_\(modelID)")
+        settings.preferredLanguage = "fr-FR"
+        settings.applyModelLanguageDefault("zh-CN", modelID: modelID)
+        #expect(settings.preferredLanguage == "fr-FR")
+    }
+}
+
+struct SenseVoicePostprocessorTests {
+    @Test func stripsObservedSenseVoiceTagsAndCollapsesWhitespace() {
+        let result = SenseVoicePostprocessor.clean("<|zh|><|NEUTRAL|>你好 [BGM] 世界 [Laughter]。")
+        #expect(result.text == "你好 世界 。")
+        #expect(result.removedTags == ["<|zh|>", "<|NEUTRAL|>", "[BGM]", "[Laughter]"])
+    }
+
+    @Test func stripsTagsAdjacentToPunctuationAndTagOnlyInput() {
+        let punctuation = SenseVoicePostprocessor.clean("[Cough]你好，[Applause]世界。")
+        #expect(punctuation.text == "你好， 世界。")
+        let empty = SenseVoicePostprocessor.clean("<|Music|>[BGM]")
+        #expect(empty.text.isEmpty)
+        #expect(empty.removedTags == ["<|Music|>", "[BGM]"])
+    }
+
+    @Test func keepTagsIsAnExplicitDebugEscapeHatch() {
+        let result = SenseVoicePostprocessor.clean(" <|ja|> 来週 [Music] ", keepTags: true)
+        #expect(result.text == "<|ja|> 来週 [Music]")
+        #expect(result.removedTags.isEmpty)
+    }
+}

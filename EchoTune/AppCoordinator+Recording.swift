@@ -60,8 +60,8 @@ extension AppCoordinator {
 
         // FluidAudio owns Parakeet's download/cache. Prepare it before opening
         // the microphone so a first-use download never records into a cold engine.
-        if useParakeet {
-            loadParakeetModelAndStart(currentModel)
+        if useParakeet || useSenseVoice || useParaformer {
+            loadFluidBatchModelAndStart(currentModel)
             return
         }
 
@@ -150,6 +150,39 @@ extension AppCoordinator {
 
         // Start recording with local model
         beginRecording()
+    }
+
+    @available(macOS 14.0, *)
+    private func loadFluidBatchModelAndStart(_ model: AIModel) {
+        appState.recordingState = .loadingModel(model.name)
+        notificationManager.showNotification(
+            title: "Setting Up Model",
+            body: "Preparing \(model.name) — the first download may take a moment.",
+            sound: false
+        )
+        let load: (@escaping (Result<Void, Error>) -> Void) -> Void = { completion in
+            switch model.backend {
+            case .parakeet: ParakeetEngine.shared.loadModel(model, completion: completion)
+            case .senseVoice: SenseVoiceEngine.shared.loadModel(model, completion: completion)
+            case .paraformer: ParaformerEngine.shared.loadModel(model, completion: completion)
+            default: completion(.failure(ParakeetError.unsupportedModel(model.id)))
+            }
+        }
+        load { [weak self] result in
+            guard let self else { return }
+            DispatchQueue.main.async {
+                self.notificationManager.dismissProcessingNotification()
+                switch result {
+                case .success:
+                    self.appState.recordingState = .idle
+                    self.beginRecording()
+                case .failure(let error):
+                    self.appState.recordingState = .idle
+                    debugLog("❌ FluidAudio model load failed: \(error)")
+                    self.showErrorAlert(message: "\(model.name) could not be loaded: \(error.localizedDescription)")
+                }
+            }
+        }
     }
 
     @available(macOS 14.0, *)
@@ -527,7 +560,7 @@ extension AppCoordinator {
             audioManager.onWhisperAudioBuffer = { [weak self] buffer in
                 self?.whisperEngine.appendAudioBuffer(buffer)
             }
-        } else if !useParakeet {
+        } else if !useParakeet && !useSenseVoice && !useParaformer {
             // Apple Speech live transcription
             if let audioFormat = audioManager.audioEngine?.inputNode.inputFormat(forBus: 0) {
                 debugLog("🎯 Starting Apple Speech live transcription")
@@ -570,7 +603,7 @@ extension AppCoordinator {
         // Stop audio recording with correct engine type (this calculates the duration).
         // Callbacks are cleared only after stopRecording flushes the dedicated
         // Whisper conversion queue, so the final converted buffers are retained.
-        let engineType: AudioManager.AudioEngine = (useWhisper || useParakeet) ? .whisper : .appleSpeech
+        let engineType: AudioManager.AudioEngine = (useWhisper || useParakeet || useSenseVoice || useParaformer) ? .whisper : .appleSpeech
         let capturedAudioData = audioManager.stopRecording(forEngine: engineType)
         audioManager.onAudioBuffer = nil
         audioManager.onWhisperAudioBuffer = nil
@@ -646,11 +679,13 @@ extension AppCoordinator {
                 guard let self = self else { return }
                 self.handleWhisperResult(result)
             }
-        } else if useParakeet {
-            debugLog("🛑 Ending Parakeet batch transcription")
-            let modelName = modelManager.currentModel?.name ?? "Parakeet"
-            beginTranscriptionAudit(provider: "Parakeet", model: modelName, detail: "Transcribing locally with Parakeet…")
-            PerformanceMonitor.shared.startTranscription(engine: "Parakeet", model: modelName)
+        } else if useParakeet || useSenseVoice || useParaformer {
+            let model = modelManager.currentModel
+            let modelName = model?.name ?? "FluidAudio"
+            let provider = model?.backend == .senseVoice ? "SenseVoice" : (model?.backend == .paraformer ? "Paraformer" : "Parakeet")
+            debugLog("🛑 Ending \(provider) batch transcription")
+            beginTranscriptionAudit(provider: provider, model: modelName, detail: "Transcribing locally with \(provider)…")
+            PerformanceMonitor.shared.startTranscription(engine: provider, model: modelName)
             guard let capturedAudioData else {
                 handleTranscriptionError("Failed to capture audio data")
                 return
@@ -658,26 +693,27 @@ extension AppCoordinator {
             Task { [weak self] in
                 guard let self else { return }
                 do {
-                    let result = try await ParakeetEngine.shared.transcribe(audioData: capturedAudioData)
+                    let result: WhisperTranscriptionResult
+                    switch model?.backend {
+                    case .senseVoice:
+                        result = try await SenseVoiceEngine.shared.transcribe(audioData: capturedAudioData)
+                    case .paraformer:
+                        result = try await ParaformerEngine.shared.transcribe(audioData: capturedAudioData)
+                    default:
+                        result = try await ParakeetEngine.shared.transcribe(audioData: capturedAudioData)
+                    }
                     await MainActor.run { self.handleWhisperResult(.success(result)) }
                 } catch {
                     let fallback = self.modelManager.installedModels.first(where: {
                         $0.backend == .whisper && self.modelManager.isInstalledAndUsable($0)
                     })
                     if let fallback {
-                        debugLog("↩️ Parakeet failed; falling back to Whisper \(fallback.id)")
-                        self.transcriptionEngine.routeToWhisper(
-                            capturedAudioData,
-                            selectedModel: fallback.id
-                        ) { result in
+                        debugLog("↩️ \(provider) failed; falling back to Whisper \(fallback.id)")
+                        self.transcriptionEngine.routeToWhisper(capturedAudioData, selectedModel: fallback.id) { result in
                             switch result {
                             case .success(let text):
                                 self.handleWhisperResult(.success(WhisperTranscriptionResult(
-                                    outputText: text,
-                                    originalText: text,
-                                    translatedText: nil,
-                                    detectedLanguage: "en"
-                                )))
+                                    outputText: text, originalText: text, translatedText: nil, detectedLanguage: "en")))
                             case .failure(let routeError):
                                 self.handleWhisperResult(.failure(.transcriptionFailed(routeError)))
                             }

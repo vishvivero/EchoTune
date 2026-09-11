@@ -163,6 +163,67 @@ extension ModelManager {
                 backend: .parakeet
             ),
 
+            // MARK: - Multilingual FluidAudio Models
+
+            AIModel(
+                id: "sensevoice-small",
+                name: "SenseVoice Small (Multilingual)",
+                size: 472_467_765,
+                description: "Experimental multilingual on-device ASR with 50+ language coverage. Tags are removed before insertion.",
+                language: "50+ languages (auto)",
+                url: URL(string: "https://huggingface.co/FluidInference/sensevoice-small-coreml")!,
+                type: .balanced,
+                category: .local,
+                speedRating: 4,
+                accuracyRating: 3,
+                backend: .senseVoice
+            ),
+
+            AIModel(
+                id: "paraformer-large-zh",
+                name: "Paraformer Large (中文)",
+                size: 435_730_164,
+                description: "Experimental Mandarin on-device ASR using FluidAudio's Paraformer pipeline.",
+                language: "Mandarin (zh)",
+                fixedLanguage: "zh-CN",
+                url: URL(string: "https://huggingface.co/FluidInference/paraformer-large-zh-coreml")!,
+                type: .balanced,
+                category: .local,
+                speedRating: 3,
+                accuracyRating: 3,
+                backend: .paraformer
+            ),
+
+            AIModel(
+                id: "parakeet-ja-0.6b",
+                name: "Parakeet 0.6B (日本語)",
+                size: 619_049_694,
+                description: "Experimental Japanese TDT model using FluidAudio's verified hybrid adapter.",
+                language: "Japanese (ja)",
+                fixedLanguage: "ja-JP",
+                url: URL(string: "https://huggingface.co/FluidInference/parakeet-0.6b-ja-coreml")!,
+                type: .balanced,
+                category: .local,
+                speedRating: 3,
+                accuracyRating: 3,
+                backend: .parakeet
+            ),
+
+            AIModel(
+                id: "parakeet-tdt-ctc-110m",
+                name: "Parakeet TDT-CTC 110M",
+                size: 227_453_720,
+                description: "Experimental smallest FluidAudio Parakeet tier for fast English batch transcription.",
+                language: "English",
+                fixedLanguage: "en-US",
+                url: URL(string: "https://huggingface.co/FluidInference/parakeet-tdt-ctc-110m-coreml")!,
+                type: .fast,
+                category: .local,
+                speedRating: 5,
+                accuracyRating: 2,
+                backend: .parakeet
+            ),
+
             // MARK: - Cloud Models
 
             AIModel(

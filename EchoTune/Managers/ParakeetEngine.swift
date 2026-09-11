@@ -35,12 +35,20 @@ final class ParakeetEngine: ObservableObject {
     enum ModelVersion: String {
         case v2 = "parakeet-tdt-0.6b-v2"
         case v3 = "parakeet-tdt-0.6b-v3"
+        case ctc110m = "parakeet-tdt-ctc-110m"
+        case japanese = "parakeet-ja-0.6b"
 
         var fluidVersion: AsrModelVersion {
             switch self {
             case .v2: return .v2
             case .v3: return .v3
+            case .ctc110m: return .tdtCtc110m
+            case .japanese: return .tdtJa
             }
+        }
+
+        var detectedLanguage: String {
+            self == .japanese ? "ja" : "en"
         }
     }
 
@@ -186,7 +194,7 @@ final class ParakeetEngine: ObservableObject {
             outputText: text,
             originalText: text,
             translatedText: nil,
-            detectedLanguage: "en"
+            detectedLanguage: ModelVersion(rawValue: currentModelID ?? "")?.detectedLanguage ?? "en"
         )
     }
 
@@ -267,5 +275,214 @@ enum ParakeetError: LocalizedError {
         case .loadSuperseded: return "The requested Parakeet load was superseded; please retry."
         case .batchOnly: return "Parakeet batch transcription does not support live streaming."
         }
+    }
+}
+
+// MARK: - Phase 9 multilingual local engines
+
+@available(macOS 14.0, *)
+final class SenseVoiceEngine: ObservableObject {
+    static let shared = SenseVoiceEngine()
+
+    @Published var isAvailable = false
+    @Published var isLoading = false
+    @Published var loadingProgress: Double = 0
+    @Published var loadingStage = ""
+    @Published var currentModelID: String?
+    @Published var loadedModelName: String?
+
+    private var manager: SenseVoiceManager?
+
+    private init() {}
+
+    static func isModelInstalled() -> Bool {
+        SenseVoiceModels.modelsExist(at: FluidAudioModelPaths.directory(for: .senseVoice))
+    }
+
+    func loadModel(_ model: AIModel, completion: @escaping (Result<Void, Error>) -> Void) {
+        if currentModelID == model.id, isAvailable, manager != nil {
+            completion(.success(()))
+            return
+        }
+        isLoading = true
+        loadingProgress = 0
+        loadingStage = "Preparing SenseVoice…"
+        Task { [weak self] in
+            do {
+                let loaded = try await SenseVoiceManager.load { [weak self] progress in
+                    Task { @MainActor in
+                        self?.loadingProgress = progress.fractionCompleted
+                        self?.loadingStage = "Preparing SenseVoice…"
+                    }
+                }
+                await MainActor.run {
+                    self?.manager = loaded
+                    self?.currentModelID = model.id
+                    self?.loadedModelName = model.name
+                    self?.isAvailable = true
+                    self?.isLoading = false
+                    self?.loadingProgress = 1
+                    self?.loadingStage = "Ready"
+                    completion(.success(()))
+                }
+            } catch {
+                await MainActor.run {
+                    self?.isAvailable = false
+                    self?.isLoading = false
+                    self?.loadingStage = "SenseVoice unavailable"
+                    completion(.failure(error))
+                }
+            }
+        }
+    }
+
+    func prepareModel(_ model: AIModel) async throws {
+        try await withCheckedThrowingContinuation { continuation in
+            loadModel(model) { continuation.resume(with: $0) }
+        }
+    }
+
+    func unloadModel() {
+        manager = nil
+        currentModelID = nil
+        loadedModelName = nil
+        isAvailable = false
+    }
+
+    func transcribe(audioData: Data) async throws -> WhisperTranscriptionResult {
+        guard let manager else { throw ParakeetError.modelNotLoaded }
+        guard !audioData.isEmpty else { throw ParakeetError.noAudioData }
+        let url = try FluidAudioModelPaths.writeTemporaryAudio(audioData, prefix: "sensevoice")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let raw = try await manager.transcribe(audioURL: url)
+        let cleaned = SenseVoicePostprocessor.clean(raw)
+        let language = cleaned.removedTags.first(where: { $0.lowercased() == "<|zh|>" }) != nil ? "zh" : nil
+        if !cleaned.removedTags.isEmpty {
+            debugLog("SenseVoice removed tags: \(cleaned.removedTags.joined(separator: ", "))")
+        }
+        return WhisperTranscriptionResult(outputText: cleaned.text, originalText: cleaned.text, translatedText: nil, detectedLanguage: language)
+    }
+}
+
+@available(macOS 14.0, *)
+final class ParaformerEngine: ObservableObject {
+    static let shared = ParaformerEngine()
+
+    @Published var isAvailable = false
+    @Published var isLoading = false
+    @Published var loadingProgress: Double = 0
+    @Published var loadingStage = ""
+    @Published var currentModelID: String?
+    @Published var loadedModelName: String?
+
+    private var manager: ParaformerManager?
+
+    private init() {}
+
+    static func isModelInstalled() -> Bool {
+        ParaformerModels.modelsExist(at: FluidAudioModelPaths.directory(for: .paraformer))
+    }
+
+    func loadModel(_ model: AIModel, completion: @escaping (Result<Void, Error>) -> Void) {
+        if currentModelID == model.id, isAvailable, manager != nil {
+            completion(.success(()))
+            return
+        }
+        isLoading = true
+        loadingProgress = 0
+        loadingStage = "Preparing Paraformer…"
+        Task { [weak self] in
+            do {
+                let loaded = try await ParaformerManager.load { [weak self] progress in
+                    Task { @MainActor in
+                        self?.loadingProgress = progress.fractionCompleted
+                        self?.loadingStage = "Preparing Paraformer…"
+                    }
+                }
+                await MainActor.run {
+                    self?.manager = loaded
+                    self?.currentModelID = model.id
+                    self?.loadedModelName = model.name
+                    self?.isAvailable = true
+                    self?.isLoading = false
+                    self?.loadingProgress = 1
+                    self?.loadingStage = "Ready"
+                    completion(.success(()))
+                }
+            } catch {
+                await MainActor.run {
+                    self?.isAvailable = false
+                    self?.isLoading = false
+                    self?.loadingStage = "Paraformer unavailable"
+                    completion(.failure(error))
+                }
+            }
+        }
+    }
+
+    func prepareModel(_ model: AIModel) async throws {
+        try await withCheckedThrowingContinuation { continuation in
+            loadModel(model) { continuation.resume(with: $0) }
+        }
+    }
+
+    func unloadModel() {
+        manager = nil
+        currentModelID = nil
+        loadedModelName = nil
+        isAvailable = false
+    }
+
+    func transcribe(audioData: Data) async throws -> WhisperTranscriptionResult {
+        guard let manager else { throw ParakeetError.modelNotLoaded }
+        guard !audioData.isEmpty else { throw ParakeetError.noAudioData }
+        let url = try FluidAudioModelPaths.writeTemporaryAudio(audioData, prefix: "paraformer")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let text = try await manager.transcribe(audioURL: url).trimmingCharacters(in: .whitespacesAndNewlines)
+        return WhisperTranscriptionResult(outputText: text, originalText: text, translatedText: nil, detectedLanguage: "zh")
+    }
+}
+
+enum FluidAudioModelKind {
+    case senseVoice
+    case paraformer
+}
+
+enum FluidAudioModelPaths {
+    static func directory(for kind: FluidAudioModelKind) -> URL {
+        let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("FluidAudio/Models", isDirectory: true)
+        let repo: Repo = kind == .senseVoice ? .senseVoiceSmall : .paraformerLargeZh
+        return root.appendingPathComponent(repo.folderName, isDirectory: true)
+    }
+
+    static func writeTemporaryAudio(_ data: Data, prefix: String) throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(prefix)-\(UUID().uuidString).caf")
+        try data.write(to: url, options: .atomic)
+        return url
+    }
+}
+
+enum SenseVoicePostprocessor {
+    struct CleanResult: Equatable {
+        let text: String
+        let removedTags: [String]
+    }
+
+    /// Removes SenseVoice language/emotion/event controls at the ASR boundary.
+    /// Observed/documented forms include <|zh|>, <|NEUTRAL|>, <|Music|>,
+    /// [BGM], [Laughter], [Applause], and [Cough].
+    static func clean(_ raw: String, keepTags: Bool = false) -> CleanResult {
+        guard !keepTags else { return CleanResult(text: raw.trimmingCharacters(in: .whitespacesAndNewlines), removedTags: []) }
+        let pattern = #"<\|[^|]+\|>|\[(?:BGM|Laughter|Applause|Cough|Music|Speech|Noise)\]"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+            return CleanResult(text: raw.trimmingCharacters(in: .whitespacesAndNewlines), removedTags: [])
+        }
+        let range = NSRange(raw.startIndex..<raw.endIndex, in: raw)
+        let matches = regex.matches(in: raw, range: range)
+        let removed = matches.compactMap { Range($0.range, in: raw).map { String(raw[$0]) } }
+        let stripped = regex.stringByReplacingMatches(in: raw, range: range, withTemplate: " ")
+        let text = stripped.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        return CleanResult(text: text, removedTags: removed)
     }
 }

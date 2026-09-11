@@ -27,6 +27,9 @@ struct AIModel: Identifiable, Equatable, Hashable {
     let size: Int64
     let description: String
     let language: String
+    /// Explicit one-language default for multilingual roster selection.
+    /// Nil means the existing auto-detect/preferred-language behavior remains.
+    let fixedLanguage: String?
     let url: URL
     let type: ModelSize
     let category: ModelCategory
@@ -37,13 +40,14 @@ struct AIModel: Identifiable, Equatable, Hashable {
     var isInstalled: Bool = false
     var localPath: URL?
 
-    init(id: String, name: String, size: Int64, description: String, language: String, url: URL, type: ModelSize, category: ModelCategory = .recommended, speedRating: Int = 3, accuracyRating: Int = 3, isBuiltIn: Bool = false, backend: AIModelBackend? = nil) {
+    init(id: String, name: String, size: Int64, description: String, language: String, fixedLanguage: String? = nil, url: URL, type: ModelSize, category: ModelCategory = .recommended, speedRating: Int = 3, accuracyRating: Int = 3, isBuiltIn: Bool = false, backend: AIModelBackend? = nil) {
         self.id = id
         self.backend = backend ?? Self.defaultBackend(for: id, isBuiltIn: isBuiltIn, category: category)
         self.name = name
         self.size = size
         self.description = description
         self.language = language
+        self.fixedLanguage = fixedLanguage
         self.url = url
         self.type = type
         self.category = category
@@ -106,6 +110,14 @@ struct AIModel: Identifiable, Equatable, Hashable {
             return "Cloud-powered — top accuracy with no local download (needs free Groq API key)."
         case "deepgram-nova":
             return "Cloud-powered — fast and accurate (needs API key)."
+        case "sensevoice-small":
+            return "Experimental multilingual local ASR — 50+ languages, no API key."
+        case "paraformer-large-zh":
+            return "Experimental Mandarin local ASR — optimized for zh dictation."
+        case "parakeet-ja-0.6b":
+            return "Experimental Japanese local ASR — optimized for ja dictation."
+        case "parakeet-tdt-ctc-110m":
+            return "Experimental tiny local ASR — fastest FluidAudio batch tier."
         default:
             return description
         }

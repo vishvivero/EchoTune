@@ -157,7 +157,7 @@ struct AIModelsSettingsView: View {
                         .lineLimit(2)
                 }
 
-                Text(model.formattedSize)
+                Text("\(model.language) • \(model.formattedSize)")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
             }

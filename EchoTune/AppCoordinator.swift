@@ -115,6 +115,18 @@ class AppCoordinator: ObservableObject {
         return currentModel.backend == .parakeet
     }
 
+    var useSenseVoice: Bool {
+        guard #available(macOS 14.0, *),
+              let currentModel = modelManager.currentModel else { return false }
+        return currentModel.backend == .senseVoice
+    }
+
+    var useParaformer: Bool {
+        guard #available(macOS 14.0, *),
+              let currentModel = modelManager.currentModel else { return false }
+        return currentModel.backend == .paraformer
+    }
+
     // Track if we muted system output during this recording session
     var didMuteSystemOutput = false
 

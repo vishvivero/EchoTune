@@ -233,14 +233,25 @@ class ModelManager: ObservableObject {
                 continue
             }
 
-            if model.backend == .parakeet {
-                if #available(macOS 14.0, *), ParakeetEngine.isModelInstalled(for: model.id) {
+            if model.backend == .parakeet || model.backend == .senseVoice || model.backend == .paraformer {
+                let installed: Bool
+                if #available(macOS 14.0, *) {
+                    switch model.backend {
+                    case .parakeet: installed = ParakeetEngine.isModelInstalled(for: model.id)
+                    case .senseVoice: installed = SenseVoiceEngine.isModelInstalled()
+                    case .paraformer: installed = ParaformerEngine.isModelInstalled()
+                    default: installed = false
+                    }
+                } else {
+                    installed = false
+                }
+                if installed {
                     var m = model; m.isInstalled = true
                     foundInstalled.append(m)
                     installFlags.append((id: model.id, isInstalled: true, localPath: nil))
-                    debugLog("   ✅ Found installed Parakeet model: \(model.name)")
+                    debugLog("   ✅ Found installed FluidAudio model: \(model.name)")
                 } else {
-                    debugLog("   ❌ Parakeet model not found: \(model.name)")
+                    debugLog("   ❌ FluidAudio model not found: \(model.name)")
                 }
                 continue
             }
@@ -352,7 +363,7 @@ class ModelManager: ObservableObject {
         if model.isBuiltIn { return true }
         switch model.category {
         case .local:
-            if model.backend == .parakeet {
+            if model.backend == .parakeet || model.backend == .senseVoice || model.backend == .paraformer {
                 if #available(macOS 14.0, *) { return true }
                 return false
             }
@@ -386,7 +397,7 @@ class ModelManager: ObservableObject {
             return
         }
 
-        if model.backend == .parakeet {
+        if model.backend == .parakeet || model.backend == .senseVoice || model.backend == .paraformer {
             guard #available(macOS 14.0, *) else {
                 completion(.failure(.invalidModel))
                 return
@@ -396,7 +407,16 @@ class ModelManager: ObservableObject {
             downloadProgress = 0
             Task {
                 do {
-                    try await ParakeetEngine.shared.prepareModel(model)
+                    switch model.backend {
+                    case .parakeet:
+                        try await ParakeetEngine.shared.prepareModel(model)
+                    case .senseVoice:
+                        try await SenseVoiceEngine.shared.prepareModel(model)
+                    case .paraformer:
+                        try await ParaformerEngine.shared.prepareModel(model)
+                    default:
+                        throw ModelError.invalidModel
+                    }
                     await MainActor.run {
                         progressHandler?(1)
                         self.isDownloading = false
@@ -737,6 +757,9 @@ class ModelManager: ObservableObject {
             guard let self = self else { return }
             self.currentModel = model
             AppSettings.shared.defaultTranscriptionModel = model.id
+            if let fixedLanguage = model.fixedLanguage {
+                AppSettings.shared.applyModelLanguageDefault(fixedLanguage, modelID: model.id)
+            }
         }
 
         // Save to UserDefaults
