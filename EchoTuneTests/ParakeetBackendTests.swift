@@ -1,6 +1,7 @@
 import XCTest
 @testable import EchoTune
 
+@MainActor
 final class ParakeetBackendTests: XCTestCase {
     func testCatalogAssignsStableBackends() {
         let models = ModelManager.shared.availableModels
