@@ -8,6 +8,12 @@
 
 import Foundation
 
+enum StreamingDisposition: String, Equatable {
+    case streamed
+    case batchFallback
+    case noSpeech
+}
+
 struct AgreementWord: Equatable {
     let text: String
     let confidence: Float?
@@ -26,6 +32,20 @@ final class AgreementEngine {
     static let defaultLowConfidenceFloor: Float = 0.15
     static let defaultHighConfidenceFloor: Float = 0.6
     static let minConfirmedSegmentsForStreaming = 3
+    /// Full-audio fallback is intentionally bounded so a long dictation does
+    /// not turn stop into an unbounded second transcription.
+    static let maxBatchFallbackDuration: TimeInterval = 5 * 60
+
+    static func disposition(
+        hasAudio: Bool,
+        shouldFallback: Bool,
+        audioDuration: TimeInterval,
+        maxFallbackDuration: TimeInterval = maxBatchFallbackDuration
+    ) -> StreamingDisposition {
+        guard hasAudio else { return .noSpeech }
+        guard shouldFallback, audioDuration <= maxFallbackDuration else { return .streamed }
+        return .batchFallback
+    }
 
     private let confirmationPasses: Int
     private let lowConfidenceFloor: Float

@@ -37,8 +37,22 @@ extension WhisperEngine {
 
         let combined = parts.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !combined.isEmpty else {
-            os_log("❌ All segments hallucination-filtered", log: wLog, type: .error)
-            completion(.failure(.noAudioData))
+            // No-speech is a normal recording outcome, not a transcription
+            // error. Return an empty success so the coordinator can show its
+            // quiet "No Speech Detected" path without inserting history or
+            // surfacing a failure alert.
+            os_log("ℹ️ No speech in final streaming result", log: wLog, type: .info)
+            let emptyResult = WhisperTranscriptionResult(
+                outputText: "",
+                originalText: "",
+                translatedText: nil,
+                detectedLanguage: nil
+            )
+            Task { @MainActor in
+                self.currentText = ""
+                self.isProcessing = false
+                completion(.success(emptyResult))
+            }
             return
         }
 

@@ -364,13 +364,33 @@ extension WhisperEngine {
         }
 
         let committedSegments = liveSegmentTranscripts
+        let fullAudioDuration = fullBuffers.reduce(0.0) { total, buffer in
+            total + Double(buffer.frameLength) / max(buffer.format.sampleRate, 1)
+        }
 
         // A short agreement session is unreliable even when no tail remains.
         // Re-run the complete captured audio through the batch path before
-        // committing, unless the session was empty.
+        // committing, unless the session was empty. Long sessions use the
+        // streamed result instead of paying for an unbounded second decode.
+        let disposition: StreamingDisposition
         if !fullBuffers.isEmpty {
             _ = agreementEngine.finish()
-            if agreementEngine.shouldUseBatchFallback {
+            disposition = AgreementEngine.disposition(
+                hasAudio: true,
+                shouldFallback: agreementEngine.shouldUseBatchFallback,
+                audioDuration: fullAudioDuration
+            )
+        } else {
+            disposition = .noSpeech
+        }
+        os_log("P7_DISPOSITION disposition=%{public}@ confirmed=%d audio=%.2fs",
+               log: wLog,
+               type: .info,
+               disposition.rawValue,
+               agreementEngine.confirmed.count,
+               fullAudioDuration)
+
+        if disposition == .batchFallback {
                 let fallbackStarted = Date()
                 os_log("↩️ Agreement requested full-audio batch fallback", log: wLog, type: .info)
                 if let batchText = try? await transcribeFullAudio(
@@ -384,15 +404,15 @@ extension WhisperEngine {
                     return
                 }
                 os_log("⚠️ Agreement batch fallback failed; retaining normal tail result", log: wLog, type: .error)
-            }
+        } else if !fullBuffers.isEmpty, agreementEngine.shouldUseBatchFallback {
+            os_log("⚠️ Agreement fallback skipped at %.2fs; max duration is %.2fs", log: wLog, type: .info,
+                   fullAudioDuration, AgreementEngine.maxBatchFallbackDuration)
         }
 
         // Nothing new since the last committed tick → deliver cached segments only.
         guard !tailBuffers.isEmpty else {
-            guard !committedSegments.isEmpty else {
-                os_log("❌ audioBuffers empty at endStreaming", log: wLog, type: .error)
-                completion(.failure(.noAudioData))
-                return
+            if committedSegments.isEmpty {
+                os_log("ℹ️ No speech buffers committed at endStreaming", log: wLog, type: .info)
             }
             deliverFinalResult(segments: committedSegments, tailText: nil, completion: completion)
             return
@@ -417,11 +437,11 @@ extension WhisperEngine {
                     await MainActor.run {
                         guard self.streamingSessionID == sessionID else { return }
                         self.isProcessing = false
-                        if committedSegments.isEmpty {
-                            completion(.failure(.noAudioData))
-                        } else {
-                            self.deliverFinalResult(segments: committedSegments, tailText: nil, completion: completion)
-                        }
+                        self.deliverFinalResult(
+                            segments: committedSegments,
+                            tailText: nil,
+                            completion: completion
+                        )
                     }
                     return
                 }

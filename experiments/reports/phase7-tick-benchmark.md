@@ -52,7 +52,12 @@ retained because the app-level result type does not expose a comparable mean
 log probability.
 
 Each live decode now emits a `P7_TICK` record with tier, source-window
-seconds, post-VAD decode-window seconds, and end-to-end tick elapsed time. The
+seconds, post-VAD decode-window seconds, and end-to-end tick elapsed time.
+Stop now emits `P7_DISPOSITION` with `streamed`, `batchFallback`, or
+`noSpeech`, confirmed-word count, and captured duration. Batch fallback is
+bounded to five minutes; longer low-agreement sessions retain the streamed
+result and log the guard decision. No-speech finalization returns an empty
+success so the coordinator's existing no-insertion path handles it quietly. The
 remaining P7 acceptance work is runtime validation: record preview lag and
 per-tier scheduler behavior over a real session, then compare the fixed-window
 path against the classic rollback path. This direct model benchmark does not
