@@ -275,6 +275,16 @@ extension WhisperEngine {
                         notificationPending = newText
                     }
 
+                    let sessionElapsed = self.streamingSessionStartedAt.map {
+                        Date().timeIntervalSince($0)
+                    } ?? 0
+                    os_log("P7_UPDATE tier=%{public}@ elapsed=%.3fs confirmed=%d pending=%d",
+                           log: wLog,
+                           type: .info,
+                           tier.rawValue,
+                           sessionElapsed,
+                           notificationText.split(whereSeparator: { $0.isWhitespace }).count,
+                           notificationPending.split(whereSeparator: { $0.isWhitespace }).count)
                     NotificationCenter.default.post(
                         name: NSNotification.Name("LiveTranscriptionUpdate"),
                         object: nil,

@@ -112,6 +112,7 @@ class WhisperEngine: ObservableObject {
     /// session token so an old completion cannot touch the new session.
     var streamingTask: Task<Void, Never>?
     var streamingSessionID = UUID()
+    var streamingSessionStartedAt: Date?
 
     // Live transcription state
     var liveTranscriptionTimer: Timer?
@@ -462,6 +463,7 @@ class WhisperEngine: ObservableObject {
         }
 
         isProcessing = true
+        streamingSessionStartedAt = Date()
         currentText = ""
 
         // A new batch dictation is a new session: drop any language pinned by
