@@ -348,6 +348,7 @@ extension AppCoordinator {
                             throw DeepgramStreamingService.StreamingError.socketClosed
                         }
                         transcribedText = streamedText
+                        os_log("✅ Deepgram live returned %d chars", log: appLog, type: .info, streamedText.count)
                         UsageMeter.shared.record(UsageRecord(
                             provider: "Deepgram",
                             model: "nova-3",
@@ -356,6 +357,7 @@ extension AppCoordinator {
                             disposition: "streamed"
                         ))
                     } catch {
+                        os_log("⚠️ Deepgram live failed; using REST batch fallback", log: appLog, type: .error)
                         UsageMeter.shared.record(UsageRecord(
                             provider: "Deepgram",
                             model: "nova-3",

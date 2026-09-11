@@ -24,6 +24,7 @@ final class DeepgramStreamingService: CloudStreamingSession {
 
     private var socket: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
+    private var sendChain: Task<Void, Never>?
     private var partialContinuation: AsyncStream<CloudPartial>.Continuation?
     private var finalSegments: [String] = []
     private var active = false
@@ -58,9 +59,20 @@ final class DeepgramStreamingService: CloudStreamingSession {
 
     func send(_ samples: [Float]) async {
         guard !samples.isEmpty else { return }
-        let task = socket
-        let isActive = active
-        guard isActive, let task else { return }
+
+        // Audio callbacks create unstructured Tasks. Serialize their sends so
+        // CloseStream cannot overtake the final PCM frame when the user stops.
+        let previous = sendChain
+        let next = Task { [weak self] in
+            await previous?.value
+            await self?.sendImmediately(samples)
+        }
+        sendChain = next
+        await next.value
+    }
+
+    private func sendImmediately(_ samples: [Float]) async {
+        guard active, let task = socket else { return }
 
         var pcm = [Int16](repeating: 0, count: samples.count)
         for (index, sample) in samples.enumerated() {
@@ -81,6 +93,11 @@ final class DeepgramStreamingService: CloudStreamingSession {
         guard isActive, let task else { throw StreamingError.notStarted }
         if degraded { throw StreamingError.providerError("connection degraded after reconnect attempts") }
 
+        // Wait for every PCM send queued by the audio callback before asking
+        // Deepgram to finalize the stream.
+        await sendChain?.value
+        sendChain = nil
+
         let closeMessage = Data(#"{"type":"CloseStream"}"#.utf8)
         await withCheckedContinuation { continuation in
             task.send(.string(String(decoding: closeMessage, as: UTF8.self)) ) { _ in
@@ -91,6 +108,7 @@ final class DeepgramStreamingService: CloudStreamingSession {
         try? await Task.sleep(for: .milliseconds(1500))
         task.cancel(with: .normalClosure, reason: nil)
         receiveTask?.cancel()
+        receiveTask = nil
         active = false
         let result = finalSegments.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
         partialContinuation?.finish()
@@ -107,6 +125,8 @@ final class DeepgramStreamingService: CloudStreamingSession {
         socket = nil
         let receiver = receiveTask
         receiveTask = nil
+        sendChain?.cancel()
+        sendChain = nil
         partialContinuation?.finish()
         partialContinuation = nil
         receiver?.cancel()
