@@ -50,3 +50,34 @@ accuracy.
   of human speech; the synthetic boundary test therefore uses a deterministic
   VAD-result stub, as specified by the packet, while the runtime probe verifies
   the real model path.
+
+## Pause-separated end-to-end fixture QA
+
+A second fixture was built from two halves of the real synthetic-speech file
+with 3.0 s of silence inserted between them (15.124 s total). FluidAudio
+returned two regions:
+
+- `0.000–5.918 s`
+- `8.930–15.124 s`
+
+WhisperKit decoded the full paused window as:
+
+> Echo to benchmark fixture. This is a five-second synthetic speech test. It verifies local transcription latency and accuracy without using personal audio.
+
+The independently trimmed regions decoded as:
+
+1. `Echo 2 benchmark fixture. This is a 5-second synthetic speech test.`
+2. `It verifies local transcription latency and accuracy without using personal audio.`
+
+No filler was produced for the inserted pause, and both speech regions were
+preserved in order.
+
+## Physical microphone attempt
+
+The host has a working `MacBook Air Microphone` input and the debug app
+successfully launched, loaded WhisperKit, initialized FluidAudio, registered
+the Option-key shortcut, and entered/exited recording. A speaker-playback
+attempt was inconclusive at the final transcript boundary because the app did
+not emit a final-tail transcript log before the controlled process shutdown.
+This is not counted as a successful physical-microphone acceptance result; the
+pause-separated fixture above is the reproducible end-to-end QA result.
