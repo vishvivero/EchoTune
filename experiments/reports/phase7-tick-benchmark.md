@@ -58,10 +58,11 @@ Stop now emits `P7_DISPOSITION` with `streamed`, `batchFallback`, or
 bounded to five minutes; longer low-agreement sessions retain the streamed
 result and log the guard decision. No-speech finalization returns an empty
 success so the coordinator's existing no-insertion path handles it quietly. The
-remaining P7 acceptance work is runtime validation: record preview lag and
-per-tier scheduler behavior over a real session, then compare the fixed-window
-path against the classic rollback path. This direct model benchmark does not
-measure scheduler cadence or first-visible-word lag.
+The tier scheduler and fallback path have now been exercised in an app-level
+session. The remaining acceptance caveat is the streamed-disposition path:
+this fixture stayed below the 0.6 confidence frontier, so a verified
+high-confidence corpus or physical microphone session is still needed to
+measure first confirmed-word latency and prove streamed (non-fallback) commit.
 
 A temporary fixture-driven app probe was run against the cached model. The
 first Samantha fixture produced no text and was not counted. A verified Daniel
