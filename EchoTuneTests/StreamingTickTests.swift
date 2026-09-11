@@ -2,6 +2,13 @@ import Testing
 @testable import EchoTune
 
 struct StreamingTickTests {
+    @Test func previewTiersRetainClassicRollbackAndExposeIntervals() {
+        #expect(PreviewTier.classic.interval == 4.0)
+        #expect(PreviewTier.balanced.interval == 2.0)
+        #expect(PreviewTier.reactive.interval == 1.0)
+        #expect(PreviewTier.allCases.contains(.classic))
+    }
+
     @Test func startingANewSessionCancelsInFlightTickAndSettle() {
         let engine = WhisperEngine.shared
         let tick = Task<Void, Never> {

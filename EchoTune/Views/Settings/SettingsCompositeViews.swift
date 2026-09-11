@@ -33,6 +33,17 @@ struct GeneralSettingsView: View {
                 Text(settings.recorderStyle.description)
                     .font(.caption)
                     .foregroundColor(.secondary)
+
+                Picker("Preview Speed", selection: $settings.previewTier) {
+                    ForEach(PreviewTier.allCases) { tier in
+                        Text(tier.title).tag(tier)
+                    }
+                }
+                .help("How often the local transcription preview updates while recording.")
+                .pickerStyle(.inline)
+                Text(settings.previewTier.description)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
             .padding(.bottom, 8)
 

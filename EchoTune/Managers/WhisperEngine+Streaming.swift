@@ -15,16 +15,16 @@ import os.log
 
 // MARK: - Streaming Transcription
 //
-// Segment-wise streaming: every 4s tick transcribes ONLY the audio recorded
-// since the previous tick (instead of re-transcribing the whole recording),
-// and appends the result to liveSegmentTranscripts. On stop, only the final
-// tail is transcribed and the cached segments are joined. This makes
+// Segment-wise streaming: each preview-tier tick transcribes ONLY the audio
+// recorded since the previous tick (instead of re-transcribing the whole
+// recording), and appends the result to liveSegmentTranscripts. On stop, only
+// the final tail is transcribed and the cached segments are joined. This makes
 // end-to-end latency O(tail) instead of O(entire recording).
 
 extension WhisperEngine {
 
-    /// Interval in seconds between live transcription updates
-    private static let liveTranscriptionInterval: TimeInterval = 4.0
+    /// The preview tier owns the interval; `.classic` preserves the previous
+    /// four-second behavior as an immediate rollback path.
 
     func startStreamingTranscription(completion: @escaping (Result<WhisperTranscriptionResult, WhisperError>) -> Void) {
         // Abandon any prior stop/finalization work before opening a new
@@ -78,7 +78,7 @@ extension WhisperEngine {
     private func startLiveTranscriptionTimer() {
         stopLiveTranscriptionTimer()
         DispatchQueue.main.async { [weak self] in
-            self?.liveTranscriptionTimer = Timer.scheduledTimer(withTimeInterval: Self.liveTranscriptionInterval, repeats: true) { [weak self] _ in
+            self?.liveTranscriptionTimer = Timer.scheduledTimer(withTimeInterval: AppSettings.shared.previewTier.interval, repeats: true) { [weak self] _ in
                 self?.processLiveTranscriptionChunk()
             }
         }

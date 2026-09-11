@@ -15,6 +15,12 @@ class AppSettings: ObservableObject {
     @Published var recordingMode: RecordingMode {
         didSet { UserDefaults.standard.set(recordingMode.rawValue, forKey: "recordingMode") }
     }
+
+    /// Controls how often the live preview requests a decode. Classic keeps
+    /// the pre-Phase-7 four-second behavior as a rollback tier.
+    @Published var previewTier: PreviewTier {
+        didSet { UserDefaults.standard.set(previewTier.rawValue, forKey: "previewTier") }
+    }
     
     // Model Settings
     @Published var defaultTranscriptionModel: String {
@@ -216,6 +222,13 @@ class AppSettings: ObservableObject {
         } else {
             self.recordingMode = .pushToTalk
         }
+
+        if let previewValue = UserDefaults.standard.string(forKey: "previewTier"),
+           let previewTier = PreviewTier(rawValue: previewValue) {
+            self.previewTier = previewTier
+        } else {
+            self.previewTier = .balanced
+        }
         
         let hasGroqKey = !KeychainHelper.load(forKey: "groqAPIKey").isEmpty || !(UserDefaults.standard.string(forKey: "groqAPIKey") ?? "").isEmpty
 
@@ -406,6 +419,7 @@ class AppSettings: ObservableObject {
     
     private func setDefaults() {
         self.recordingMode = .toggle
+        self.previewTier = .balanced
         self.groqCloudTranscriptionEnabled = false
         self.preferredLanguage = "en-US"
         self.autoDetectLanguage = true
@@ -437,6 +451,38 @@ class AppSettings: ObservableObject {
 }
 
 // Enums for settings
+enum PreviewTier: String, CaseIterable, Identifiable {
+    case classic
+    case balanced
+    case reactive
+
+    var id: String { rawValue }
+
+    var interval: TimeInterval {
+        switch self {
+        case .classic: return 4.0
+        case .balanced: return 2.0
+        case .reactive: return 1.0
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .classic: return "Classic (4 seconds)"
+        case .balanced: return "Balanced (2 seconds)"
+        case .reactive: return "Reactive (1 second)"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .classic: return "The original lower-frequency preview behavior."
+        case .balanced: return "A faster preview with moderate decode overhead."
+        case .reactive: return "The fastest preview; may use more CPU and GPU."
+        }
+    }
+}
+
 enum RecordingMode: String, CaseIterable, Identifiable {
     case pushToTalk = "Push to Talk"
     case toggle = "Toggle"
