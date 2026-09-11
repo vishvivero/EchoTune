@@ -110,6 +110,9 @@ class WhisperEngine: ObservableObject {
     /// Committed text from each completed 4s live tick (source of truth for final result)
     var liveSegmentTranscripts: [String] = []
 
+    /// VAD failures must never drop speech or flood the log on every tick.
+    var didLogVADDecodeFailure = false
+
     /// Language detected on the first decode of the current dictation session.
     /// Live ticks reuse it instead of running a fresh detection pass on every
     /// 4s tick (Phase 2). Reset at the start of every session — see
@@ -463,9 +466,27 @@ class WhisperEngine: ObservableObject {
                     model: loadedModelName ?? "unknown"
                 )
 
-                // Transcribe directly from audio array (no file I/O!)
-                let transcriptionResult = try await self.transcribeWithCurrentSettings(audioArray: audioArray, whisperKit: whisperKit)
-                debugLog("📝 WhisperKit detected language: \(transcriptionResult.detectedLanguage ?? "unknown") translated: \(transcriptionResult.wasTranslated)")
+                // Trim non-speech before the final decode. Separate speech
+                // regions are decoded independently so a long pause does not
+                // make Whisper run two sentences together. Silence-only input
+                // is reported as no audio instead of reaching Whisper.
+                guard let decodeSegments = await self.audioSegmentsForDecode(audioArray, context: "batch dictation") else {
+                    throw WhisperError.noAudioData
+                }
+
+                var segmentResults: [WhisperTranscriptionResult] = []
+                segmentResults.reserveCapacity(decodeSegments.count)
+                for (index, decodeSegment) in decodeSegments.enumerated() {
+                    let segmentResult = try await self.transcribeWithCurrentSettings(
+                        audioArray: decodeSegment,
+                        whisperKit: whisperKit,
+                        detectLanguage: index == 0 ? nil : false,
+                        mode: .final
+                    )
+                    segmentResults.append(segmentResult)
+                }
+                let transcriptionResult = self.mergeTranscriptionResults(segmentResults)
+                debugLog("📝 WhisperKit detected language: \(transcriptionResult.detectedLanguage ?? "unknown") translated: \(transcriptionResult.wasTranslated) from \(segmentResults.count) speech segment(s)")
 
                 await MainActor.run {
                     PerformanceMonitor.shared.endTranscription(
@@ -502,6 +523,7 @@ class WhisperEngine: ObservableObject {
         lastLiveTranscribedBufferCount = 0
         isLiveTranscribing = false
         liveSegmentTranscripts = []
+        didLogVADDecodeFailure = false
 
         debugLog("🗑️ Whisper model unloaded")
     }

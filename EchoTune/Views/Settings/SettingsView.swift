@@ -10,6 +10,7 @@ import Combine
 
 enum SettingsTab: String, CaseIterable, Identifiable {
     case general = "General"
+    case speech = "Speech"
     case hotkeys = "Hotkeys"
     case permissions = "Permissions"
     
@@ -23,6 +24,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     var iconName: String {
         switch self {
         case .general: return "slider.horizontal.3"
+        case .speech: return "waveform"
         case .hotkeys: return "keyboard"
         case .permissions: return "lock.shield"
         case .aiModels: return "cpu"
@@ -72,7 +74,7 @@ struct SettingsView: View {
     private static let groups: [(header: String, tabs: [SettingsTab])] = [
         (
             header: "General",
-            tabs: [.general, .hotkeys, .permissions]
+            tabs: [.general, .speech, .hotkeys, .permissions]
         ),
         (
             header: "Intelligence",
@@ -145,6 +147,8 @@ struct SettingsView: View {
         switch tab {
         case .general:
             GeneralSettingsView()
+        case .speech:
+            SpeechSettingsView()
         case .hotkeys:
             HotkeySettingsView()
         case .permissions:

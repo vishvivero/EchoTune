@@ -15,9 +15,27 @@ class VADManager {
 
     // MARK: - Configuration
 
-    enum DetectionMethod {
-        case energyBased    // Fast, no ML model needed
-        case sileroVAD      // ML-based (Phase 6C - Silero VAD v5)
+    enum DetectionMethod: String, CaseIterable, Identifiable, Hashable {
+        case energyBased
+        case sileroVAD
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .energyBased: return "Energy-based"
+            case .sileroVAD: return "Silero ML"
+            }
+        }
+
+        var description: String {
+            switch self {
+            case .energyBased:
+                return "Fast fallback using microphone energy; no model download."
+            case .sileroVAD:
+                return "More accurate speech detection; downloads a small model on first use."
+            }
+        }
     }
 
     enum Sensitivity {
@@ -35,7 +53,7 @@ class VADManager {
     }
 
     struct VADConfig {
-        var method: DetectionMethod = .energyBased
+        var method: DetectionMethod = .sileroVAD
         var sensitivity: Sensitivity = .medium
         var minimumSpeechDuration: TimeInterval = 0.3
         var minimumSilenceDuration: TimeInterval = 1.5
@@ -47,6 +65,21 @@ class VADManager {
         didSet {
             debugLog("🎙️ VAD Config updated: \(config)")
         }
+    }
+
+    private let defaults: UserDefaults
+    private let fluidVADEngine: FluidVADEngine
+    private var didLogSileroFallback = false
+
+    /// The configured detector when it is ready, otherwise the safe energy
+    /// detector. This decision is made at use time so a first-run download or
+    /// a missing model never breaks recording.
+    var effectiveMethod: DetectionMethod {
+        Self.effectiveMethod(configured: config.method, sileroReady: fluidVADEngine.isReady)
+    }
+
+    static func effectiveMethod(configured: DetectionMethod, sileroReady: Bool) -> DetectionMethod {
+        configured == .sileroVAD && sileroReady ? .sileroVAD : .energyBased
     }
 
     // MARK: - State
@@ -105,22 +138,60 @@ class VADManager {
 
     // MARK: - Initialization
 
-    init() {
+    init(defaults: UserDefaults = .standard, fluidVADEngine: FluidVADEngine = .shared) {
+        self.defaults = defaults
+        self.fluidVADEngine = fluidVADEngine
+        let configuredMethod: DetectionMethod
+        if let rawMethod = defaults.string(forKey: "vadMethod"),
+           let storedMethod = DetectionMethod(rawValue: rawMethod) {
+            configuredMethod = storedMethod
+        } else {
+            // Fresh installs prefer Silero. effectiveMethod safely falls back
+            // until FluidAudio finishes its background model preparation.
+            configuredMethod = .sileroVAD
+        }
+
         // Load configuration from UserDefaults
         self.config = VADConfig(
-            method: .energyBased,
-            sensitivity: Sensitivity(rawValue: UserDefaults.standard.integer(forKey: "vadSensitivity")) ?? .medium,
-            minimumSpeechDuration: UserDefaults.standard.double(forKey: "vadMinimumSpeechDuration") != 0 ?
-                UserDefaults.standard.double(forKey: "vadMinimumSpeechDuration") : 0.3,
-            minimumSilenceDuration: UserDefaults.standard.double(forKey: "vadAutoStopDelay") != 0 ?
-                UserDefaults.standard.double(forKey: "vadAutoStopDelay") : 1.5,
-            enabled: UserDefaults.standard.bool(forKey: "vadEnabled")
+            method: configuredMethod,
+            sensitivity: Sensitivity(rawValue: defaults.integer(forKey: "vadSensitivity")) ?? .medium,
+            minimumSpeechDuration: defaults.double(forKey: "vadMinimumSpeechDuration") != 0 ?
+                defaults.double(forKey: "vadMinimumSpeechDuration") : 0.3,
+            minimumSilenceDuration: defaults.double(forKey: "vadAutoStopDelay") != 0 ?
+                defaults.double(forKey: "vadAutoStopDelay") : 1.5,
+            enabled: defaults.object(forKey: "vadEnabled") as? Bool ?? true
         )
 
         debugLog("🎙️ VAD Manager initialized")
-        debugLog("   Method: \(config.method)")
+        debugLog("   Configured method: \(config.method.title)")
+        debugLog("   Effective method: \(effectiveMethod.title)")
         debugLog("   Sensitivity: \(config.sensitivity)")
         debugLog("   Enabled: \(config.enabled)")
+
+        if config.method == .sileroVAD {
+            prepareSileroInBackground()
+        }
+    }
+
+    private func prepareSileroInBackground() {
+        let engine = fluidVADEngine
+        Task.detached(priority: .utility) {
+            do {
+                try await engine.prepare { fraction in
+                    if fraction == 0 || fraction >= 1 {
+                        debugLog(fraction >= 1 ? "✅ Speech detector download complete" : "⬇️ Preparing speech detector…")
+                    }
+                }
+            } catch {
+                debugLog("ℹ️ Silero unavailable at launch; energy VAD remains active")
+            }
+        }
+    }
+
+    private func logSileroFallbackIfNeeded() {
+        guard config.method == .sileroVAD, !fluidVADEngine.isReady, !didLogSileroFallback else { return }
+        didLogSileroFallback = true
+        debugLog("⚠️ Silero VAD not ready — falling back to energy detection")
     }
 
     // MARK: - Real-Time Speech Detection
@@ -131,11 +202,16 @@ class VADManager {
             return SpeechProbability(probability: 1.0, timestamp: Date(), rmsLevel: 0, isSpeech: true)
         }
 
-        switch config.method {
+        switch effectiveMethod {
         case .energyBased:
+            logSileroFallbackIfNeeded()
             return detectSpeechEnergyBased(in: buffer)
         case .sileroVAD:
-            return detectSpeechSileroVAD(in: buffer)
+            // The capture tap is synchronous and must never await model work.
+            // Async Silero segmentation is used by WhisperEngine before decode;
+            // this legacy per-buffer monitor remains energy-based for UI and
+            // auto-stop responsiveness.
+            return detectSpeechEnergyBased(in: buffer)
         }
     }
 
@@ -194,7 +270,8 @@ class VADManager {
         return rms
     }
 
-    /// Silero VAD-based speech detection (ML-based, more accurate)
+    /// Legacy hand-rolled Silero path retained for no-data-loss compatibility.
+    /// FluidVADEngine is the shipping Phase 4 implementation.
     private func detectSpeechSileroVAD(in buffer: AVAudioPCMBuffer) -> SpeechProbability {
         // Check if Silero VAD is ready
         guard SileroVADEngine.shared.isReady() else {
@@ -389,11 +466,6 @@ class VADManager {
         lastSpeechTimestamp = nil
         silenceStartTimestamp = nil
 
-        // Reset Silero VAD state if using ML-based detection
-        if config.method == .sileroVAD {
-            SileroVADEngine.shared.resetState()
-        }
-
         debugLog("🎙️ VAD state reset")
     }
 
@@ -413,14 +485,68 @@ class VADManager {
 
     func updateSensitivity(_ sensitivity: Sensitivity) {
         config.sensitivity = sensitivity
-        UserDefaults.standard.set(sensitivity.rawValue, forKey: "vadSensitivity")
+        defaults.set(sensitivity.rawValue, forKey: "vadSensitivity")
         debugLog("🎙️ VAD sensitivity updated: \(sensitivity)")
     }
 
     func setEnabled(_ enabled: Bool) {
         config.enabled = enabled
-        UserDefaults.standard.set(enabled, forKey: "vadEnabled")
+        defaults.set(enabled, forKey: "vadEnabled")
         debugLog("🎙️ VAD \(enabled ? "enabled" : "disabled")")
+    }
+
+    func updateMethod(_ method: DetectionMethod) {
+        config.method = method
+        defaults.set(method.rawValue, forKey: "vadMethod")
+        didLogSileroFallback = false
+        if method == .sileroVAD {
+            prepareSileroInBackground()
+        }
+        debugLog("🎙️ VAD method selected: \(method.title)")
+    }
+
+    /// Runs the configured detector over a 16 kHz mono window for decode-time
+    /// silence trimming. Energy remains the fallback when Silero is unavailable.
+    func speechSpans(in samples: [Float], sampleRate: Double = 16_000) async throws -> [SpeechSpan] {
+        guard !samples.isEmpty else { return [] }
+        guard config.enabled else { return [SpeechSpan(start: 0, end: samples.count)] }
+
+        if effectiveMethod == .sileroVAD, sampleRate == Double(FluidVADEngine.sampleRate) {
+            do {
+                return try await fluidVADEngine.segments(in: samples)
+            } catch {
+                debugLog("⚠️ Silero VAD failed during decode window: \(error.localizedDescription)")
+                throw error
+            }
+        }
+
+        logSileroFallbackIfNeeded()
+        return energySpeechSpans(in: samples, sampleRate: sampleRate)
+    }
+
+    private func energySpeechSpans(in samples: [Float], sampleRate: Double) -> [SpeechSpan] {
+        let frameSize = max(1, Int(sampleRate * 0.032))
+        let threshold = config.sensitivity.threshold
+        var spans: [SpeechSpan] = []
+        var activeStart: Int?
+
+        for start in stride(from: 0, to: samples.count, by: frameSize) {
+            let end = min(samples.count, start + frameSize)
+            let sum = samples[start..<end].reduce(Float.zero) { $0 + ($1 * $1) }
+            let rms = sqrt(sum / Float(max(1, end - start)))
+            if rms > threshold {
+                activeStart = activeStart ?? start
+            } else if let speechStart = activeStart {
+                spans.append(SpeechSpan(start: speechStart, end: start))
+                activeStart = nil
+            }
+        }
+        if let speechStart = activeStart {
+            spans.append(SpeechSpan(start: speechStart, end: samples.count))
+        }
+
+        let minimumSamples = Int(config.minimumSpeechDuration * sampleRate)
+        return spans.filter { $0.end - $0.start >= minimumSamples }
     }
 }
 

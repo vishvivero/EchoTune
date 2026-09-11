@@ -135,6 +135,73 @@ extension WhisperEngine {
         return samples
     }
 
+    // MARK: - VAD Decode Window
+
+    /// Returns individually trimmed speech regions. A VAD/model failure falls
+    /// back to one untrimmed region so speech is never lost; clean silence
+    /// returns nil and callers skip the decoder entirely.
+    func audioSegmentsForDecode(_ samples: [Float], context: String) async -> [[Float]]? {
+        guard !samples.isEmpty else { return nil }
+        guard VADManager.shared.config.enabled else { return [samples] }
+
+        do {
+            let spans = try await VADManager.shared.speechSpans(in: samples, sampleRate: Self.whisperSampleRate)
+            guard !spans.isEmpty else {
+                debugLog("🎙️ VAD: no speech in \(context) — skipping decode")
+                return nil
+            }
+
+            let segments = spans.compactMap { span in
+                SilenceTrimmer.trim(
+                    samples: samples,
+                    spans: [span],
+                    sampleRate: Self.whisperSampleRate,
+                    padding: 0.05,
+                    mergeGap: 0,
+                    minimumLength: 0.5
+                )
+            }
+            guard !segments.isEmpty else {
+                debugLog("🎙️ VAD: speech window too short in \(context) — skipping decode")
+                return nil
+            }
+
+            let originalDuration = Double(samples.count) / Self.whisperSampleRate
+            let keptSamples = segments.reduce(0) { $0 + $1.count }
+            let keptDuration = Double(keptSamples) / Self.whisperSampleRate
+            if keptSamples < samples.count {
+                debugLog("🎙️ VAD: trimmed \(context) from \(String(format: "%.2f", originalDuration))s to \(String(format: "%.2f", keptDuration))s in \(segments.count) segment(s)")
+            }
+            return segments
+        } catch {
+            if !didLogVADDecodeFailure {
+                didLogVADDecodeFailure = true
+                debugLog("⚠️ VAD decode preparation failed; decoding untrimmed audio: \(error.localizedDescription)")
+            }
+            return [samples]
+        }
+    }
+
+    /// Live ticks use one decode window. Separate speech regions are flattened
+    /// only for the preview path; final/batch transcription decodes each region
+    /// independently via `audioSegmentsForDecode`.
+    func audioForDecode(_ samples: [Float], context: String) async -> [Float]? {
+        guard let segments = await audioSegmentsForDecode(samples, context: context) else { return nil }
+        return segments.flatMap { $0 }
+    }
+
+    func mergeTranscriptionResults(_ results: [WhisperTranscriptionResult]) -> WhisperTranscriptionResult {
+        let output = results.map(\.outputText).filter { !$0.isEmpty }.joined(separator: " ")
+        let original = results.map(\.originalText).filter { !$0.isEmpty }.joined(separator: " ")
+        let translatedValues = results.compactMap(\.translatedText).filter { !$0.isEmpty }
+        return WhisperTranscriptionResult(
+            outputText: output,
+            originalText: original,
+            translatedText: translatedValues.isEmpty ? nil : translatedValues.joined(separator: " "),
+            detectedLanguage: results.compactMap(\.detectedLanguage).first
+        )
+    }
+
     // MARK: - Transcription With App Settings
 
     /// Whether a decode is for a live preview tick or a final/finished

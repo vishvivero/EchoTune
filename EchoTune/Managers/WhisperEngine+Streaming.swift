@@ -117,8 +117,16 @@ extension WhisperEngine {
                     return
                 }
 
+                guard let decodeAudio = await self.audioForDecode(audioArray, context: "live tick") else {
+                    await MainActor.run {
+                        self.isLiveTranscribing = false
+                        self.lastLiveTranscribedBufferCount = bufferCount
+                    }
+                    return
+                }
+
                 let result = try await self.transcribeWithCurrentSettings(
-                    audioArray: audioArray,
+                    audioArray: decodeAudio,
                     whisperKit: whisperKit,
                     detectLanguage: self.liveTickDetectLanguage,
                     mode: .live
@@ -241,6 +249,18 @@ extension WhisperEngine {
                 let audioArray = try self.convertBuffersToFloatArray(tailBuffers)
                 os_log("✅ Converted tail to %d samples", log: wLog, type: .info, audioArray.count)
 
+                guard let decodeAudio = await self.audioForDecode(audioArray, context: "final tail") else {
+                    await MainActor.run {
+                        self.isProcessing = false
+                        if committedSegments.isEmpty {
+                            completion(.failure(.noAudioData))
+                        } else {
+                            self.deliverFinalResult(segments: committedSegments, tailText: nil, completion: completion)
+                        }
+                    }
+                    return
+                }
+
                 // Start performance monitoring for transcription
                 await MainActor.run {
                     PerformanceMonitor.shared.startTranscription(
@@ -252,7 +272,7 @@ extension WhisperEngine {
                 // Transcribe the tail (or short final) segment directly
                 os_log("🎙️ Calling whisperKit.transcribe(audioArray:) for final tail...", log: wLog, type: .info)
                 let tailResult = try await self.transcribeWithCurrentSettings(
-                    audioArray: audioArray,
+                    audioArray: decodeAudio,
                     whisperKit: whisperKit,
                     detectLanguage: self.finalTailDetectLanguage,
                     mode: .final

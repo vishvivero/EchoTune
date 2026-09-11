@@ -10,8 +10,12 @@ import Foundation
 import CoreML
 import AVFoundation
 
-/// Silero VAD v5 Engine for advanced voice activity detection
-/// Uses ONNX model from https://github.com/snakers4/silero-vad
+/// Legacy hand-rolled Silero VAD v5 engine retained for compatibility.
+///
+/// Phase 4 ships `FluidVADEngine` instead: FluidAudio's VadManager owns the
+/// supported CoreML model download, recurrent state, and segmentation API.
+/// This older bundle/ONNX-shaped implementation is intentionally not selected
+/// by VADManager and remains here to avoid destructive deletion of prior code.
 class SileroVADEngine {
     static let shared = SileroVADEngine()
 

@@ -67,6 +67,66 @@ struct GeneralSettingsView: View {
     }
 }
 
+// MARK: - Speech Settings
+struct SpeechSettingsView: View {
+    @State private var selectedMethod = VADManager.shared.config.method
+    @State private var sileroReady = FluidVADEngine.shared.isReady
+    @State private var isPreparing = false
+
+    var body: some View {
+        Form {
+            Section("Speech Detection") {
+                Picker("Detection Method", selection: $selectedMethod) {
+                    ForEach(VADManager.DetectionMethod.allCases) { method in
+                        Text(method.title).tag(method)
+                    }
+                }
+                .onChange(of: selectedMethod) { method in
+                    VADManager.shared.updateMethod(method)
+                }
+
+                Text(selectedMethod.description)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                HStack {
+                    Label(
+                        sileroReady ? "Silero model ready" : "Silero model not ready",
+                        systemImage: sileroReady ? "checkmark.circle.fill" : "arrow.down.circle"
+                    )
+                    .foregroundColor(sileroReady ? .green : .secondary)
+
+                    Spacer()
+
+                    if !sileroReady {
+                        Button(isPreparing ? "Preparing…" : "Prepare now") {
+                            isPreparing = true
+                            Task {
+                                try? await FluidVADEngine.shared.prepare()
+                                await MainActor.run {
+                                    sileroReady = FluidVADEngine.shared.isReady
+                                    isPreparing = false
+                                }
+                            }
+                        }
+                        .disabled(isPreparing)
+                    }
+                }
+            }
+
+            Section("Fallback") {
+                Text("If Silero cannot download or load, EchoTune automatically uses the energy detector. You can select Energy-based at any time.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .task {
+            sileroReady = FluidVADEngine.shared.isReady
+        }
+    }
+}
+
 // MARK: - Hotkey Settings
 struct HotkeySettingsView: View {
     @EnvironmentObject var coordinator: AppCoordinator
