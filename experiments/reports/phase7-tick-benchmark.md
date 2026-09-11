@@ -64,9 +64,13 @@ this fixture stayed below the 0.6 confidence frontier, so a verified
 high-confidence corpus or physical microphone session is still needed to
 measure first confirmed-word latency and prove streamed (non-fallback) commit.
 The observed stop-to-final times (3.300–3.871s) are substantially better than
-an arbitrary polling wait but do not meet the PRD's aspirational 0.7s target;
-three final passes or a full-audio fallback are model-bound operations on the
-cached Large v3 Turbo model.
+an arbitrary polling wait but do not meet the PRD's aspirational 0.7s target.
+A direct cached-model stop benchmark measured one 9.4s final Whisper decode at
+3.319s and three final passes at 9.914s; the model-bound lower bound is already
+above 0.7s before result assembly. A silent one-second tail was 0.005s, which
+confirms that the budget is attainable only when a completed live result can be
+reused and no speech remains to decode. Three final passes or a full-audio
+fallback cannot meet 0.7s on Large v3 Turbo.
 
 A temporary fixture-driven app probe was run against the cached model. The
 first Samantha fixture produced no text and was not counted. A verified Daniel
