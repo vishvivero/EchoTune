@@ -35,16 +35,41 @@ CoreML loading, and long-audio chunk processing.
 | Unit tests (`-only-testing:EchoTuneTests`) | PASS |
 | Unit test count | 68 passed |
 | Backend/catalog mapping tests | 3 passed |
-| Parakeet model load/transcription benchmark | Not run — no Parakeet model was downloaded during this validation pass |
+| Parakeet model load/transcription benchmark | PASS |
 
 The unit test run completed with `** TEST SUCCEEDED **` in
 `/tmp/echotune-phase5-tests/Logs/Test/`.
 
-## Benchmark limitation
+## Runtime benchmark
 
-A real RTFx/WER benchmark requires downloading the selected Parakeet CoreML
-repository and running the supplied speech fixture on the target Mac. No
-network/model acquisition was performed as part of this code-only validation,
-so no fabricated latency or parity number is reported. The next acceptance
-step is to prepare `parakeet-tdt-0.6b-v3`, transcribe the shared fixture with
-both Parakeet and Whisper, and record wall time, RTFx, and transcript parity.
+Target: MacBook Air, arm64, macOS 26.6.2. Model: Parakeet TDT v3, FluidAudio
+0.15.5, cached model size approximately 469 MB. Fixture:
+`experiments/fixtures/synthetic-speech-12s.aiff` (12.122 seconds, 22.05 kHz
+AIFF; synthetic speech).
+
+| Measurement | Result |
+|---|---:|
+| First-use end-to-end preparation + three decodes | 74.684s |
+| Subsequent cached engine preparation | 0.376s |
+| Decode run 1 | 0.242s |
+| Decode run 2 | 0.111s |
+| Decode run 3 | 0.113s |
+| Warm median decode | 0.113s |
+| Warm RTFx | 107.28x |
+
+The first-use figure includes FluidAudio model acquisition/loading and the
+three benchmark decodes; it is intentionally reported as an end-to-end
+number rather than falsely presented as isolated load time.
+
+Reference transcript WER against `synthetic-speech-12s.txt` was approximately
+13.6% (3 word edits over 22 reference words). The output preserved the full
+utterance but normalized `EchoTune` to `Echo to` and `five` to `5`, so this
+small synthetic fixture is useful for latency smoke testing, not a quality
+acceptance corpus.
+
+## Remaining benchmark work
+
+This establishes the Phase 5 baseline. A broader acceptance pass should add
+multiple natural-speech fixtures and a Whisper comparison using the same
+post-processing settings. Phase 6 should rerun the warm decode and parity
+subset after vocabulary handling lands.
