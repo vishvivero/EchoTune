@@ -42,6 +42,12 @@ struct AIAutomationSettingsView: View {
                             }
                             .pickerStyle(.menu)
 
+                            Toggle("Remove model wrappers", isOn: $settings.stripEnhancementWrappers)
+                                .toggleStyle(.switch)
+                            Text("Removes markdown fences, reasoning blocks, and output labels before insertion.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+
                             // Fair-use / BYO-key hint
                             if let model = AIEnhancementEngine.EnhancementModel(rawValue: settings.selectedEnhancementModel) {
                                 switch model.provider {

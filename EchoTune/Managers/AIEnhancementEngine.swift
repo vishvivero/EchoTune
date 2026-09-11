@@ -20,7 +20,6 @@ class AIEnhancementEngine: ObservableObject {
     enum EnhancementModel: String, CaseIterable, Identifiable {
         case hosted = "echotune-hosted"
         case groqLlama = "llama-3.3-70b-versatile"
-        case groqMixtral = "mixtral-8x7b-32768"
         case gemini25Flash = "gemini-2.5-flash"
         case gemini25FlashLite = "gemini-2.5-flash-lite"
 
@@ -30,7 +29,6 @@ class AIEnhancementEngine: ObservableObject {
             switch self {
             case .hosted: return "EchoTune Hosted · Free (Recommended)"
             case .groqLlama: return "Fast · Free (your key) — Groq Llama 70B"
-            case .groqMixtral: return "Fastest · Free (your key) — Groq Mixtral"
             case .gemini25Flash: return "Balanced · Free (your key) — Gemini 2.5"
             case .gemini25FlashLite: return "Light · Free (your key) — Gemini 2.5 Lite"
             }
@@ -40,7 +38,6 @@ class AIEnhancementEngine: ObservableObject {
             switch self {
             case .hosted: return "EchoTune Hosted"
             case .groqLlama: return "Groq Llama 70B"
-            case .groqMixtral: return "Groq Mixtral"
             case .gemini25Flash: return "Gemini 2.5"
             case .gemini25FlashLite: return "Gemini 2.5 Lite"
             }
@@ -50,7 +47,7 @@ class AIEnhancementEngine: ObservableObject {
             switch self {
             case .hosted:
                 return .hosted
-            case .groqLlama, .groqMixtral:
+            case .groqLlama:
                 return .groq
             case .gemini25Flash, .gemini25FlashLite:
                 return .google
@@ -238,18 +235,25 @@ class AIEnhancementEngine: ObservableObject {
         let traceStart = Date()
 
         do {
-            let enhanced: String
+            let rawEnhanced: String
 
             switch model.provider {
             case .hosted:
-                enhanced = try await enhanceWithHosted(transcript, model: model, customPrompt: customPrompt, dictionaryContext: dictionaryContext, screenContext: screenContext)
+                rawEnhanced = try await enhanceWithHosted(transcript, model: model, customPrompt: customPrompt, dictionaryContext: dictionaryContext, screenContext: screenContext)
             case .groq:
-                enhanced = try await enhanceWithGroq(transcript, model: model, apiKey: apiKey, customPrompt: customPrompt, dictionaryContext: dictionaryContext, screenContext: screenContext)
+                rawEnhanced = try await enhanceWithGroq(transcript, model: model, apiKey: apiKey, customPrompt: customPrompt, dictionaryContext: dictionaryContext, screenContext: screenContext)
             case .google:
-                enhanced = try await enhanceWithGemini(transcript, model: model, apiKey: apiKey, customPrompt: customPrompt, dictionaryContext: dictionaryContext, screenContext: screenContext)
+                rawEnhanced = try await enhanceWithGemini(transcript, model: model, apiKey: apiKey, customPrompt: customPrompt, dictionaryContext: dictionaryContext, screenContext: screenContext)
             case .openai:
-                enhanced = try await enhanceWithOpenAI(transcript, model: model, apiKey: apiKey, customPrompt: customPrompt, dictionaryContext: dictionaryContext, screenContext: screenContext)
+                rawEnhanced = try await enhanceWithOpenAI(transcript, model: model, apiKey: apiKey, customPrompt: customPrompt, dictionaryContext: dictionaryContext, screenContext: screenContext)
             }
+
+            // One choke point for every provider response. The local CLI path
+            // will enter this same path rather than adding a second sanitizer.
+            let enhanced = EnhancementOutputFilter.clean(
+                rawEnhanced,
+                stripMarkdownFences: AppSettings.shared.stripEnhancementWrappers
+            )
 
             debugLog("✅ Enhancement successful")
             debugLog("   Enhanced length: \(enhanced.count) characters")

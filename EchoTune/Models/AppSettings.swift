@@ -132,6 +132,11 @@ class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(customEnhancementPrompt, forKey: "customEnhancementPrompt") }
     }
 
+    /// Removes model transport wrappers before enhanced text is inserted.
+    @Published var stripEnhancementWrappers: Bool {
+        didSet { UserDefaults.standard.set(stripEnhancementWrappers, forKey: "stripEnhancementWrappers") }
+    }
+
     /// Stable per-install id used to key the hosted fair-use quota. Persisted once.
     let enhancementUserID: String
 
@@ -314,6 +319,7 @@ class AppSettings: ObservableObject {
 
         self.selectedEnhancementModel = Self.migratedEnhancementModelSelection(UserDefaults.standard.string(forKey: "selectedEnhancementModel"))
         self.customEnhancementPrompt = UserDefaults.standard.string(forKey: "customEnhancementPrompt") ?? ""
+        self.stripEnhancementWrappers = UserDefaults.standard.object(forKey: "stripEnhancementWrappers") as? Bool ?? true
 
         // Phase 6A: Initialize API Keys (from Keychain)
         self.groqAPIKey = KeychainHelper.load(forKey: "groqAPIKey")
