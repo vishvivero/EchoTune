@@ -42,6 +42,7 @@ class PerformanceMonitor {
         var audioDataSize: Int = 0
         var bufferCount: Int = 0
         var wordCount: Int = 0
+        var liveTickLatencies: [TimeInterval] = []
 
         var engineUsed: String = ""
         var modelUsed: String = ""
@@ -132,6 +133,11 @@ class PerformanceMonitor {
 
     // MARK: - Transcription Phase
 
+    func recordLiveTickLatency(_ latency: TimeInterval) {
+        guard isEnabled, latency.isFinite, latency >= 0 else { return }
+        currentMetrics.liveTickLatencies.append(latency)
+    }
+
     func startTranscription(engine: String, model: String) {
         guard isEnabled else { return }
 
@@ -216,6 +222,10 @@ class PerformanceMonitor {
         if sessionMetrics.count > 50 {
             sessionMetrics.removeFirst(sessionMetrics.count - 50)
         }
+
+        // Keep the existing in-memory metrics and append the same session to
+        // the local dashboard store. The store performs no network work.
+        PerfStore.shared.record(PerfStore.SessionRecord(from: currentMetrics))
 
         // Log comprehensive metrics
         logDetailedMetrics()

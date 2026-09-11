@@ -16,6 +16,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     
     case aiModels = "AI & Models"
     case automation = "Automation"
+    case performance = "Performance"
     case privacy = "Privacy"
     case license = "About & License"
     
@@ -29,6 +30,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .permissions: return "lock.shield"
         case .aiModels: return "cpu"
         case .automation: return "bolt.fill"
+        case .performance: return "gauge.with.dots.needle.67percent"
         case .privacy: return "eye.slash.fill"
         case .license: return "info.circle"
         }
@@ -82,7 +84,7 @@ struct SettingsView: View {
         ),
         (
             header: "App",
-            tabs: [.privacy, .license]
+            tabs: [.performance, .privacy, .license]
         )
     ]
 
@@ -157,6 +159,8 @@ struct SettingsView: View {
             AIModelsSettingsView()
         case .automation:
             AIAutomationSettingsView()
+        case .performance:
+            PerformanceDashboardView()
         case .privacy:
             PrivacySettingsView()
         case .license:

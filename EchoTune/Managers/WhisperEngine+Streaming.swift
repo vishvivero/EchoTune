@@ -219,6 +219,7 @@ extension WhisperEngine {
                     detectLanguage: self.liveTickDetectLanguage,
                     mode: .live
                 )
+                PerformanceMonitor.shared.recordLiveTickLatency(-tickStarted.timeIntervalSinceNow)
                 let text = result.outputText.trimmingCharacters(in: .whitespacesAndNewlines)
                 let agreementWords = result.agreementWords
                 os_log("P7_TICK tier=%{public}@ window=%.2fs decodeWindow=%.2fs elapsed=%.3fs",
