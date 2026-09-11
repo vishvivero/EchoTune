@@ -287,6 +287,9 @@ extension AppCoordinator {
 
                 // Route to appropriate cloud service
                 if currentModel.backend == .groq {
+                    // Groq realtime STT is not a documented stable contract as
+                    // of 2026-09-11; keep the existing REST batch path. See
+                    // experiments/2026-09-11-groq-streaming-decision.md.
                     // Use Groq
                     let apiKey = settings.groqAPIKey
                     guard !apiKey.isEmpty else {
