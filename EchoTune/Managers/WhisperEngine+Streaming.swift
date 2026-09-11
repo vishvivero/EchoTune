@@ -426,13 +426,14 @@ extension WhisperEngine {
                     )
                 }
 
-                // Transcribe the tail (or short final) segment directly
-                os_log("🎙️ Calling whisperKit.transcribe(audioArray:) for final tail...", log: wLog, type: .info)
-                let tailResult = try await self.transcribeWithCurrentSettings(
-                    audioArray: decodeAudio,
+                // Three final passes settle the remaining tail. Exact text
+                // agreement wins; absent agreement, preserve the first pass
+                // because this pinned API does not expose a result-level mean
+                // log probability through WhisperTranscriptionResult.
+                let tailResult = try await self.settleTail(
+                    audio: decodeAudio,
                     whisperKit: whisperKit,
-                    detectLanguage: self.finalTailDetectLanguage,
-                    mode: .final
+                    sessionID: sessionID
                 )
                 let tailText = tailResult.outputText.trimmingCharacters(in: .whitespacesAndNewlines)
                 os_log("📝 Tail transcription: '%@'", log: wLog, type: .info, tailText)
@@ -469,6 +470,36 @@ extension WhisperEngine {
                 completion(.failure(.transcriptionFailed(error)))
             }
         }
+    }
+
+    private func settleTail(
+        audio: [Float],
+        whisperKit: WhisperKit,
+        sessionID: UUID
+    ) async throws -> WhisperTranscriptionResult {
+        var passes: [WhisperTranscriptionResult] = []
+        let started = Date()
+        for _ in 0..<3 {
+            guard !Task.isCancelled, streamingSessionID == sessionID else {
+                throw CancellationError()
+            }
+            passes.append(try await transcribeWithCurrentSettings(
+                audioArray: audio,
+                whisperKit: whisperKit,
+                detectLanguage: finalTailDetectLanguage,
+                mode: .final
+            ))
+        }
+
+        let grouped = Dictionary(grouping: passes.indices) { index in
+            passes[index].outputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if let agreement = grouped.values.max(by: { $0.count < $1.count }), agreement.count >= 2 {
+            os_log("✅ Tail settle chose exact agreement across %d/3 passes in %.3fs", log: wLog, type: .info, agreement.count, -started.timeIntervalSinceNow)
+            return passes[agreement[0]]
+        }
+        os_log("ℹ️ Tail settle found no exact pair; chose first pass in %.3fs", log: wLog, type: .info, -started.timeIntervalSinceNow)
+        return passes[0]
     }
 
     private func transcribeFullAudio(

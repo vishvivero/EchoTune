@@ -46,7 +46,10 @@ window boundary, and keeps `.classic` on the legacy delta path. Agreement
 state receives cumulative newly arrived words and their Whisper probabilities.
 Stop finalization invokes the full-audio batch fallback when the agreement
 engine finishes with fewer than three confirmed words; fallback timing and
-choice are logged.
+choice are logged. The remaining tail now runs up to three final passes;
+exact text agreement across two passes wins, otherwise the first pass is
+retained because the app-level result type does not expose a comparable mean
+log probability.
 
 The remaining P7 acceptance work is runtime validation: record preview lag and
 per-tier scheduler behavior over a real session, then compare the fixed-window
