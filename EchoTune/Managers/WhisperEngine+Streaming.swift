@@ -188,6 +188,7 @@ extension WhisperEngine {
 
         let tickTask = Task { [weak self] in
             guard let self else { return }
+            let tickStarted = Date()
             do {
                 let audioArray = try self.convertBuffersToFloatArray(buffersSnapshot)
 
@@ -220,6 +221,13 @@ extension WhisperEngine {
                 )
                 let text = result.outputText.trimmingCharacters(in: .whitespacesAndNewlines)
                 let agreementWords = result.agreementWords
+                os_log("P7_TICK tier=%{public}@ window=%.2fs decodeWindow=%.2fs elapsed=%.3fs",
+                       log: wLog,
+                       type: .info,
+                       tier.rawValue,
+                       Double(audioArray.count) / 16_000.0,
+                       Double(decodeAudio.count) / 16_000.0,
+                       -tickStarted.timeIntervalSinceNow)
 
                 // Filter Whisper hallucinations (common silence outputs)
                 let hallucinations: Set<String> = [

@@ -51,7 +51,9 @@ exact text agreement across two passes wins, otherwise the first pass is
 retained because the app-level result type does not expose a comparable mean
 log probability.
 
-The remaining P7 acceptance work is runtime validation: record preview lag and
+Each live decode now emits a `P7_TICK` record with tier, source-window
+seconds, post-VAD decode-window seconds, and end-to-end tick elapsed time. The
+remaining P7 acceptance work is runtime validation: record preview lag and
 per-tier scheduler behavior over a real session, then compare the fixed-window
 path against the classic rollback path. This direct model benchmark does not
 measure scheduler cadence or first-visible-word lag.
