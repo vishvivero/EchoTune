@@ -51,6 +51,8 @@ extension WhisperEngine {
         isLiveTranscribing = false
         liveSegmentTranscripts = []
         liveAgreementWords = []
+        liveWindowTranscript = ""
+        liveWindowAgreementWords = []
         agreementEngine.reset()
 
         debugLog("🎤 Starting streaming transcription...")
@@ -102,17 +104,81 @@ extension WhisperEngine {
         streamingSessionID = UUID()
     }
 
+    /// Selects a bounded suffix without copying PCM data. Audio tap buffers
+    /// are small enough that retaining the first buffer beyond the boundary is
+    /// preferable to partial PCM copying and keeps channel formats intact.
+    private static func trailingBuffers(
+        _ buffers: [AVAudioPCMBuffer],
+        maximumSeconds: TimeInterval
+    ) -> [AVAudioPCMBuffer] {
+        guard let first = buffers.first, first.format.sampleRate > 0 else { return buffers }
+        let maximumFrames = AVAudioFrameCount(maximumSeconds * first.format.sampleRate)
+        var selected: [AVAudioPCMBuffer] = []
+        var frameCount: AVAudioFrameCount = 0
+        for buffer in buffers.reversed() {
+            guard frameCount < maximumFrames else { break }
+            selected.append(buffer)
+            frameCount += buffer.frameLength
+        }
+        return selected.reversed()
+    }
+
+    /// Removes the longest word overlap between consecutive rolling windows.
+    /// If decoding rewrites the overlap completely, retaining the new text is
+    /// safer than dropping speech; the agreement layer can keep it pending.
+    private static func deltaText(previous: String, current: String) -> String {
+        let previousWords = previous.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+        let currentWords = current.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+        guard !currentWords.isEmpty, !previousWords.isEmpty else { return current }
+        let limit = min(previousWords.count, currentWords.count)
+        for overlap in stride(from: limit, through: 1, by: -1) {
+            let previousSuffix = previousWords.suffix(overlap).map(normalizedWord)
+            let currentPrefix = currentWords.prefix(overlap).map(normalizedWord)
+            if previousSuffix == currentPrefix {
+                return currentWords.dropFirst(overlap).joined(separator: " ")
+            }
+        }
+        return current
+    }
+
+    private static func deltaWords(
+        previous: [AgreementWord],
+        current: [AgreementWord]
+    ) -> [AgreementWord] {
+        guard !current.isEmpty, !previous.isEmpty else { return current }
+        let limit = min(previous.count, current.count)
+        for overlap in stride(from: limit, through: 1, by: -1) {
+            let previousSuffix = previous.suffix(overlap).map { normalizedWord($0.text) }
+            let currentPrefix = current.prefix(overlap).map { normalizedWord($0.text) }
+            if previousSuffix == currentPrefix {
+                return Array(current.dropFirst(overlap))
+            }
+        }
+        return current
+    }
+
+    private static func normalizedWord(_ word: String) -> String {
+        word.trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .trimmingCharacters(in: .punctuationCharacters)
+    }
+
     private func processLiveTranscriptionChunk() {
         guard !isLiveTranscribing else { return }
         guard let whisperKit = whisperKitRef else { return }
 
-        // Snapshot ONLY the buffers recorded since the last committed tick.
-        // (Previously this re-transcribed the entire recording every 4s —
-        // O(n²) work that grew with recording length.)
+        // Classic retains the exact delta behavior. Faster tiers use a
+        // bounded rolling window; the snapshot copies buffer references only,
+        // so work does not grow with the recording length.
+        let tier = AppSettings.shared.previewTier
         let (buffersSnapshot, bufferCount): ([AVAudioPCMBuffer], Int) = audioProcessingQueueRef.sync {
             let count = self.audioBuffers.count
             guard count > self.lastLiveTranscribedBufferCount else { return ([], count) }
-            return (Array(self.audioBuffers[self.lastLiveTranscribedBufferCount...]), count)
+            let allBuffers = Array(self.audioBuffers)
+            if tier == .classic {
+                return (Array(allBuffers[self.lastLiveTranscribedBufferCount...]), count)
+            }
+            return (Self.trailingBuffers(allBuffers, maximumSeconds: 5.0), count)
         }
 
         guard !buffersSnapshot.isEmpty, bufferCount > lastLiveTranscribedBufferCount else { return }
@@ -173,19 +239,32 @@ extension WhisperEngine {
 
                     guard !text.isEmpty, !hallucinations.contains(text.lowercased()) else { return }
 
-                    self.liveSegmentTranscripts.append(text)
+                    let newText = tier == .classic
+                        ? text
+                        : Self.deltaText(previous: self.liveWindowTranscript, current: text)
+                    let newAgreementWords = agreementWords.map {
+                        tier == .classic
+                            ? $0
+                            : Self.deltaWords(previous: self.liveWindowAgreementWords, current: $0)
+                    }
+                    self.liveWindowTranscript = text
+                    if let agreementWords, !agreementWords.isEmpty {
+                        self.liveWindowAgreementWords = agreementWords
+                    }
+                    guard !newText.isEmpty else { return }
+                    self.liveSegmentTranscripts.append(newText)
                     self.liveTranscriptAccumulated = self.liveSegmentTranscripts.joined(separator: " ")
 
                     let notificationText: String
                     let notificationPending: String
                     if let agreementWords, !agreementWords.isEmpty {
-                        self.liveAgreementWords.append(contentsOf: agreementWords)
+                        self.liveAgreementWords.append(contentsOf: newAgreementWords ?? [])
                         let update = self.agreementEngine.ingest(self.liveAgreementWords)
                         notificationText = update.confirmed.joined(separator: " ")
                         notificationPending = update.hypothesis.joined(separator: " ")
                     } else {
                         notificationText = self.liveSegmentTranscripts.dropLast().joined(separator: " ")
-                        notificationPending = text
+                        notificationPending = newText
                     }
 
                     NotificationCenter.default.post(
@@ -263,14 +342,37 @@ extension WhisperEngine {
         // Synchronize with audioProcessingQueue to safely snapshot buffers.
         // Buffers already covered by committed live-tick segments are dropped;
         // only the tail recorded since the last committed tick is decoded.
-        let tailBuffers: [AVAudioPCMBuffer] = audioProcessingQueueRef.sync {
+        let (fullBuffers, tailBuffers): ([AVAudioPCMBuffer], [AVAudioPCMBuffer]) = audioProcessingQueueRef.sync {
+            let full = Array(self.audioBuffers)
             let committed = self.lastLiveTranscribedBufferCount
-            let snapshot = committed < self.audioBuffers.count ? Array(self.audioBuffers[committed...]) : []
+            let tail = committed < full.count ? Array(full[committed...]) : []
             self.audioBuffers = []
-            return snapshot
+            return (full, tail)
         }
 
         let committedSegments = liveSegmentTranscripts
+
+        // A short agreement session is unreliable even when no tail remains.
+        // Re-run the complete captured audio through the batch path before
+        // committing, unless the session was empty.
+        if !fullBuffers.isEmpty {
+            _ = agreementEngine.finish()
+            if agreementEngine.shouldUseBatchFallback {
+                let fallbackStarted = Date()
+                os_log("↩️ Agreement requested full-audio batch fallback", log: wLog, type: .info)
+                if let batchText = try? await transcribeFullAudio(
+                    buffers: fullBuffers,
+                    whisperKit: whisperKit,
+                    sessionID: sessionID
+                ) {
+                    os_log("✅ Agreement batch fallback finished in %.3fs", log: wLog, type: .info, -fallbackStarted.timeIntervalSinceNow)
+                    guard !Task.isCancelled, streamingSessionID == sessionID else { return }
+                    deliverFinalResult(segments: [], tailText: batchText, completion: completion)
+                    return
+                }
+                os_log("⚠️ Agreement batch fallback failed; retaining normal tail result", log: wLog, type: .error)
+            }
+        }
 
         // Nothing new since the last committed tick → deliver cached segments only.
         guard !tailBuffers.isEmpty else {
@@ -337,8 +439,18 @@ extension WhisperEngine {
                 }
 
                 guard !Task.isCancelled, streamingSessionID == sessionID else { return }
-                deliverFinalResult(segments: committedSegments, tailText: tailText.isEmpty ? nil : tailText,
-                                   completion: completion)
+                if agreementEngine.shouldUseBatchFallback,
+                   let batchText = try? await transcribeFullAudio(
+                       buffers: fullBuffers,
+                       whisperKit: whisperKit,
+                       sessionID: sessionID
+                   ) {
+                    os_log("✅ Agreement batch fallback replaced tail result", log: wLog, type: .info)
+                    deliverFinalResult(segments: [], tailText: batchText, completion: completion)
+                } else {
+                    deliverFinalResult(segments: committedSegments, tailText: tailText.isEmpty ? nil : tailText,
+                                       completion: completion)
+                }
         } catch is CancellationError {
             os_log("↩️ Final streaming settle cancelled", log: wLog, type: .info)
         } catch {
@@ -352,5 +464,26 @@ extension WhisperEngine {
                 completion(.failure(.transcriptionFailed(error)))
             }
         }
+    }
+
+    private func transcribeFullAudio(
+        buffers: [AVAudioPCMBuffer],
+        whisperKit: WhisperKit,
+        sessionID: UUID
+    ) async throws -> String {
+        guard !buffers.isEmpty, !Task.isCancelled, streamingSessionID == sessionID else {
+            throw WhisperError.noAudioData
+        }
+        let samples = try convertBuffersToFloatArray(buffers)
+        guard let decodeAudio = await audioForDecode(samples, context: "agreement batch fallback") else {
+            throw WhisperError.noAudioData
+        }
+        let result = try await transcribeWithCurrentSettings(
+            audioArray: decodeAudio,
+            whisperKit: whisperKit,
+            detectLanguage: finalTailDetectLanguage,
+            mode: .final
+        )
+        return result.outputText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

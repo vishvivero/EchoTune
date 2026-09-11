@@ -124,6 +124,10 @@ class WhisperEngine: ObservableObject {
     /// candidate stream cumulative lets AgreementEngine compare the same
     /// positional frontier across successive delta decodes.
     var liveAgreementWords: [AgreementWord] = []
+    /// Last rolling-window text used to extract only newly arrived words for
+    /// the final segment cache.
+    var liveWindowTranscript = ""
+    var liveWindowAgreementWords: [AgreementWord] = []
     var agreementEngine = AgreementEngine()
 
     /// VAD failures must never drop speech or flood the log on every tick.
@@ -551,6 +555,8 @@ class WhisperEngine: ObservableObject {
         isLiveTranscribing = false
         liveSegmentTranscripts = []
         liveAgreementWords = []
+        liveWindowTranscript = ""
+        liveWindowAgreementWords = []
         agreementEngine.reset()
         didLogVADDecodeFailure = false
 

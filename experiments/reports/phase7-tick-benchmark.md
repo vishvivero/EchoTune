@@ -40,7 +40,15 @@ runtime capture or harness that schedules the same fixed window at each tier.
   preview-lag measurements are recorded; the current direct decode benchmark
   does not measure scheduler cadence.
 
-This benchmark does not claim the full P7.2 acceptance gate: the current
-working tree has agreement-ready word timing and configurable cadence, while
-the fixed sliding-window/frontier audio mapping and runtime tier-lag table
-remain the next integration/measurement work.
+The implementation now uses a bounded five-second rolling suffix for the
+balanced and reactive tiers, extracts only newly arrived text at the rolling
+window boundary, and keeps `.classic` on the legacy delta path. Agreement
+state receives cumulative newly arrived words and their Whisper probabilities.
+Stop finalization invokes the full-audio batch fallback when the agreement
+engine finishes with fewer than three confirmed words; fallback timing and
+choice are logged.
+
+The remaining P7 acceptance work is runtime validation: record preview lag and
+per-tier scheduler behavior over a real session, then compare the fixed-window
+path against the classic rollback path. This direct model benchmark does not
+measure scheduler cadence or first-visible-word lag.
