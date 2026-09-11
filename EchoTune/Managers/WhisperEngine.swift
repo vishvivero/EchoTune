@@ -102,7 +102,13 @@ class WhisperEngine: ObservableObject {
 
     // Streaming state (stored properties must remain in main class file)
     var audioBuffers: [AVAudioPCMBuffer] = []
+    /// The currently running live tick. Stop cancellation awaits this task
+    /// before snapshotting the tail so a tick cannot race final decoding.
+    var currentTickTask: Task<Void, Never>?
+    /// The stop/finalization task. A new recording cancels it and advances the
+    /// session token so an old completion cannot touch the new session.
     var streamingTask: Task<Void, Never>?
+    var streamingSessionID = UUID()
 
     // Live transcription state
     var liveTranscriptionTimer: Timer?
@@ -522,6 +528,9 @@ class WhisperEngine: ObservableObject {
     // MARK: - Cleanup
 
     func unloadModel() {
+        currentTickTask?.cancel()
+        streamingTask?.cancel()
+        streamingSessionID = UUID()
         whisperKit = nil
         currentModelID = nil
         loadedModelName = nil

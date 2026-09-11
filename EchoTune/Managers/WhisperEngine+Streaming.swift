@@ -27,6 +27,11 @@ extension WhisperEngine {
     private static let liveTranscriptionInterval: TimeInterval = 4.0
 
     func startStreamingTranscription(completion: @escaping (Result<WhisperTranscriptionResult, WhisperError>) -> Void) {
+        // Abandon any prior stop/finalization work before opening a new
+        // session. The token check below is the second line of defense for
+        // decoders that do not observe cancellation immediately.
+        cancelStreamingWorkForNewSession()
+
         // A new live session resets the language pin so detection starts
         // fresh — regardless of what a previous session pinned.
         resetSessionLanguage()
@@ -86,6 +91,15 @@ extension WhisperEngine {
         }
     }
 
+    /// Cancels work owned by the previous recording before a new session is
+    /// opened. The session token prevents late decoder completions from
+    /// mutating the new recording.
+    func cancelStreamingWorkForNewSession() {
+        currentTickTask?.cancel()
+        streamingTask?.cancel()
+        streamingSessionID = UUID()
+    }
+
     private func processLiveTranscriptionChunk() {
         guard !isLiveTranscribing else { return }
         guard let whisperKit = whisperKitRef else { return }
@@ -102,8 +116,10 @@ extension WhisperEngine {
         guard !buffersSnapshot.isEmpty, bufferCount > lastLiveTranscribedBufferCount else { return }
 
         isLiveTranscribing = true
+        let sessionID = streamingSessionID
 
-        Task {
+        let tickTask = Task { [weak self] in
+            guard let self else { return }
             do {
                 let audioArray = try self.convertBuffersToFloatArray(buffersSnapshot)
 
@@ -111,6 +127,7 @@ extension WhisperEngine {
                 let rms = sqrt(audioArray.map { $0 * $0 }.reduce(0, +) / Float(max(audioArray.count, 1)))
                 guard rms > 0.001 else {
                     await MainActor.run {
+                        guard self.streamingSessionID == sessionID else { return }
                         self.isLiveTranscribing = false
                         self.lastLiveTranscribedBufferCount = bufferCount
                     }
@@ -119,12 +136,14 @@ extension WhisperEngine {
 
                 guard let decodeAudio = await self.audioForDecode(audioArray, context: "live tick") else {
                     await MainActor.run {
+                        guard self.streamingSessionID == sessionID else { return }
                         self.isLiveTranscribing = false
                         self.lastLiveTranscribedBufferCount = bufferCount
                     }
                     return
                 }
 
+                guard self.streamingSessionID == sessionID, !Task.isCancelled else { return }
                 let result = try await self.transcribeWithCurrentSettings(
                     audioArray: decodeAudio,
                     whisperKit: whisperKit,
@@ -145,6 +164,7 @@ extension WhisperEngine {
                 ]
 
                 await MainActor.run {
+                    guard self.streamingSessionID == sessionID else { return }
                     self.lastLiveTranscribedBufferCount = bufferCount
                     self.isLiveTranscribing = false
 
@@ -164,13 +184,22 @@ extension WhisperEngine {
                         userInfo: ["text": committed, "pending": text]
                     )
                 }
+            } catch is CancellationError {
+                // Stop deliberately cancels an in-flight tick. Its buffers
+                // remain in the tail snapshot for the final decode.
+                await MainActor.run {
+                    guard self.streamingSessionID == sessionID else { return }
+                    self.isLiveTranscribing = false
+                }
             } catch {
                 await MainActor.run {
+                    guard self.streamingSessionID == sessionID else { return }
                     self.isLiveTranscribing = false
                     debugLog("⚠️ Live transcription chunk failed: \(error.localizedDescription)")
                 }
             }
         }
+        currentTickTask = tickTask
     }
 
     func endStreamingTranscription(completion: @escaping (Result<WhisperTranscriptionResult, WhisperError>) -> Void) {
@@ -184,31 +213,40 @@ extension WhisperEngine {
             return
         }
 
-        // If a live tick is mid-decode, let it finish before snapshotting the
-        // tail — otherwise the tail decode fights the tick for the GPU (both
-        // ~double) and the tick's buffers get double-counted in the tail.
-        let proceedToEnd: () -> Void = { [weak self] in
-            self?.finalizeStreaming(whisperKit: whisperKit, completion: completion)
-        }
+        let sessionID = streamingSessionID
+        let tickTask = currentTickTask
+        tickTask?.cancel()
 
-        if isLiveTranscribing {
-            os_log("⏳ Live tick in flight — waiting for it to finish before tail decode", log: wLog, type: .info)
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                let deadline = Date().addingTimeInterval(3.0)
-                while let self, self.isLiveTranscribing, Date() < deadline {
-                    Thread.sleep(forTimeInterval: 0.05)
-                }
-                DispatchQueue.main.async(execute: proceedToEnd)
+        // Await the actual tick task instead of polling a Boolean with a fixed
+        // deadline. Cancellation makes the normal path immediate; the await
+        // also provides the ordering needed before snapshotting the tail.
+        streamingTask?.cancel()
+        streamingTask = Task { [weak self, tickTask] in
+            if let tickTask {
+                os_log("⏳ Cancelling in-flight live tick before final tail", log: wLog, type: .info)
+                await tickTask.value
             }
-        } else {
-            proceedToEnd()
+            guard !Task.isCancelled, let self else { return }
+            guard self.streamingSessionID == sessionID else {
+                os_log("↩️ Abandoning stale streaming finalization", log: wLog, type: .info)
+                return
+            }
+            let settleStarted = Date()
+            await self.finalizeStreaming(
+                whisperKit: whisperKit,
+                sessionID: sessionID,
+                completion: completion
+            )
+            os_log("✅ Streaming settle finished in %.3fs", log: wLog, type: .info, -settleStarted.timeIntervalSinceNow)
         }
     }
 
     /// Runs after any in-flight live tick has settled: snapshots the tail and
     /// decodes it, then joins committed segments + tail into the final result.
     private func finalizeStreaming(whisperKit: WhisperKit,
-                                   completion: @escaping (Result<WhisperTranscriptionResult, WhisperError>) -> Void) {
+                                   sessionID: UUID,
+                                   completion: @escaping (Result<WhisperTranscriptionResult, WhisperError>) -> Void) async {
+        guard streamingSessionID == sessionID, !Task.isCancelled else { return }
         os_log("🛑 endStreamingTranscription: buffers=%d committedSegments=%d whisperKit=%{public}@", log: wLog, type: .info,
                audioBuffers.count, liveSegmentTranscripts.count, whisperKitRef == nil ? "nil" : "loaded")
 
@@ -235,9 +273,8 @@ extension WhisperEngine {
             return
         }
 
-        Task {
-            do {
-                os_log("🔄 Task started: decoding tail of %d buffers", log: wLog, type: .info, tailBuffers.count)
+        do {
+            os_log("🔄 Task started: decoding tail of %d buffers", log: wLog, type: .info, tailBuffers.count)
 
                 // Calculate total frames from tail buffers only
                 let totalFrameCount = tailBuffers.reduce(0) { $0 + Int($1.frameLength) }
@@ -249,8 +286,11 @@ extension WhisperEngine {
                 let audioArray = try self.convertBuffersToFloatArray(tailBuffers)
                 os_log("✅ Converted tail to %d samples", log: wLog, type: .info, audioArray.count)
 
-                guard let decodeAudio = await self.audioForDecode(audioArray, context: "final tail") else {
+                guard !Task.isCancelled, streamingSessionID == sessionID,
+                      let decodeAudio = await self.audioForDecode(audioArray, context: "final tail") else {
+                    guard !Task.isCancelled, streamingSessionID == sessionID else { return }
                     await MainActor.run {
+                        guard self.streamingSessionID == sessionID else { return }
                         self.isProcessing = false
                         if committedSegments.isEmpty {
                             completion(.failure(.noAudioData))
@@ -286,16 +326,20 @@ extension WhisperEngine {
                     )
                 }
 
+                guard !Task.isCancelled, streamingSessionID == sessionID else { return }
                 deliverFinalResult(segments: committedSegments, tailText: tailText.isEmpty ? nil : tailText,
                                    completion: completion)
-            } catch {
-                os_log("❌ Transcription Task FAILED: %{public}@", log: wLog, type: .error, "\(error)")
-                await MainActor.run {
-                    self.isProcessing = false
+        } catch is CancellationError {
+            os_log("↩️ Final streaming settle cancelled", log: wLog, type: .info)
+        } catch {
+            os_log("❌ Transcription Task FAILED: %{public}@", log: wLog, type: .error, "\(error)")
+            guard streamingSessionID == sessionID else { return }
+            await MainActor.run {
+                guard self.streamingSessionID == sessionID else { return }
+                self.isProcessing = false
 
-                    debugLog("❌ Streaming transcription failed: \(error)")
-                    completion(.failure(.transcriptionFailed(error)))
-                }
+                debugLog("❌ Streaming transcription failed: \(error)")
+                completion(.failure(.transcriptionFailed(error)))
             }
         }
     }
