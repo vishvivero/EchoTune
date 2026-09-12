@@ -43,9 +43,10 @@ Branch: `phase/10-enhancement-telemetry`
   refresh is implemented and the bundled Groq ID is retained pending a key.
 - Ollama was detected at `/usr/local/bin/ollama`; this machine has
   `gemma4:e2b` installed but not the default `llama3.2:1b`, so no claim is
-  made for the PRD's exact pulled-model latency gate. The local CLI was
-  exercised with the installed model and returned local output; its reasoning
-  text is handled by the shared output filter when wrapped in recognized tags.
+  made for the PRD's exact pulled-model latency gate. The actual
+  `LocalCLIEnhancementProvider` runtime test was exercised with the installed
+  model and returned output in **4.347s**; its reasoning text is handled by the
+  shared output filter when wrapped in recognized tags.
 
 ### Local performance dashboard
 
@@ -83,10 +84,13 @@ Branch: `phase/10-enhancement-telemetry`
 - Telemetry-path scan for `URLSession`, `Network`, and `Sentry`: clean in
   `PerfStore.swift`, `PerformanceDashboardView.swift`, and
   `PerformanceMonitor.swift`.
-- Full-suite compile completed, but the Xcode macOS test runner again failed
-  before establishing a connection. Focused Phase 10 suites passed before the
-  final generic-tag filter refinement; the subsequent build passed, while its
-  rerun hit the same runner bootstrap instability recorded during Phase 8/9.
+- Final full EchoTuneTests run: **123 passed, 0 failed, 2 skipped** (the
+  opt-in Phase 9 model benchmark and the non-default Ollama runtime test).
+  `xcresulttool` reported `totalTestCount=125`, result `Passed`.
+- Final Debug build: passed.
+- The run emitted known macOS `com.apple.linkd.autoShortcut` diagnostic
+  warnings, but the test runner established successfully and all selected
+  tests completed.
 
 ## Release decision
 

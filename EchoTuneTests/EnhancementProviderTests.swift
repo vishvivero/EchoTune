@@ -29,4 +29,20 @@ final class EnhancementProviderTests: XCTestCase {
         XCTAssertEqual(provider.id, "ollama-local")
         XCTAssertEqual(EnhancementOutputFilter.clean("```text\nclean\n```"), "clean")
     }
+
+    func testOllamaRoundTripWhenOptedIn() async throws {
+        let requested = ProcessInfo.processInfo.environment["ECHOTUNE_OLLAMA_RUNTIME"] == "1"
+            || UserDefaults.standard.bool(forKey: "phase10OllamaRuntime")
+        try XCTSkipUnless(requested, "Opt-in local Ollama runtime test")
+        let provider = LocalCLIEnhancementProvider(modelName: "gemma4:e2b")
+        await provider.refreshAvailability()
+        XCTAssertTrue(provider.isAvailable)
+        let started = Date()
+        let output = try await provider.polish(
+            "the meeting is on monday at ten",
+            prompt: "Correct capitalization and punctuation; return only the polished text."
+        )
+        XCTAssertFalse(output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        print("P10_RUNTIME ollamaModel=gemma4:e2b elapsedSeconds=\(String(format: "%.3f", Date().timeIntervalSince(started)))")
+    }
 }
