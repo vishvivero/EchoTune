@@ -81,18 +81,22 @@ extension WhisperEngine {
 
     private func startLiveTranscriptionTimer() {
         stopLiveTranscriptionTimer()
-        DispatchQueue.main.async { [weak self] in
-            self?.liveTranscriptionTimer = Timer.scheduledTimer(withTimeInterval: AppSettings.shared.previewTier.interval, repeats: true) { [weak self] _ in
-                self?.processLiveTranscriptionChunk()
-            }
+        // DispatchSourceTimer on a private utility queue: a busy main run loop
+        // can no longer delay live ticks (perf/streaming-latency-657).
+        // The interval stays disposition-aware per Phase 7's preview tiers.
+        let source = DispatchSource.makeTimerSource(queue: liveTimerQueue)
+        let interval = AppSettings.shared.previewTier.interval
+        source.schedule(deadline: .now() + interval, repeating: interval)
+        source.setEventHandler { [weak self] in
+            self?.processLiveTranscriptionChunk()
         }
+        liveTimerSource = source
+        source.resume()
     }
 
     func stopLiveTranscriptionTimer() {
-        DispatchQueue.main.async { [weak self] in
-            self?.liveTranscriptionTimer?.invalidate()
-            self?.liveTranscriptionTimer = nil
-        }
+        liveTimerSource?.cancel()
+        liveTimerSource = nil
     }
 
     /// Cancels work owned by the previous recording before a new session is
@@ -193,7 +197,11 @@ extension WhisperEngine {
                 let audioArray = try self.convertBuffersToFloatArray(buffersSnapshot)
 
                 // Quick RMS check — skip if too quiet
-                let rms = sqrt(audioArray.map { $0 * $0 }.reduce(0, +) / Float(max(audioArray.count, 1)))
+                var sumSquares: Float = 0
+                for sample in audioArray {
+                    sumSquares += sample * sample
+                }
+                let rms = sqrt(sumSquares / Float(max(audioArray.count, 1)))
                 guard rms > 0.001 else {
                     await MainActor.run {
                         guard self.streamingSessionID == sessionID else { return }
