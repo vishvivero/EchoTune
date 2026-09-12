@@ -146,11 +146,6 @@ final class PerfStore {
         persist(next)
     }
 
-    func recordCurrentMetrics() {
-        guard PerformanceMonitor.shared.isEnabled else { return }
-        record(SessionRecord(from: PerformanceMonitor.shared.currentMetrics))
-    }
-
     func aggregate(since date: Date) -> Aggregate {
         let values = records.filter { $0.recordedAt >= date }
         let decode = values.map(\.decodeMs)
@@ -216,7 +211,14 @@ final class PerfStore {
         if let resultDirectory = ProcessInfo.processInfo.environment["ECHOTUNE_RESULTS_DIR"], !resultDirectory.isEmpty {
             return URL(fileURLWithPath: resultDirectory, isDirectory: true).appendingPathComponent("performance-sessions.json")
         }
-        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        guard let supportDirectory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            // Extremely pathological: keep telemetry in a writable scratch
+            // location rather than crash because telemetry must never be fatal.
+            return FileManager.default.temporaryDirectory
+                .appendingPathComponent("EchoTune", isDirectory: true)
+                .appendingPathComponent("performance-sessions.json")
+        }
+        return supportDirectory
             .appendingPathComponent("EchoTune", isDirectory: true)
             .appendingPathComponent("performance-sessions.json")
     }
