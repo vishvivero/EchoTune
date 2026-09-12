@@ -84,8 +84,9 @@ Branch: `phase/10-enhancement-telemetry`
   `PerfStore.swift`, `PerformanceDashboardView.swift`, and
   `PerformanceMonitor.swift`.
 - Full-suite compile completed, but the Xcode macOS test runner again failed
-  before establishing a connection. Focused Phase 10 suites passed; the same
-  runner bootstrap instability was recorded during Phase 8/9 validation.
+  before establishing a connection. Focused Phase 10 suites passed before the
+  final generic-tag filter refinement; the subsequent build passed, while its
+  rerun hit the same runner bootstrap instability recorded during Phase 8/9.
 
 ## Release decision
 

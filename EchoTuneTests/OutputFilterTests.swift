@@ -8,7 +8,7 @@ final class OutputFilterTests: XCTestCase {
     }
 
     func testReasoningBlocksAreRemovedButNormalTextRemains() {
-        let raw = "<think>private chain of thought</think>\nAnswer <note>keep this</note>"
+        let raw = "<deep-thinking>private chain of thought</deep-thinking>\nAnswer <note>keep this</note>"
         XCTAssertEqual(EnhancementOutputFilter.clean(raw), "Answer <note>keep this</note>")
     }
 

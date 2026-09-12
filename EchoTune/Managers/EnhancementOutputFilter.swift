@@ -23,10 +23,18 @@ enum EnhancementOutputFilter {
         // <thinking>...</thinking>, or <reasoning>...</reasoning>. Match only
         // paired tags whose name identifies reasoning; ordinary XML-like text
         // is left untouched.
-        let pattern = #"(?is)<\s*(reasoning|thinking|think|reason)\b[^>]*>.*?</\s*\1\s*>"#
+        let pattern = #"(?is)<\s*([A-Za-z][A-Za-z0-9:_-]*)\b[^>]*>.*?</\s*\1\s*>"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return value }
         let range = NSRange(value.startIndex..<value.endIndex, in: value)
-        return regex.stringByReplacingMatches(in: value, range: range, withTemplate: "")
+        let matches = regex.matches(in: value, range: range).reversed()
+        let output = NSMutableString(string: value)
+        for match in matches {
+            guard let tagRange = Range(match.range(at: 1), in: value) else { continue }
+            let tag = value[tagRange].lowercased()
+            guard tag.contains("reason") || tag.contains("think") else { continue }
+            output.deleteCharacters(in: match.range)
+        }
+        return output as String
     }
 
     private static func removeMarkdownFenceLines(from value: String) -> String {
