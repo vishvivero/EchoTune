@@ -318,28 +318,41 @@ class TextInsertionManager {
     private func insertViaPaste(_ text: String) -> Bool {
         let pasteboard = NSPasteboard.general
 
-        // Save all pasteboard items with their data for each type
+        // Save ALL pasteboard items with their data for each type so a
+        // multi-item copy (URL + title + image + text) is restored intact,
+        // not just the first item's string representation.
         struct PasteboardBackup {
+            let items: [PasteboardItemBackup]
+        }
+        struct PasteboardItemBackup {
             let types: [NSPasteboard.PasteboardType]
             let dataByType: [NSPasteboard.PasteboardType: Data]
         }
-        var backup: PasteboardBackup? = nil
-        if let items = pasteboard.pasteboardItems, let firstItem = items.first {
-            let types = firstItem.types
-            var dataByType: [NSPasteboard.PasteboardType: Data] = [:]
-            for type in types {
-                if let data = firstItem.data(forType: type) {
-                    dataByType[type] = data
+
+        var backups: [PasteboardItemBackup] = []
+        if let items = pasteboard.pasteboardItems {
+            for item in items {
+                var dataByType: [NSPasteboard.PasteboardType: Data] = [:]
+                for type in item.types {
+                    if let data = item.data(forType: type) {
+                        dataByType[type] = data
+                    }
+                }
+                if !dataByType.isEmpty {
+                    backups.append(PasteboardItemBackup(types: Array(dataByType.keys), dataByType: dataByType))
                 }
             }
-            if !dataByType.isEmpty {
-                backup = PasteboardBackup(types: types, dataByType: dataByType)
-            }
         }
+        let backup = backups.isEmpty ? nil : PasteboardBackup(items: backups)
 
         // Set our text to clipboard
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
+
+        // Record the changeCount we own. If the user copies something while we
+        // are mid-paste, changeCount moves on and we must NOT clobber their new
+        // clipboard content with the stale backup.
+        let ownedChangeCount = pasteboard.changeCount
 
         // Small delay to ensure clipboard is set
         Thread.sleep(forTimeInterval: 0.05)
@@ -347,17 +360,29 @@ class TextInsertionManager {
         // Simulate Cmd+V
         let success = simulateKeyPress(keyCode: 0x09, modifiers: .maskCommand) // V key
 
-        // Restore clipboard after a delay
+        // Restore clipboard after a delay, only if we still own the clipboard.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            guard pasteboard.changeCount == ownedChangeCount else {
+                debugLog("⚠️ Clipboard changed since insertion — leaving user's copy intact")
+                return
+            }
             pasteboard.clearContents()
-            if let backup = backup {
-                let item = NSPasteboardItem()
-                for type in backup.types {
-                    if let data = backup.dataByType[type] {
-                        item.setData(data, forType: type)
+            if let backup {
+                var items = [NSPasteboardItem]()
+                for itemBackup in backup.items {
+                    let item = NSPasteboardItem()
+                    var hasData = false
+                    for type in itemBackup.types {
+                        if let data = itemBackup.dataByType[type] {
+                            item.setData(data, forType: type)
+                            hasData = true
+                        }
                     }
+                    if hasData { items.append(item) }
                 }
-                pasteboard.writeObjects([item])
+                if !items.isEmpty {
+                    pasteboard.writeObjects(items)
+                }
             }
         }
 

@@ -129,6 +129,14 @@ extension AIEnhancementEngine {
             throw EnhancementError.invalidResponse
         }
 
+        // MAX_TOKENS means the answer was cut off mid-sentence. Reject it so
+        // the caller falls back to the original transcript instead of
+        // inserting a silently truncated result.
+        if let finishReason = firstCandidate["finishReason"] as? String,
+           finishReason.uppercased() == "MAX_TOKENS" {
+            throw EnhancementError.truncated
+        }
+
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
@@ -182,6 +190,13 @@ extension AIEnhancementEngine {
               let message = firstChoice["message"] as? [String: Any],
               let content = message["content"] as? String else {
             throw EnhancementError.invalidResponse
+        }
+
+        // finish_reason "length" means the model hit the token cap mid-answer.
+        // Reject so the caller falls back to the original transcript.
+        if let finishReason = firstChoice["finish_reason"] as? String,
+           finishReason == "length" {
+            throw EnhancementError.truncated
         }
 
         return content.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -239,6 +254,13 @@ extension AIEnhancementEngine {
               let message = firstChoice["message"] as? [String: Any],
               let content = message["content"] as? String else {
             throw EnhancementError.invalidResponse
+        }
+
+        // finish_reason "length" means the model hit the token cap mid-answer.
+        // Reject so the caller falls back to the original transcript.
+        if let finishReason = firstChoice["finish_reason"] as? String,
+           finishReason == "length" {
+            throw EnhancementError.truncated
         }
 
         return content.trimmingCharacters(in: .whitespacesAndNewlines)

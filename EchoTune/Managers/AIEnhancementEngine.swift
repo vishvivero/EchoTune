@@ -83,6 +83,7 @@ class AIEnhancementEngine: ObservableObject {
         case invalidResponse
         case networkError(Error)
         case apiError(String)
+        case truncated
 
         var errorDescription: String? {
             switch self {
@@ -94,6 +95,8 @@ class AIEnhancementEngine: ObservableObject {
                 return "Network error: \(error.localizedDescription)"
             case .apiError(let message):
                 return "AI API error: \(message)"
+            case .truncated:
+                return "AI output was cut off mid-answer (token limit). Using the original text."
             }
         }
     }
@@ -290,6 +293,13 @@ class AIEnhancementEngine: ObservableObject {
                 rawEnhanced,
                 stripMarkdownFences: AppSettings.shared.stripEnhancementWrappers
             )
+
+            // Reject empty output: after sanitizing wrappers/fences, a provider
+            // that returned nothing (or only reasoning tags) must not be
+            // inserted over the original transcript.
+            guard !enhanced.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw EnhancementError.invalidResponse
+            }
 
             debugLog("✅ Enhancement successful")
             debugLog("   Enhanced length: \(enhanced.count) characters")

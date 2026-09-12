@@ -55,6 +55,7 @@ class AudioManager: NSObject, ObservableObject {
     var recordedBuffers: [AVAudioPCMBuffer] = []  // Kept for backward compatibility, unused
     var recordedVADHistory: [VADManager.SpeechProbability] = [] // Efficient VAD analysis history
     var onSpeechDetected: ((VADManager.SpeechProbability) -> Void)?  // Callback for speech detection
+    var onMaxDurationReached: (() -> Void)?  // Fired once when maxRecordingDuration is hit
     
     // Background queue for writing audio to disk
     private let fileWriteQueue = DispatchQueue(label: "com.echotune.AudioManager.fileWriteQueue", qos: .userInitiated)
@@ -355,6 +356,15 @@ class AudioManager: NSObject, ObservableObject {
                 self.durationTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
                     guard let self = self, let start = self.recordingStartTime else { return }
                     self.recordingDuration = Date().timeIntervalSince(start)
+
+                    // Enforce the documented 30-minute cap: auto-stop once and
+                    // let the coordinator route to the correct stop path.
+                    let max = AudioManager.maxRecordingDuration
+                    if max > 0, self.recordingDuration >= max {
+                        self.durationTimer?.invalidate()
+                        self.durationTimer = nil
+                        self.onMaxDurationReached?()
+                    }
                 }
             }
         } catch {

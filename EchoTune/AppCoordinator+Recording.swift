@@ -545,6 +545,18 @@ extension AppCoordinator {
         audioManager.startRecording()
         debugLog("✓ Recording started successfully")
 
+        // Auto-stop at the documented 30-minute cap (routes through the same
+        // path the hotkey uses, so cloud/local stays consistent).
+        audioManager.onMaxDurationReached = { [weak self] in
+            guard let self = self else { return }
+            self.notificationManager.showNotification(
+                title: "Recording stopped",
+                body: "Reached the 30-minute maximum.",
+                sound: false
+            )
+            self.toggleDictation()
+        }
+
         // Start transcription based on selected model
         if useWhisper {
             // Whisper streaming transcription
