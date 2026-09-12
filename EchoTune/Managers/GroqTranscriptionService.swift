@@ -125,7 +125,7 @@ class GroqTranscriptionService: ObservableObject {
         }
 
         if audioData.count > GroqTranscriptionService.maxChunkSizeBytes {
-            debugLog("📦 Audio exceeds size limit, chunking for \(provider.displayName)...")
+            debugLog("📦 Audio exceeds size limit for \(provider.displayName) — failing cleanly")
             return try await transcribeWithChunking(audioData: audioData, language: language, apiKey: trimmedAPIKey, provider: provider)
         }
 
@@ -186,10 +186,14 @@ class GroqTranscriptionService: ObservableObject {
     /// Transcribe long audio by splitting into chunks and merging results
     private func transcribeWithChunking(audioData: Data, language: String?, apiKey: String, provider: Provider) async throws -> String {
         // CAF/WAV container data cannot be naively split at byte boundaries.
-        // For now, warn and attempt single-chunk transcription.
-        debugLog("⚠️ Audio data exceeds preferred size (\(audioData.count) bytes) — attempting single upload anyway")
-        debugLog("   Note: container-aware chunking not yet implemented")
-        return try await transcribeSingleChunk(audioData: audioData, language: language, apiKey: apiKey, provider: provider)
+        // The current 30-minute recording cap (AudioManager.maxRecordingDuration)
+        // means recordings should rarely reach this, but when they do we fail
+        // cleanly rather than attempt a doomed single upload.
+        debugLog("❌ Audio data exceeds provider size limit (\(audioData.count) bytes > \(Self.maxChunkSizeBytes)) — cannot upload")
+        throw GroqError.apiError(
+            "Recording too large for \(provider.displayName) (\(audioData.count) bytes). " +
+            "Try a shorter recording or use a different transcription engine."
+        )
     }
 
     // MARK: - Helper Methods
