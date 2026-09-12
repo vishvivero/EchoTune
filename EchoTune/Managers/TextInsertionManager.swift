@@ -251,7 +251,12 @@ class TextInsertionManager {
     private func applySystemTextReplacements(_ text: String) -> String {
         // Access macOS text replacements from NSUserDefaults
         // These are stored in the user's preferences
-        guard let replacements = UserDefaults.standard.dictionary(forKey: "NSUserDictionaryReplacementItems") as? [[String: Any]] else {
+        // macOS stores replacements as an ARRAY of dictionaries in the global
+        // domain; dictionary(forKey:) can never cast to [[String: Any]], so
+        // this read always failed and the feature silently never applied.
+        let replacements = (UserDefaults.standard.object(forKey: "NSUserDictionaryReplacementItems") as? [[String: Any]])
+            ?? (UserDefaults(suiteName: ".GlobalPreferences")?.object(forKey: "NSUserDictionaryReplacementItems") as? [[String: Any]])
+        guard let replacements else {
             // Try alternative key for text replacements
             return applySystemTextReplacementsAlternative(text)
         }

@@ -13,6 +13,7 @@ struct AIModelsSettingsView: View {
     @StateObject private var modelManager = ModelManager.shared
     @StateObject private var whisperEngine = WhisperEngine.shared
     @State private var selectedProvider: CloudAPIKeyProvider = .groq
+    @State private var downloadErrorMessage: String?
 
     var body: some View {
         ScrollView {
@@ -114,6 +115,14 @@ struct AIModelsSettingsView: View {
                 .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.06), lineWidth: 1))
             }
             .padding(.bottom, 20)
+        }
+        .alert("Download Failed", isPresented: Binding(
+            get: { downloadErrorMessage != nil },
+            set: { if !$0 { downloadErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { downloadErrorMessage = nil }
+        } message: {
+            Text(downloadErrorMessage ?? "")
         }
     }
 
@@ -239,7 +248,11 @@ struct AIModelsSettingsView: View {
                 }
             } else {
                 Button("Download") {
-                    modelManager.downloadModel(model) { _ in }
+                    modelManager.downloadModel(model) { result in
+                        if case .failure(let error) = result {
+                            downloadErrorMessage = "\(model.name) could not be downloaded: \(error.localizedDescription)"
+                        }
+                    }
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)

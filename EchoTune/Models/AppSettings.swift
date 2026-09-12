@@ -83,10 +83,8 @@ class AppSettings: ObservableObject {
     }
     
     // Advanced Settings
-    @Published var autoPunctuation: Bool {
-        didSet { UserDefaults.standard.set(autoPunctuation, forKey: "autoPunctuation") }
-    }
-
+    // (autoPunctuation was removed: the toggle was never wired to the
+    // transcription pipeline; punctuation is whatever the model emits.)
     @Published var smartCapitalization: Bool {
         didSet { UserDefaults.standard.set(smartCapitalization, forKey: "smartCapitalization") }
     }
@@ -290,7 +288,6 @@ class AppSettings: ObservableObject {
         self.translateToEnglish = UserDefaults.standard.object(forKey: "translateToEnglish") as? Bool ?? false
         self.vocabularyBiasingEnabled = UserDefaults.standard.object(forKey: "vocabularyBiasingEnabled") as? Bool ?? true
         self.keepAudioHistory = UserDefaults.standard.bool(forKey: "keepAudioHistory")
-        self.autoPunctuation = UserDefaults.standard.bool(forKey: "autoPunctuation")
         self.smartCapitalization = UserDefaults.standard.bool(forKey: "smartCapitalization")
         self.insertSpaceAfterText = UserDefaults.standard.bool(forKey: "insertSpaceAfterText")
         // Initialize autoCorrection toggle
@@ -470,7 +467,6 @@ class AppSettings: ObservableObject {
         self.translateToEnglish = false
         self.vocabularyBiasingEnabled = true
         self.keepAudioHistory = false
-        self.autoPunctuation = true
         self.smartCapitalization = true
         self.insertSpaceAfterText = true
         self.autoCorrection = true
