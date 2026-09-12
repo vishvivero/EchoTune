@@ -33,8 +33,28 @@ final class LocalCLIEnhancementProvider: EnhancementProvider, @unchecked Sendabl
         return detectedPath != nil
     }
 
-    init(modelName: String = "llama3.2:1b") {
+    var modelName: String {
+        lock.lock()
+        defer { lock.unlock() }
+        return configuredModelName
+    }
+
+    private let explicitPath: String?
+    private let timeout: TimeInterval
+    private let stripsWrappers: @Sendable () -> Bool
+
+    init(
+        modelName: String = "llama3.2:1b",
+        executablePath: String? = nil,
+        timeout: TimeInterval = 30,
+        stripsWrappers: @escaping @Sendable () -> Bool = {
+            UserDefaults.standard.object(forKey: "stripEnhancementWrappers") as? Bool ?? true
+        }
+    ) {
         self.configuredModelName = modelName
+        self.explicitPath = executablePath
+        self.timeout = timeout
+        self.stripsWrappers = stripsWrappers
     }
 
     func updateModelName(_ modelName: String) {
@@ -44,6 +64,12 @@ final class LocalCLIEnhancementProvider: EnhancementProvider, @unchecked Sendabl
     }
 
     func refreshAvailability() async {
+        if let explicitPath {
+            lock.lock()
+            detectedPath = explicitPath
+            lock.unlock()
+            return
+        }
         let path = await Task.detached(priority: .utility) {
             Self.locateBinary()
         }.value
@@ -113,7 +139,7 @@ final class LocalCLIEnhancementProvider: EnhancementProvider, @unchecked Sendabl
                     return
                 }
 
-                let deadline = Date().addingTimeInterval(30)
+                let deadline = Date().addingTimeInterval(self.timeout)
                 while process.isRunning && Date() < deadline {
                     Thread.sleep(forTimeInterval: 0.1)
                 }
@@ -134,7 +160,19 @@ final class LocalCLIEnhancementProvider: EnhancementProvider, @unchecked Sendabl
                     continuation.resume(throwing: ProviderError.emptyOutput)
                     return
                 }
-                continuation.resume(returning: cleaned)
+                // The provider boundary applies the same sanitizer as the engine
+                // choke point so a local model cannot leak fences or reasoning
+                // tags. `clean` is idempotent, so the engine's later pass is a
+                // no-op and the shared toggle still governs the behavior.
+                let filtered = EnhancementOutputFilter.clean(
+                    cleaned,
+                    stripMarkdownFences: self.stripsWrappers()
+                ).trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !filtered.isEmpty else {
+                    continuation.resume(throwing: ProviderError.emptyOutput)
+                    return
+                }
+                continuation.resume(returning: filtered)
             }
         }
     }
