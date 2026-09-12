@@ -5,8 +5,9 @@ EchoTune uses Sparkle 2.9.6 for signed direct-download updates.
 ## App configuration
 
 - Feed: `https://echotune.app/appcast.xml`
-- Feed key: `SUPublicEDKey` is supplied from the `SPARKLE_PUBLIC_ED_KEY` build
-  setting and is intentionally not committed.
+- Feed key: `SUPublicEDKey` is configured from the committed public key in
+  `SPARKLE_PUBLIC_ED_KEY`. The public key is safe to commit; the private signing
+  key remains only in Keychain/CI secret storage.
 - Automatic checks: enabled by default, scheduled every 24 hours.
 - Users can also choose **EchoTune → Check for Updates…** or the About/License
   settings panel.
@@ -27,9 +28,11 @@ xcodebuild -project EchoTune.xcodeproj -scheme EchoTune \
   archive
 ```
 
-The current project default is intentionally empty, so a release build cannot
-silently pretend that signed updates are configured. The distribution pipeline
-must provide the real public key before publishing an update feed.
+The project contains the public key for the `echotune` signing account. The
+release machine must still have the matching private key in Keychain (or pass
+it to `generate_appcast` through CI secret storage) before publishing an update
+feed. Never replace the public key with a newly generated key unless all future
+updates will use that new key.
 
 ## Publishing an update
 
