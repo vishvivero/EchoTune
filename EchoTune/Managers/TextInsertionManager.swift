@@ -448,6 +448,11 @@ class TextInsertionManager {
         }
 
         // Try to set the value
+        guard let element = focusedElement,
+              CFGetTypeID(element) == AXUIElementGetTypeID() else {
+            debugLog("❌ Focused element is not an AXUIElement")
+            return false
+        }
         let axElement = element as! AXUIElement
         let setValue = AXUIElementSetAttributeValue(
             axElement,
@@ -572,7 +577,8 @@ class TextInsertionManager {
         let app = AXUIElementCreateApplication(frontApp.processIdentifier)
         var value: CFTypeRef?
         let result = AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &value)
-        guard result == .success, let window = value else { return nil }
+        guard result == .success, let window = value,
+              CFGetTypeID(window) == AXUIElementGetTypeID() else { return nil }
         var titleRef: CFTypeRef?
         let titleResult = AXUIElementCopyAttributeValue(window as! AXUIElement, kAXTitleAttribute as CFString, &titleRef)
         guard titleResult == .success, let title = titleRef as? String, !title.isEmpty else { return nil }
@@ -603,7 +609,8 @@ class TextInsertionManager {
             kAXFocusedUIElementAttribute as CFString,
             &focusedRef
         )
-        guard result == .success, let element = focusedRef else { return nil }
+        guard result == .success, let element = focusedRef,
+              CFGetTypeID(element) == AXUIElementGetTypeID() else { return nil }
         let axElement = element as! AXUIElement
 
         // Plain text fields expose their contents as AXValue.
