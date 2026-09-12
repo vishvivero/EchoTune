@@ -218,12 +218,24 @@ class VADManager {
     /// Energy-based speech detection (fast, no ML model needed)
     private func detectSpeechEnergyBased(in buffer: AVAudioPCMBuffer) -> SpeechProbability {
         guard let channelData = buffer.floatChannelData else {
-            return SpeechProbability(probability: 0.0, timestamp: Date(), rmsLevel: 0, isSpeech: false)
+            return SpeechProbability(
+                probability: 0.0,
+                timestamp: Date(),
+                rmsLevel: 0,
+                isSpeech: false,
+                frameLength: buffer.frameLength
+            )
         }
 
         let frameCount = Int(buffer.frameLength)
         guard frameCount > 0 else {
-            return SpeechProbability(probability: 0.0, timestamp: Date(), rmsLevel: 0, isSpeech: false)
+            return SpeechProbability(
+                probability: 0.0,
+                timestamp: Date(),
+                rmsLevel: 0,
+                isSpeech: false,
+                frameLength: 0
+            )
         }
 
         // Calculate RMS (Root Mean Square) energy
@@ -240,7 +252,8 @@ class VADManager {
             probability: probability,
             timestamp: Date(),
             rmsLevel: rms,
-            isSpeech: isSpeech
+            isSpeech: isSpeech,
+            frameLength: buffer.frameLength
         )
 
         // Track speech history for silence detection
@@ -295,7 +308,8 @@ class VADManager {
             probability: probability,
             timestamp: Date(),
             rmsLevel: rms,
-            isSpeech: isSpeech
+            isSpeech: isSpeech,
+            frameLength: buffer.frameLength
         )
 
         // Track speech history for silence detection
@@ -408,7 +422,12 @@ class VADManager {
         let totalDuration = Double(totalFrames) / sampleRate
         let speechDuration = Double(totalSpeechFrames) / sampleRate
         let silenceDuration = totalDuration - speechDuration
-        let speechPercentage = (Float(totalSpeechFrames) / Float(totalFrames)) * 100.0
+        // Guard against a zero-frame history (e.g. detector results that predate
+        // frameLength propagation). Without this, 0/0 yields NaN, every
+        // comparison is false, and the recording is wrongly rejected as silent.
+        let speechPercentage = totalFrames > 0
+            ? (Float(totalSpeechFrames) / Float(totalFrames)) * 100.0
+            : 0.0
         let avgProbability = allProbabilities.isEmpty ? 0 : allProbabilities.reduce(0, +) / Float(allProbabilities.count)
 
         // Determine if there's significant speech (>10% of audio is speech)
