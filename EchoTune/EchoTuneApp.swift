@@ -131,6 +131,11 @@ struct EchoTuneApp: App {
                 }
                 .keyboardShortcut(",")
             }
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") {
+                    UpdateManager.shared.checkForUpdates()
+                }
+            }
         }
     }
 

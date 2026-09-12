@@ -41,6 +41,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             }
         }
 
+        // Start Sparkle's scheduled updater only for the surviving instance.
+        // Without touching this singleton here, automatic checks would not
+        // begin until the user opened About/License settings or the update menu.
+        _ = UpdateManager.shared
+
         // Initialize status bar (always show for accessory apps)
         statusBarController = StatusBarController()
         debugLog("✓ Menu bar icon created")

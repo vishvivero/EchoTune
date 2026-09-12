@@ -296,6 +296,7 @@ struct PrivacySettingsView: View {
 // MARK: - About & License Settings
 struct AboutLicenseSettingsView: View {
     @EnvironmentObject var coordinator: AppCoordinator
+    @ObservedObject private var updateManager = UpdateManager.shared
     
     var body: some View {
         ScrollView(.vertical) {
@@ -309,7 +310,7 @@ struct AboutLicenseSettingsView: View {
                     Text("EchoTune")
                         .font(.title2)
                         .fontWeight(.bold)
-                    Text("Version 1.4.3")
+                    Text("Version \(updateManager.getCurrentVersion())")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
@@ -321,6 +322,29 @@ struct AboutLicenseSettingsView: View {
                 .font(.body)
                 .foregroundColor(.secondary)
             
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Updates")
+                    .font(.headline)
+                Toggle("Automatically check for updates", isOn: Binding(
+                    get: { updateManager.automaticUpdatesEnabled },
+                    set: { updateManager.setAutomaticUpdates(enabled: $0) }
+                ))
+                HStack {
+                    Button("Check for Updates…") {
+                        updateManager.checkForUpdates()
+                    }
+                    if let lastCheckDate = updateManager.lastCheckDate {
+                        Text("Last checked \(lastCheckDate.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .padding()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.primary.opacity(0.02))
+            .cornerRadius(8)
+
             VStack(alignment: .leading, spacing: 8) {
                 Text("Licensing")
                     .font(.headline)

@@ -34,6 +34,16 @@
 	<string>NSApplication</string>
 	<key>NSRequiresAquaSystemAppearance</key>
 	<false/>
+	<!-- Sparkle 2 update feed. SUPublicEDKey is supplied by the signed release
+	     pipeline via SPARKLE_PUBLIC_ED_KEY; never commit the private key. -->
+	<key>SUFeedURL</key>
+	<string>https://echotune.app/appcast.xml</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
+	<key>SUPublicEDKey</key>
+	<string>$(SPARKLE_PUBLIC_ED_KEY)</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>EchoTune uses speech recognition to convert your voice into text. All processing happens on your device.</string>
 	<key>NSScreenCaptureUsageDescription</key>

@@ -10,6 +10,7 @@
 		6A7ACFC92EAE9C0200D8C6EE /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 6A7ACFC82EAE9C0200D8C6EE /* WhisperKit */; };
 		A1B2C3D42EAF000100D8C6EE /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D32EAF000100D8C6EE /* Sentry */; };
 		B2C3D4E62EAF000200D8C6EE /* FluidAudio in Frameworks */ = {isa = PBXBuildFile; productRef = B2C3D4E52EAF000200D8C6EE /* FluidAudio */; };
+		D4E5F6A72EAF000400D8C6EE /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = D4E5F6A62EAF000400D8C6EE /* Sparkle */; };
 		C3D4E5F62EAF000300D8C6EE /* CompiledModels */ = {isa = PBXBuildFile; fileRef = C3D4E5F52EAF000300D8C6EE /* CompiledModels */; };
 /* End PBXBuildFile section */
 
@@ -83,6 +84,7 @@
 				6A7ACFC92EAE9C0200D8C6EE /* WhisperKit in Frameworks */,
 				A1B2C3D42EAF000100D8C6EE /* Sentry in Frameworks */,
 				B2C3D4E62EAF000200D8C6EE /* FluidAudio in Frameworks */,
+				D4E5F6A72EAF000400D8C6EE /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -155,6 +157,7 @@
 				6A7ACFC82EAE9C0200D8C6EE /* WhisperKit */,
 				A1B2C3D32EAF000100D8C6EE /* Sentry */,
 				B2C3D4E52EAF000200D8C6EE /* FluidAudio */,
+				D4E5F6A62EAF000400D8C6EE /* Sparkle */,
 			);
 			productName = EchoTune;
 			productReference = 6A7ACEA62EAD27FB00D8C6EE /* EchoTune.app */;
@@ -242,6 +245,7 @@
 				6A7ACFC42EAE9ABA00D8C6EE /* XCRemoteSwiftPackageReference "WhisperKit" */,
 				A1B2C3D12EAF000100D8C6EE /* XCRemoteSwiftPackageReference "sentry-cocoa" */,
 				B2C3D4E42EAF000200D8C6EE /* XCRemoteSwiftPackageReference "FluidAudio" */,
+				D4E5F6A52EAF000400D8C6EE /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 6A7ACEA72EAD27FB00D8C6EE /* Products */;
@@ -477,6 +481,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 7.4.2;
+				SPARKLE_PUBLIC_ED_KEY = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.echotune.EchoTune;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -524,6 +529,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 7.4.2;
+				SPARKLE_PUBLIC_ED_KEY = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.echotune.EchoTune;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -548,6 +554,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 7.4.2;
+				SPARKLE_PUBLIC_ED_KEY = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.echotune.EchoTuneTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -571,6 +578,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 7.4.2;
+				SPARKLE_PUBLIC_ED_KEY = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.echotune.EchoTuneTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -592,6 +600,7 @@
 				DEAD_CODE_STRIPPING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 7.4.2;
+				SPARKLE_PUBLIC_ED_KEY = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.echotune.EchoTuneUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -613,6 +622,7 @@
 				DEAD_CODE_STRIPPING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 7.4.2;
+				SPARKLE_PUBLIC_ED_KEY = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.echotune.EchoTuneUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -690,6 +700,14 @@
 				minimumVersion = 0.15.5;
 			};
 		};
+		D4E5F6A52EAF000400D8C6EE /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle.git";
+			requirement = {
+				kind = exactVersion;
+				version = 2.9.6;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -712,6 +730,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = F1D0A0D12F00000100D8C6EE /* XCRemoteSwiftPackageReference "FluidAudio" */;
 			productName = FluidAudio;
+		};
+		D4E5F6A62EAF000400D8C6EE /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D4E5F6A52EAF000400D8C6EE /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

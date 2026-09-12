@@ -16,7 +16,8 @@ import Sparkle
 
 /// Manages automatic updates for EchoTune
 /// Fully integrated with Sparkle framework when available
-class UpdateManager: ObservableObject {
+@MainActor
+final class UpdateManager: ObservableObject {
     static let shared = UpdateManager()
 
     @Published var updateAvailable: Bool = false
@@ -66,16 +67,17 @@ class UpdateManager: ObservableObject {
 
     /// Check for updates manually (shows UI)
     func checkForUpdates() {
+        guard canCheckForUpdates else { return }
         debugLog("🔍 Checking for updates...")
         isCheckingForUpdates = true
 
         #if canImport(Sparkle)
         updaterController.checkForUpdates(nil)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            self.isCheckingForUpdates = false
-            self.lastCheckDate = Date()
-            self.saveSettings()
-        }
+        // Sparkle owns the result UI. Keep the local timestamp for Settings;
+        // Sparkle's updater remains authoritative for completion state.
+        lastCheckDate = Date()
+        saveSettings()
+        isCheckingForUpdates = false
         #else
         // Fallback: Check appcast manually
         Task {
