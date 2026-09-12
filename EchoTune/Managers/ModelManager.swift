@@ -19,6 +19,7 @@ class ModelManager: ObservableObject {
         case installationFailed
         case modelNotFound
         case invalidModel
+        case insufficientStorage(required: Int64, available: Int64)
 
         var errorDescription: String? {
             switch self {
@@ -30,6 +31,8 @@ class ModelManager: ObservableObject {
                 return "The selected model files could not be found. Please download the model again."
             case .invalidModel:
                 return "This model is not supported or its files are incomplete."
+            case .insufficientStorage(let required, let available):
+                return "Not enough disk space to download this model (needs \(required / 1024 / 1024) MB, \(available / 1024 / 1024) MB available). Free up space and try again."
             }
         }
     }
@@ -454,6 +457,16 @@ class ModelManager: ObservableObject {
             return
         }
 
+        // Storage-aware download guard: require the model size plus a safety
+        // margin before starting. WhisperKit needs room for the staged copy
+        // plus the promoted install.
+        let required: Int64 = model.size + (2 * 256 * 1024 * 1024) // model + 2× 256 MB margin
+        if let available = Self.availableDiskSpace(), available < required {
+            debugLog("❌ Insufficient disk for \(model.name): need \(required / 1024 / 1024) MB, have \(available / 1024 / 1024) MB")
+            completion(.failure(.insufficientStorage(required: required, available: available)))
+            return
+        }
+
         isDownloading = true
         currentDownloadModel = model
         downloadProgress = 0
@@ -666,6 +679,19 @@ class ModelManager: ObservableObject {
         }
 
         return resolveInstalledModelPath(folderName: candidateFolderName)
+    }
+
+    /// Free bytes on the Application Support volume (where models are stored).
+    /// Returns nil when the attributes can't be read.
+    static func availableDiskSpace() -> Int64? {
+        let appSupport = FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask
+        ).first
+        guard let appSupport,
+              let values = try? appSupport.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]) else {
+            return nil
+        }
+        return values.volumeAvailableCapacityForImportantUsage
     }
 
     private func whisperVariant(for id: String) -> String? {
