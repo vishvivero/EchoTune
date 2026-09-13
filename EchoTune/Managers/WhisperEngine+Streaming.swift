@@ -251,10 +251,19 @@ extension WhisperEngine {
 
                 await MainActor.run {
                     guard self.streamingSessionID == sessionID else { return }
-                    self.lastLiveTranscribedBufferCount = bufferCount
                     self.isLiveTranscribing = false
 
-                    guard !text.isEmpty, !hallucinations.contains(text.lowercased()) else { return }
+                    // Do NOT advance lastLiveTranscribedBufferCount until this
+                    // tick actually produced committable text. The old order
+                    // marked the window as covered and then returned early on an
+                    // empty or hallucinated decode, so real speech that Whisper
+                    // rendered as "" or "thank you" was excluded from the final
+                    // tail decode and silently lost (7.4.3).
+                    guard !text.isEmpty, !hallucinations.contains(text.lowercased()) else {
+                        os_log("P7_TICK_DISCARDED empty-or-hallucination; buffers retained for tail",
+                               log: wLog, type: .info)
+                        return
+                    }
 
                     let newText = tier == .classic
                         ? text
@@ -268,7 +277,14 @@ extension WhisperEngine {
                     if let agreementWords, !agreementWords.isEmpty {
                         self.liveWindowAgreementWords = agreementWords
                     }
-                    guard !newText.isEmpty else { return }
+                    guard !newText.isEmpty else {
+                        os_log("P7_TICK_DISCARDED empty-delta; buffers retained for tail",
+                               log: wLog, type: .info)
+                        return
+                    }
+                    // Committed: this window is now covered by the
+                    // tail-exclusion rule.
+                    self.lastLiveTranscribedBufferCount = bufferCount
                     self.liveSegmentTranscripts.append(newText)
                     self.liveTranscriptAccumulated = self.liveSegmentTranscripts.joined(separator: " ")
 
