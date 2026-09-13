@@ -60,7 +60,9 @@ extension AppCoordinator {
 
         // FluidAudio owns Parakeet's download/cache. Prepare it before opening
         // the microphone so a first-use download never records into a cold engine.
-        if useParakeet || useSenseVoice || useParaformer {
+        if currentModel.backend == .parakeet
+            || currentModel.backend == .senseVoice
+            || currentModel.backend == .paraformer {
             loadFluidBatchModelAndStart(currentModel)
             return
         }
@@ -215,6 +217,8 @@ extension AppCoordinator {
     func beginCloudRecording(model: AIModel) {
         os_log("☁️ beginCloudRecording: %{public}@ (id=%{public}@)", log: appLog, type: .info, model.name, model.id)
         startRecordingAudit(for: model)
+        // Freeze engine/model choice for the whole session.
+        activeRecordingSession = RecordingSession(model: model)
 
         // Start performance monitoring
         PerformanceMonitor.shared.startRecording()
@@ -520,6 +524,8 @@ extension AppCoordinator {
 
         if let currentModel = modelManager.currentModel {
             startRecordingAudit(for: currentModel)
+            // Freeze engine/model choice for the whole session.
+            activeRecordingSession = RecordingSession(model: currentModel)
         }
 
         // Start performance monitoring
@@ -558,7 +564,7 @@ extension AppCoordinator {
         }
 
         // Start transcription based on selected model
-        if useWhisper {
+        if capturedEngineKind == .whisper {
             // Whisper streaming transcription
             debugLog("🎯 Starting Whisper streaming transcription")
 
@@ -572,7 +578,7 @@ extension AppCoordinator {
             audioManager.onWhisperAudioBuffer = { [weak self] buffer in
                 self?.whisperEngine.appendAudioBuffer(buffer)
             }
-        } else if !useParakeet && !useSenseVoice && !useParaformer {
+        } else if capturedEngineKind == .appleSpeech {
             // Apple Speech live transcription
             if let audioFormat = audioManager.audioEngine?.inputNode.inputFormat(forBus: 0) {
                 debugLog("🎯 Starting Apple Speech live transcription")
@@ -615,7 +621,11 @@ extension AppCoordinator {
         // Stop audio recording with correct engine type (this calculates the duration).
         // Callbacks are cleared only after stopRecording flushes the dedicated
         // Whisper conversion queue, so the final converted buffers are retained.
-        let engineType: AudioManager.AudioEngine = (useWhisper || useParakeet || useSenseVoice || useParaformer) ? .whisper : .appleSpeech
+        //
+        // 7.4.3: the engine comes from the session frozen at recording start —
+        // changing the selected model mid-recording can no longer reroute the
+        // captured audio to a different engine at stop time.
+        let engineType: AudioManager.AudioEngine = capturedEngineKind.needsWhisperFormat ? .whisper : .appleSpeech
         let capturedAudioData = audioManager.stopRecording(forEngine: engineType)
         audioManager.onAudioBuffer = nil
         audioManager.onWhisperAudioBuffer = nil
@@ -683,15 +693,15 @@ extension AppCoordinator {
             }
         }
 
-        // End transcription based on which engine is being used
-        if useWhisper {
+        // End transcription based on the engine frozen at recording start.
+        if capturedEngineKind == .whisper {
             debugLog("🛑 Ending Whisper transcription")
             beginTranscriptionAudit(detail: "Finalising local Whisper transcript...")
             whisperEngine.endStreamingTranscription { [weak self] result in
                 guard let self = self else { return }
                 self.handleWhisperResult(result)
             }
-        } else if useParakeet || useSenseVoice || useParaformer {
+        } else if capturedEngineKind != .appleSpeech, capturedEngineKind != .cloud {
             let model = modelManager.currentModel
             let modelName = model?.name ?? "FluidAudio"
             let provider = model?.backend == .senseVoice ? "SenseVoice" : (model?.backend == .paraformer ? "Paraformer" : "Parakeet")
@@ -781,8 +791,9 @@ extension AppCoordinator {
 
     func toggleDictation() {
         if appState.recordingState == .recording {
-            // Check if using cloud model to call appropriate stop method
-            if let currentModel = modelManager.currentModel, currentModel.category == .cloud {
+            // Route to the correct stop path from the session frozen at start,
+            // not from the model selected right now (7.4.3).
+            if capturedEngineKind == .cloud {
                 stopCloudRecording()
             } else {
                 stopDictation()
@@ -857,7 +868,7 @@ extension AppCoordinator {
 
         // Only check Apple Speech Recognition authorization when using Apple Speech engine
         // WhisperKit and cloud models (Groq, etc.) don't need this permission
-        if !useWhisper, !useParakeet, let currentModel = modelManager.currentModel,
+        if let currentModel = modelManager.currentModel,
            currentModel.backend == .appleSpeech {
             if transcriptionEngine.authorizationStatus != .authorized {
                 debugLog("⚠️ Speech recognition not authorized - requesting permission")

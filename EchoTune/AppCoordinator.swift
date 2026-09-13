@@ -20,6 +20,53 @@ import os.log
 
 let appLog = OSLog(subsystem: "com.echotune.EchoTune", category: "debug")
 
+/// The engine that will finalise a recording. Captured once at recording
+/// start and never recomputed, so changing the selected model mid-recording
+/// cannot reroute audio to a different engine at stop time (7.4.3 hardening).
+enum RecordingEngineKind: Equatable {
+    case whisper
+    case appleSpeech
+    case cloud
+    case fluidBatch(backend: String)
+
+    /// True when audio must be captured in Whisper's 16 kHz mono format.
+    var needsWhisperFormat: Bool {
+        switch self {
+        case .whisper, .fluidBatch: return true
+        case .appleSpeech, .cloud: return false
+        }
+    }
+}
+
+/// Immutable snapshot of the engine/model chosen when recording began.
+struct RecordingSession {
+    let id: UUID
+    let modelID: String
+    let modelName: String
+    let kind: RecordingEngineKind
+    let startedAt: Date
+
+    init(model: AIModel) {
+        self.id = UUID()
+        self.modelID = model.id
+        self.modelName = model.name
+        self.startedAt = Date()
+
+        if model.category == .cloud {
+            self.kind = .cloud
+        } else {
+            switch model.backend {
+            case .whisper: self.kind = .whisper
+            case .parakeet: self.kind = .fluidBatch(backend: "parakeet")
+            case .senseVoice: self.kind = .fluidBatch(backend: "senseVoice")
+            case .paraformer: self.kind = .fluidBatch(backend: "paraformer")
+            case .appleSpeech: self.kind = .appleSpeech
+            case .groq, .deepgram, .openAI: self.kind = .cloud
+            }
+        }
+    }
+}
+
 struct FinalizedTranscription {
     let outputText: String
     let originalText: String
@@ -109,22 +156,29 @@ class AppCoordinator: ObservableObject {
         return modelManager.isInstalledAndUsable(currentModel)
     }
 
+    /// The recording currently in flight. Set in `beginRecording`/
+    /// `beginCloudRecording` and cleared when the session finalises. All stop
+    /// paths read this instead of re-deriving the engine from mutable settings.
+    var activeRecordingSession: RecordingSession?
+
+    /// Engine last used to capture audio, derived from the active session (or
+    /// the current selection when no session is active).
+    var capturedEngineKind: RecordingEngineKind {
+        if let session = activeRecordingSession { return session.kind }
+        guard let model = modelManager.currentModel else { return .appleSpeech }
+        return RecordingSession(model: model).kind
+    }
+
     var useParakeet: Bool {
-        guard #available(macOS 14.0, *),
-              let currentModel = modelManager.currentModel else { return false }
-        return currentModel.backend == .parakeet
+        capturedEngineKind == .fluidBatch(backend: "parakeet")
     }
 
     var useSenseVoice: Bool {
-        guard #available(macOS 14.0, *),
-              let currentModel = modelManager.currentModel else { return false }
-        return currentModel.backend == .senseVoice
+        capturedEngineKind == .fluidBatch(backend: "senseVoice")
     }
 
     var useParaformer: Bool {
-        guard #available(macOS 14.0, *),
-              let currentModel = modelManager.currentModel else { return false }
-        return currentModel.backend == .paraformer
+        capturedEngineKind == .fluidBatch(backend: "paraformer")
     }
 
     // Track if we muted system output during this recording session

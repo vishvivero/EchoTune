@@ -90,6 +90,8 @@ extension AppCoordinator {
 
     func clearCurrentProcessingState() {
         resetCurrentProcessingState()
+        // The session is finished; the next recording freezes a fresh engine.
+        activeRecordingSession = nil
     }
 
     private func transcriptionProviderName(for model: AIModel) -> String {
