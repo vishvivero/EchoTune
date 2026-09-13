@@ -3,6 +3,67 @@
 All notable changes to EchoTune are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [7.4.4] — 2026-09-13
+
+Hardening pass over 7.4.2/7.4.3. Correctness fixes across the dictation
+pipeline, cloud paths, and licensing. No new features.
+
+### Fixed — Dictation reliability
+- **VAD no longer rejects every recording.** `SpeechProbability.frameLength`
+  was never populated, so `analyzeSpeechSegments` summed zero frames, computed
+  `0/0`, and classified every VAD-enabled recording as "No Speech Detected".
+  Frame length is now carried on every detector result and a zero-frame guard
+  prevents NaN. VAD is on by default, so this affected most users.
+- **Engine selection is frozen at recording start.** Stop paths re-derived the
+  engine from mutable settings, so changing the selected model mid-recording
+  could finalise audio through the wrong engine — cloud audio treated as local,
+  or a local capture uploaded to a different provider than the one chosen at
+  start.
+- **Recording start is transactional.** `AudioManager.startRecording()` returns
+  a typed result and tears down the engine and tap on failure. Previously a
+  failed start left the app in `.recording` with no audio captured.
+- **Streaming no longer drops speech it failed to decode.** A live tick that
+  returned empty or hallucinated text still marked its buffers as covered, so
+  that speech was excluded from the final tail decode and lost.
+- **Apple Speech recovers from a failed start.** Failure paths left
+  `isTranscribing` set, so every later attempt was rejected and the microphone
+  appeared dead until relaunch.
+- **Apple Speech drains its conversion queue before ending.** The converter was
+  nilled while queued buffers were still converting, dropping the tail.
+
+### Fixed — Cloud
+- **Truncated enhancement output is rejected.** OpenAI/Groq `finish_reason:
+  "length"` and Gemini `MAX_TOKENS` now raise an error and fall back to the
+  original transcript instead of inserting a half-finished rewrite. Empty
+  output is rejected too.
+- **Oversized cloud uploads fail cleanly** with an actionable message instead
+  of attempting a doomed single upload (container-aware chunking was never
+  implemented).
+
+### Fixed — Privacy, licensing, storage
+- **Clipboard paste no longer clobbers the user's copy.** All pasteboard items
+  are backed up, and the pasteboard is only restored while its `changeCount`
+  still matches the one EchoTune created.
+- **Trial counter moved to the Keychain** so deleting the preferences plist can
+  no longer reset the 50-use trial. Existing counts migrate on first read.
+- **Retention sweep is main-thread safe.** It snapshots history before deleting
+  files on its utility queue instead of iterating a `@Published` array that UI
+  mutations can change underneath it.
+- **Model downloads check free space first** and report required vs available
+  instead of stalling mid-download.
+- **30-minute recording cap is enforced** with a notification, instead of being
+  declared and only logged.
+
+### Fixed — Performance
+- Live preview timer moved off the main run loop to a `DispatchSourceTimer` on
+  a private queue, so a busy UI no longer delays ticks.
+- Per-tick RMS uses a single-pass accumulation instead of allocating a
+  temporary array every tick.
+
+### Fixed — Crashes
+- Accessibility element casts are guarded by a `CFTypeID` check before casting,
+  so an unexpected element type degrades to a fallback instead of terminating.
+
 ## [5.0.0] — 2026-07-26
 
 A reliability, correctness, and privacy pass over 4.0.0, driven by a full
