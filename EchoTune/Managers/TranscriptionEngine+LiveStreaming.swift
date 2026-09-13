@@ -41,11 +41,17 @@ extension TranscriptionEngine {
         lastSessionFrameCount = 0
 
         guard isAvailable else {
+            // Reset the flags we would have owned, or every later start is
+            // rejected by the isTranscribing guard (7.4.3).
+            isTranscribing = false
+            isProcessing = false
             completion(.failure(.unavailable))
             return
         }
 
         guard isPermissionGranted else {
+            isTranscribing = false
+            isProcessing = false
             completion(.failure(.permissionDenied))
             return
         }
@@ -66,6 +72,7 @@ extension TranscriptionEngine {
             interleaved: false
         ) else {
             debugLog("❌ Failed to create Int16 format")
+            cleanupFailedStart()
             completion(.failure(.audioFormatError))
             return
         }
@@ -75,6 +82,7 @@ extension TranscriptionEngine {
         // Create converter from Float32 to Int16
         guard let converter = AVAudioConverter(from: audioFormat, to: int16Format) else {
             debugLog("❌ Failed to create audio converter")
+            cleanupFailedStart()
             completion(.failure(.audioFormatError))
             return
         }
@@ -85,6 +93,17 @@ extension TranscriptionEngine {
         startRecognitionSession()
 
         debugLog("✓ Live recognition task started (auto-restart enabled)")
+    }
+
+    /// Resets every piece of state a failed start may have claimed so the next
+    /// attempt is not rejected and no half-open session is left behind.
+    private func cleanupFailedStart() {
+        isTranscribing = false
+        isProcessing = false
+        audioConverter = nil
+        targetFormat = nil
+        liveInputFormat = nil
+        liveCompletion = nil
     }
 
     // MARK: - Recognition Session Management
@@ -284,6 +303,13 @@ extension TranscriptionEngine {
         debugLog("📊 Total buffers processed: \(bufferCount)")
         debugLog("📊 Total frames: \(totalFrames) (\(Double(totalFrames) / 48000.0) seconds)")
         debugLog("📊 Sessions used: \(sessionRestartCount + 1)")
+
+        // 7.4.3: drain the conversion queue before tearing the converter down.
+        // appendAudioBuffer() runs on audioProcessingQueue; nilling the converter
+        // while queued buffers are still converting silently dropped the tail of
+        // the recording. Barrier-sync so every enqueued buffer is delivered to
+        // the recognition request first, then endAudio() flushes the recognizer.
+        audioProcessingQueue.sync {}
 
         // End audio on current request
         recognitionRequest?.endAudio()
