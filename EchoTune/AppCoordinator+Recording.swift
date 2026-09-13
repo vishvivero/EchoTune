@@ -267,7 +267,21 @@ extension AppCoordinator {
         }
 
         // Start audio recording - we'll use the recorded audio for cloud transcription
-        audioManager.startRecording()
+        guard audioManager.startRecording().isSuccess else {
+            debugLog("❌ Cloud audio capture failed to start — aborting cloud recording")
+            didMuteSystemOutput ? SystemAudioManager.shared.restoreSystemOutput() : ()
+            didMuteSystemOutput = false
+            activeRecordingSession = nil
+            hideRecorderUI()
+            appState.recordingState = .idle
+            appState.recordingStatusDetail = nil
+            clearCurrentProcessingState()
+            if let appDelegate = NSApp.delegate as? AppDelegate,
+               let statusBar = appDelegate.statusBarController {
+                statusBar.updateIcon(for: .idle)
+            }
+            return
+        }
         if let liveDeepgram {
             let session = liveDeepgram
             audioManager.onAudioBuffer = nil
@@ -547,8 +561,24 @@ extension AppCoordinator {
         // Show recording indicator (style-aware)
         showRecorderUI()
 
-        // Start audio recording
-        audioManager.startRecording()
+        // Start audio recording. 7.4.4: only enter the recording flow when the
+        // audio engine actually started; a failed start used to leave the UI in
+        // .recording with no tap installed, so a long recording produced nothing.
+        guard audioManager.startRecording().isSuccess else {
+            debugLog("❌ Audio capture failed to start — aborting recording")
+            didMuteSystemOutput ? SystemAudioManager.shared.restoreSystemOutput() : ()
+            didMuteSystemOutput = false
+            activeRecordingSession = nil
+            hideRecorderUI()
+            appState.recordingState = .idle
+            appState.recordingStatusDetail = nil
+            clearCurrentProcessingState()
+            if let appDelegate = NSApp.delegate as? AppDelegate,
+               let statusBar = appDelegate.statusBarController {
+                statusBar.updateIcon(for: .idle)
+            }
+            return
+        }
         debugLog("✓ Recording started successfully")
 
         // Auto-stop at the documented 30-minute cap (routes through the same

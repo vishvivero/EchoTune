@@ -154,10 +154,35 @@ class AudioManager: NSObject, ObservableObject {
         }
     }
 
-    func startRecording() {
+    /// Outcome of a recording start attempt (7.4.4).
+    enum StartResult {
+        case started
+        case alreadyRecording
+        case noInputDevice
+        case engineStartFailed(String)
+
+        var isSuccess: Bool {
+            if case .started = self { return true }
+            return false
+        }
+    }
+
+    /// Removes the tap and stops the engine so a failed start cannot leave the
+    /// microphone open or a stale tap installed.
+    private func teardownAfterFailedStart() {
+        audioEngine?.inputNode.removeTap(onBus: 0)
+        audioEngine?.stop()
+        audioEngine = nil
+        inputNode = nil
+        isRecording = false
+        recordingStartTime = nil
+    }
+
+    @discardableResult
+    func startRecording() -> StartResult {
         guard !isRecording else {
             debugLog("⚠️ Already recording, ignoring start request")
-            return
+            return .alreadyRecording
         }
 
         // Clean up any existing audio engine first
@@ -183,7 +208,8 @@ class AudioManager: NSObject, ObservableObject {
 
         guard let inputNode = inputNode else {
             debugLog("❌ Failed to get input node")
-            return
+            teardownAfterFailedStart()
+            return .noInputDevice
         }
 
         // Use the hardware's native input format instead of forcing a specific sample rate
@@ -199,7 +225,8 @@ class AudioManager: NSObject, ObservableObject {
                 body: "Connect a microphone and try again.",
                 sound: false
             )
-            return
+            teardownAfterFailedStart()
+            return .noInputDevice
         }
 
         debugLog("🎤 Recording with hardware format: \(hardwareFormat)")
@@ -265,7 +292,8 @@ class AudioManager: NSObject, ObservableObject {
             debugLog("📝 Opened audio file for streaming to disk at \(tempFileURL.path)")
         } catch {
             debugLog("❌ Failed to create AVAudioFile for streaming: \(error.localizedDescription)")
-            return
+            teardownAfterFailedStart()
+            return .engineStartFailed("Could not open audio file: \(error.localizedDescription)")
         }
 
         // Set up tap on input node using the hardware's native format
@@ -369,8 +397,11 @@ class AudioManager: NSObject, ObservableObject {
             }
         } catch {
             debugLog("Failed to start audio engine: \(error.localizedDescription)")
-            return
+            teardownAfterFailedStart()
+            return .engineStartFailed(error.localizedDescription)
         }
+
+        return .started
     }
 
     func stopRecording(forEngine engine: AudioEngine = .appleSpeech) -> Data? {

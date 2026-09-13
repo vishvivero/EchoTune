@@ -480,15 +480,32 @@ class LicenseManager {
         if isPro { return nil }
         if isTrialExpired { return 0 }
 
-        let usedCount = UserDefaults.standard.integer(forKey: "trialUsageCount")
+        let usedCount = trialUsageCount
         let limit = 50
         return max(0, limit - usedCount)
     }
 
+    /// Trial usage counter, Keychain-backed so trashing the UserDefaults plist
+    /// cannot reset the 50-use trial (7.4.4). Existing UserDefaults values are
+    /// migrated once on read so in-flight trials keep their count.
+    private var trialUsageCount: Int {
+        if let raw = getFromKeychain("trialUsageCount"), let value = Int(raw) {
+            return value
+        }
+        // Upgrade path: adopt whatever the old UserDefaults counter held.
+        let legacy = UserDefaults.standard.integer(forKey: "trialUsageCount")
+        if legacy > 0 {
+            saveToKeychain("trialUsageCount", value: String(legacy))
+        }
+        return legacy
+    }
+
     func incrementTrialUsage() {
         guard !isPro else { return }
-        let current = UserDefaults.standard.integer(forKey: "trialUsageCount")
-        UserDefaults.standard.set(current + 1, forKey: "trialUsageCount")
+        let next = trialUsageCount + 1
+        saveToKeychain("trialUsageCount", value: String(next))
+        // Kept in sync for diagnostics only; the Keychain is authoritative.
+        UserDefaults.standard.set(next, forKey: "trialUsageCount")
     }
 
     // MARK: - Purchase

@@ -174,7 +174,11 @@ struct LiveDemoStep: View {
         }
         #endif
 
-        audioManager.startRecording()
+        // 7.4.4: don't arm the auto-stop timer if capture never started.
+        guard audioManager.startRecording().isSuccess else {
+            debugLog("⚠️ Live demo could not start audio capture")
+            return
+        }
 
         // Auto stop after 15 seconds
         autoStopTimer = Just(0)

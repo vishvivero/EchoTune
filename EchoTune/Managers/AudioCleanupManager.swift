@@ -59,13 +59,23 @@ class AudioCleanupManager: ObservableObject {
         var result = SweepResult()
         let history = TranscriptionHistoryManager.shared
 
-        for item in history.transcriptions where item.date < expiryThreshold {
-            guard let path = item.audioFilePath else { continue }
-            result.reclaimedBytes += fileSize(atPath: path)
-            if removeFile(atPath: path) {
+        // 7.4.4: snapshot the @Published array on the main thread. This sweep
+        // runs on a utility queue, so iterating `history.transcriptions`
+        // directly raced with mutations (insert, delete, clearAudioPath) and
+        // could crash or silently skip entries mid-mutation.
+        let candidates: [(id: UUID, path: String)] = DispatchQueue.main.sync {
+            history.transcriptions.compactMap { item in
+                guard item.date < expiryThreshold, let path = item.audioFilePath else { return nil }
+                return (item.id, path)
+            }
+        }
+
+        for candidate in candidates {
+            result.reclaimedBytes += fileSize(atPath: candidate.path)
+            if removeFile(atPath: candidate.path) {
                 result.removedFiles += 1
                 DispatchQueue.main.async {
-                    history.clearAudioPath(for: item.id)
+                    history.clearAudioPath(for: candidate.id)
                 }
             }
         }
