@@ -318,7 +318,8 @@ extension AppCoordinator {
                     originalText: transcription.originalText,
                     translatedText: transcription.translatedText,
                     detectedLanguage: transcription.detectedLanguage,
-                    rawTranscriptionText: rawTranscriptionText
+                    rawTranscriptionText: rawTranscriptionText,
+                    proposalSourceText: transcription.originalText
                 )
                 return
             }
@@ -340,7 +341,8 @@ extension AppCoordinator {
                     originalText: transcription.originalText,
                     translatedText: transcription.translatedText,
                     detectedLanguage: transcription.detectedLanguage,
-                    rawTranscriptionText: rawTranscriptionText
+                    rawTranscriptionText: rawTranscriptionText,
+                    proposalSourceText: transcription.originalText
                 )
                 return
             }
@@ -381,7 +383,8 @@ extension AppCoordinator {
                             originalText: transcription.originalText,
                             translatedText: transcription.translatedText,
                             detectedLanguage: transcription.detectedLanguage,
-                            rawTranscriptionText: rawTranscriptionText
+                            rawTranscriptionText: rawTranscriptionText,
+                    proposalSourceText: transcription.originalText
                         )
                     }
                 } catch {
@@ -400,7 +403,8 @@ extension AppCoordinator {
                             originalText: transcription.originalText,
                             translatedText: transcription.translatedText,
                             detectedLanguage: transcription.detectedLanguage,
-                            rawTranscriptionText: rawTranscriptionText
+                            rawTranscriptionText: rawTranscriptionText,
+                    proposalSourceText: transcription.originalText
                         )
                     }
                 }
@@ -415,7 +419,8 @@ extension AppCoordinator {
             originalText: transcription.originalText,
             translatedText: transcription.translatedText,
             detectedLanguage: transcription.detectedLanguage,
-            rawTranscriptionText: rawTranscriptionText
+            rawTranscriptionText: rawTranscriptionText,
+                    proposalSourceText: transcription.originalText
         )
     }
 
@@ -426,7 +431,8 @@ extension AppCoordinator {
         originalText: String? = nil,
         translatedText: String? = nil,
         detectedLanguage: String? = nil,
-        rawTranscriptionText: String? = nil
+        rawTranscriptionText: String? = nil,
+        proposalSourceText: String? = nil
     ) {
         appState.recordingStatusDetail = "Finalising text..."
 
@@ -480,7 +486,7 @@ extension AppCoordinator {
         // model, and in which app, so the profile/coach can learn locally.
         let frontmost = NSWorkspace.shared.frontmostApplication?.localizedName
         let windowTitle = self.textInsertionManager.activeWindowTitle()
-        EchoMemoryManager.shared.recordTranscription(
+        let sourceEntryID = EchoMemoryManager.shared.recordTranscription(
             text: processedText,
             duration: recordingDuration,
             modelID: processingMetadata.transcriptionModel,
@@ -488,6 +494,16 @@ extension AppCoordinator {
             frontmostApp: frontmost,
             windowTitle: windowTitle
         )
+
+        // Local-only, confirmation-gated follow-up. Detection is intentionally
+        // after finalisation and never blocks ordinary insertion. Cloud
+        // transcription behaviour remains unchanged.
+        let localProviders: Set<String> = ["Apple Speech", "Local Whisper", "Parakeet", "FluidAudio", "SenseVoice", "Paraformer"]
+        let localProvider = processingMetadata.transcriptionProvider.map { localProviders.contains($0) } ?? false
+        if localProvider {
+            CommitmentMemoryManager.shared.propose(text: proposalSourceText ?? processedText,
+                                                   sourceEntryID: sourceEntryID)
+        }
 
         // Insert text directly with performance monitoring
         let insertionStartedAt = Date()

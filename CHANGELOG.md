@@ -3,6 +3,26 @@
 All notable changes to EchoTune are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [7.4.5] — 2026-09-14
+
+A privacy-first agentic follow-up feature layered onto finalized local dictation.
+
+### Added — Local Commitment and Follow-Up Agent
+- Detects explicit commitment language only after finalized local transcription.
+- Shows a non-blocking, editable proposal with task, person, context, due date,
+  priority, confidence and the exact source sentence.
+- Persists only user-accepted proposals; dismissal and pending edits remain
+  transient and local.
+- Suppresses duplicate pending/open commitments and preserves the source
+  transcription identifier when available.
+- Historical transcript backfill remains side-effect free; existing records are
+  never silently converted into tasks.
+- Cloud and unknown transcription providers fail closed for commitment mining.
+
+### Validation
+- EchoTuneTests: 135 passed, 0 failed, 2 skipped.
+- Release build: passed on macOS 26.6.2 / Apple Silicon.
+
 ## [7.4.4] — 2026-09-13
 
 Hardening pass over 7.4.2/7.4.3. Correctness fixes across the dictation

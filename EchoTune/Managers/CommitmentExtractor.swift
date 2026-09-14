@@ -90,6 +90,52 @@ enum CommitmentExtractor {
         return results
     }
 
+    /// Convert explicit commitment language into an editable, transient proposal.
+    /// This is deliberately separate from memory ingestion: detection never writes.
+    static func proposals(from text: String, now: Date = Date(), calendar: Calendar = .current) -> [CommitmentProposal] {
+        extract(from: text, now: now, calendar: calendar).map { item in
+            let metadata = proposalMetadata(for: item.title)
+            let lower = item.rawSentence.lowercased()
+            let hasPriority = lower.range(of: #"\b(urgent|asap|high priority|top priority)\b"#, options: .regularExpression) != nil
+            let hasExplicitTrigger = lower.range(of: #"\b(i need|i must|i should|i plan|i intend|i will|i'll|remind me|don't forget|remember to|to-do|action item|reminder)\b"#, options: .regularExpression) != nil
+            let confidence = min(0.98, max(0.60, 0.62 + (hasExplicitTrigger ? 0.16 : 0) + (item.dueHint != nil ? 0.08 : 0) + (!metadata.person.isEmpty ? 0.06 : 0) + (!metadata.context.isEmpty ? 0.04 : 0) + (hasPriority ? 0.04 : 0)))
+            return CommitmentProposal(task: metadata.task, person: metadata.person, context: metadata.context,
+                                      dueDate: item.dueHint, priority: hasPriority ? .high : .normal,
+                                      confidence: confidence, sourceSentence: item.rawSentence)
+        }
+    }
+
+    private static func proposalMetadata(for title: String) -> (task: String, person: String, context: String) {
+        var task = title
+        var person = ""
+        var context = ""
+        // Explicit recipient grammar: "send Vivek the revised proposal".
+        if let match = try? NSRegularExpression(pattern: #"^send\s+([A-Za-z][A-Za-z' -]*?)\s+(?:the\s+|a\s+|an\s+)?(.+)$"#, options: [.caseInsensitive]) {
+            let range = NSRange(task.startIndex..<task.endIndex, in: task)
+            if let m = match.firstMatch(in: task, range: range), m.numberOfRanges == 3,
+               let pr = Range(m.range(at: 1), in: task), let tr = Range(m.range(at: 2), in: task) {
+                person = String(task[pr]).trimmingCharacters(in: .whitespaces)
+                task = "Send " + String(task[tr]).trimmingCharacters(in: .whitespaces)
+            }
+        }
+        // Only explicit prepositions create context/person metadata.
+        if let match = try? NSRegularExpression(pattern: #"\b(with|for|about|in|on)\s+([^,]+)$"#, options: [.caseInsensitive]) {
+            let range = NSRange(task.startIndex..<task.endIndex, in: task)
+            if let m = match.firstMatch(in: task, range: range), let full = Range(m.range, in: task), let prep = Range(m.range(at: 1), in: task), let value = Range(m.range(at: 2), in: task) {
+                let preposition = String(task[prep])
+                let valueText = String(task[value]).trimmingCharacters(in: .whitespaces)
+                if person.isEmpty && preposition.lowercased().hasPrefix("with") {
+                    person = valueText
+                } else {
+                    context = valueText
+                }
+                task.removeSubrange(full)
+                task = task.trimmingCharacters(in: .whitespaces)
+            }
+        }
+        return (normalizedTitle(task), person, context)
+    }
+
     /// Mine one sentence, or nil when it isn't a commitment.
     static func extract(fromSentence sentence: String, now: Date = Date(), calendar: Calendar = .current) -> ExtractedCommitment? {
         let trimmed = sentence.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -431,8 +477,11 @@ enum CommitmentExtractor {
             pattern: #"\b(?:by|before|on|due|next|this|coming)?\s*(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b"#,
             resolve: { phrase, now, calendar in
                 guard let target = weekdayNumbers.first(where: { phrase.contains($0.key) })?.value else { return nil }
-                let forceNext = phrase.contains("next")
-                return nextWeekday(target, from: now, forceNextWeek: forceNext, calendar: calendar)
+                if phrase.contains("next") {
+                    let thisWeek = nextWeekday(target, from: now, forceNextWeek: false, calendar: calendar) ?? now
+                    return calendar.date(byAdding: .day, value: 7, to: thisWeek)
+                }
+                return nextWeekday(target, from: now, forceNextWeek: false, calendar: calendar)
             }
         ),
         // by 12 September

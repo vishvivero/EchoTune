@@ -101,6 +101,69 @@ struct CommitmentExtractionTests {
         #expect(CommitmentExtractor.hasDistinctiveOverlap(needle: ["sort", "passport"], haystack: ["sort", "passport"]))
     }
 
+    // MARK: - Confirmation-gated proposals
+
+    @Test func explicitLanguageCreatesProposalWithoutPersisting() {
+        let manager = scratchManager()
+        manager.propose(text: "I need to email the landlord by Friday.")
+        #expect(manager.proposals.count == 1)
+        #expect(manager.commitments.isEmpty)
+        #expect(manager.proposals[0].sourceSentence == "I need to email the landlord by Friday.")
+        manager.dismissProposal(id: manager.proposals[0].id)
+        #expect(manager.proposals.isEmpty)
+        #expect(manager.commitments.isEmpty)
+    }
+
+    @Test func proposalCarriesSourceIDAndEditedValues() {
+        let manager = scratchManager()
+        let sourceID = UUID()
+        manager.propose(text: "I need to send Vivek the revised proposal next Tuesday.", sourceEntryID: sourceID)
+        #expect(manager.pendingProposals.count == 1)
+        var proposal = manager.pendingProposals[0]
+        #expect(proposal.sourceEntryID == sourceID)
+        #expect(proposal.person == "Vivek")
+        proposal.task = "Send the final proposal"
+        proposal.context = "Board review"
+        proposal.priority = .high
+        manager.updateProposal(proposal)
+        let accepted = manager.acceptProposal(proposal)
+        #expect(accepted?.title == "Send the final proposal")
+        #expect(accepted?.context == "Board review")
+        #expect(accepted?.sourceEntryID == sourceID)
+    }
+
+    @Test func acceptingProposalPersistsOnlyAcceptedEditableValues() {
+        let manager = scratchManager()
+        manager.propose(text: "Remind me to call Sam tomorrow.")
+        var proposal = manager.proposals[0]
+        proposal.task = "Call Sam about the appointment"
+        proposal.person = "Sam"
+        proposal.context = "Appointment planning"
+        proposal.priority = .high
+        let accepted = manager.acceptProposal(proposal)
+        #expect(accepted?.title == "Call Sam about the appointment")
+        #expect(accepted?.person == "Sam")
+        #expect(accepted?.priority == .high)
+        #expect(manager.proposals.isEmpty)
+        #expect(manager.commitments.count == 1)
+    }
+
+    @Test func nextWeekdayMeansTheFollowingWeek() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let now = fixedDate("2026-09-14T09:00:00Z") // Monday
+        let proposals = CommitmentExtractor.proposals(from: "I need to renew the passport next Monday.", now: now, calendar: calendar)
+        #expect(proposals.count == 1)
+        #expect(proposals[0].dueDate == fixedDate("2026-09-21T00:00:00Z"))
+    }
+
+    @Test func ordinaryDictationDoesNotCreateProposal() {
+        let manager = scratchManager()
+        manager.propose(text: "The meeting was useful and the notes are clear.")
+        #expect(manager.proposals.isEmpty)
+        #expect(manager.commitments.isEmpty)
+    }
+
     // MARK: - Ingestion
 
     @Test func duplicateCommitmentsAreNotStoredTwice() {
@@ -177,9 +240,9 @@ struct CommitmentExtractionTests {
 
     // MARK: - Backfill
 
-    @Test func backfillMinesAlreadyStoredTranscriptions() {
+    @Test func backfillNeverMinesAlreadyStoredTranscriptions() {
         let manager = scratchManager()
-        // EchoMemoryManager stores newest first; backfill must not care.
+        // Historical replay is intentionally side-effect free.
         let entries = [
             EchoMemoryEntry(
                 id: UUID(),
@@ -210,8 +273,8 @@ struct CommitmentExtractionTests {
         ]
 
         manager.backfillIfNeeded(from: entries)
-        #expect(manager.commitments.count == 1)
-        #expect(manager.completedCommitments.count == 1)
+        #expect(manager.commitments.isEmpty)
+        #expect(manager.pendingProposals.isEmpty)
     }
 
     @Test func backfillOnlyRunsOnce() {

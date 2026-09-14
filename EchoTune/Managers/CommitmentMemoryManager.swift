@@ -14,6 +14,10 @@
 import Foundation
 import Combine
 
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
+}
+
 private let commitmentsKey = "commitmentMemoryData"
 private let backfillKey = "commitmentBackfillVersion"
 private let currentBackfillVersion = 1
@@ -27,6 +31,9 @@ final class CommitmentMemoryManager: ObservableObject {
     @Published private(set) var commitments: [Commitment] = []
     /// Set when an ingest produced something worth telling the user about.
     @Published private(set) var lastIngest: CommitmentIngestSummary?
+    /// Transient proposals are never encoded. They disappear on dismissal or restart.
+    @Published private(set) var pendingProposals: [CommitmentProposal] = []
+    var proposals: [CommitmentProposal] { pendingProposals }
 
     private let defaults: UserDefaults
 
@@ -61,6 +68,60 @@ final class CommitmentMemoryManager: ObservableObject {
     /// "what did I say I'd do?" style prompts.
     var mostRecentOpen: Commitment? {
         openCommitments.max(by: { $0.createdAt < $1.createdAt })
+    }
+
+    // MARK: - Proposal flow
+
+    func propose(text: String, sourceEntryID: UUID? = nil, date: Date = Date(), calendar: Calendar = .current) {
+        let newProposals = CommitmentExtractor.proposals(from: text, now: date, calendar: calendar).map { p in
+            CommitmentProposal(id: p.id, task: p.task, person: p.person, context: p.context,
+                               dueDate: p.dueDate, priority: p.priority, confidence: p.confidence,
+                               sourceSentence: p.sourceSentence, sourceEntryID: sourceEntryID, proposedAt: date)
+        }
+        for proposal in newProposals {
+            let key = proposalKey(proposal.task)
+            guard !key.isEmpty,
+                  !pendingProposals.contains(where: { proposalKey($0.task) == key || $0.sourceSentence == proposal.sourceSentence }),
+                  !commitments.contains(where: { $0.status == .open && proposalKey($0.title) == key }) else { continue }
+            pendingProposals.append(proposal)
+        }
+    }
+
+    func updateProposal(_ proposal: CommitmentProposal) {
+        guard let index = pendingProposals.firstIndex(where: { $0.id == proposal.id }) else { return }
+        pendingProposals[index] = proposal
+    }
+
+    func dismissProposal(id: UUID) {
+        pendingProposals.removeAll { $0.id == id }
+    }
+
+    private func proposalKey(_ text: String) -> String {
+        CommitmentExtractor.keywords(in: text).joined(separator: " ")
+    }
+
+    @discardableResult
+    func acceptProposal(_ proposal: CommitmentProposal, date: Date = Date()) -> Commitment? {
+        guard pendingProposals.contains(where: { $0.id == proposal.id }) else { return nil }
+        let current = proposal
+        let cleaned = CommitmentExtractor.normalizedTitle(current.task)
+        let keywords = CommitmentExtractor.keywords(in: cleaned)
+        guard !cleaned.isEmpty, !keywords.isEmpty else { dismissProposal(id: proposal.id); return nil }
+        if let existing = commitments.first(where: { $0.status == .open && proposalKey($0.title) == proposalKey(cleaned) }) {
+            dismissProposal(id: current.id)
+            return existing
+        }
+        let commitment = Commitment(title: cleaned, rawSentence: current.sourceSentence, createdAt: date,
+                                    lastMentionedAt: date, dueHint: current.dueDate,
+                                    keywords: keywords, person: current.person.nilIfEmpty,
+                                    context: current.context.nilIfEmpty, priority: current.priority,
+                                    confidence: min(max(current.confidence, 0), 1), sourceEntryID: current.sourceEntryID)
+        commitments.insert(commitment, at: 0)
+        pruneIfNeeded()
+        save()
+        pendingProposals.removeAll { $0.id == proposal.id }
+        lastIngest = CommitmentIngestSummary(added: [commitment])
+        return commitment
     }
 
     // MARK: - Ingest
@@ -127,22 +188,10 @@ final class CommitmentMemoryManager: ObservableObject {
 
     /// Mine the transcripts Echo already stored, once, so existing users get
     /// their task memory populated from day one of the upgrade.
+    /// Historical transcripts are never mined. This compatibility API is
+    /// intentionally side-effect free; only finalized local callbacks propose.
     func backfillIfNeeded(from entries: [EchoMemoryEntry]) {
-        guard defaults.integer(forKey: backfillKey) < currentBackfillVersion else { return }
-        guard !entries.isEmpty else {
-            defaults.set(currentBackfillVersion, forKey: backfillKey)
-            return
-        }
-
-        // Order is the caller's business — always replay oldest first so a
-        // completion can close a commitment mined from an earlier transcript.
-        for entry in entries.sorted(by: { $0.date < $1.date }) {
-            _ = ingest(text: entry.text, sourceEntryID: entry.id, date: entry.date)
-        }
-
-        defaults.set(currentBackfillVersion, forKey: backfillKey)
-        lastIngest = nil
-        debugLog("🧠 Commitment memory backfilled from \(entries.count) stored transcriptions")
+        // Do not replay history or write migration markers.
     }
 
     // MARK: - Asking
@@ -277,6 +326,7 @@ final class CommitmentMemoryManager: ObservableObject {
 
     func clearAll() {
         commitments.removeAll()
+        pendingProposals.removeAll()
         lastIngest = nil
         save()
     }

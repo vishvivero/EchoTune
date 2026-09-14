@@ -8,6 +8,80 @@
 
 import SwiftUI
 
+/// Non-blocking review surface for locally detected commitments.
+struct CommitmentProposalBanner: View {
+    @ObservedObject private var memory = CommitmentMemoryManager.shared
+
+    var body: some View {
+        VStack(spacing: 10) {
+            ForEach(memory.pendingProposals) { proposal in
+                CommitmentProposalEditor(proposal: proposal)
+            }
+        }
+    }
+}
+
+private struct CommitmentProposalEditor: View {
+    @ObservedObject private var memory = CommitmentMemoryManager.shared
+    @State private var proposal: CommitmentProposal
+    @State private var dueEnabled: Bool
+    @State private var dueDate: Date
+
+    init(proposal: CommitmentProposal) {
+        _proposal = State(initialValue: proposal)
+        _dueEnabled = State(initialValue: proposal.dueDate != nil)
+        _dueDate = State(initialValue: proposal.dueDate ?? Date())
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack {
+                Label("Possible follow-up", systemImage: "sparkles")
+                    .font(.headline)
+                Spacer()
+                Button { memory.dismissProposal(id: proposal.id) } label: { Image(systemName: "xmark") }
+                    .buttonStyle(.plain)
+                    .help("Dismiss")
+            }
+            TextField("Task", text: $proposal.task)
+            HStack {
+                TextField("Person (optional)", text: $proposal.person)
+                TextField("Context", text: $proposal.context)
+            }
+            HStack {
+                Picker("Priority", selection: $proposal.priority) {
+                    ForEach(CommitmentPriority.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
+                }
+                .frame(width: 130)
+                Toggle("Due", isOn: $dueEnabled)
+                if dueEnabled {
+                    DatePicker("", selection: $dueDate, displayedComponents: [.date])
+                        .labelsHidden()
+                }
+                Text("Confidence \(Int(proposal.confidence * 100))%")
+                    .font(.caption).foregroundColor(.secondary)
+                Spacer()
+                Button("Dismiss") { memory.dismissProposal(id: proposal.id) }
+                Button("Save task") {
+                    proposal.dueDate = dueEnabled ? dueDate : nil
+                    _ = memory.acceptProposal(proposal)
+                }
+                    .buttonStyle(.borderedProminent)
+            }
+            Text("Source: \u{201C}\(proposal.sourceSentence)\u{201D}")
+                .font(.caption).foregroundColor(.secondary).lineLimit(2)
+        }
+        .textFieldStyle(.roundedBorder)
+        .padding(14)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .shadow(radius: 8)
+        .frame(maxWidth: 520)
+        .onChange(of: proposal) { _, updated in
+            memory.updateProposal(updated)
+        }
+    }
+}
+
 struct CommitmentsView: View {
     /// The standalone window shows a Done button; the dashboard pane doesn't.
     var showsCloseButton: Bool = true
@@ -29,6 +103,9 @@ struct CommitmentsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             header
+            if !memory.pendingProposals.isEmpty {
+                CommitmentProposalBanner()
+            }
             askBar
             if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 answerCard

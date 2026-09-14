@@ -126,6 +126,7 @@ struct MenuBarPopoverView: View {
     @EnvironmentObject var coordinator: AppCoordinator
     @ObservedObject private var history = TranscriptionHistoryManager.shared
     @ObservedObject private var learner = CorrectionLearner.shared
+    @ObservedObject private var commitmentMemory = CommitmentMemoryManager.shared
     @State private var copyToast: String? = nil
     
     var body: some View {
@@ -159,6 +160,18 @@ struct MenuBarPopoverView: View {
                 }
                 .padding(.horizontal, 18)
                 .padding(.vertical, 4)
+            }
+
+            if !commitmentMemory.pendingProposals.isEmpty {
+                HStack(spacing: 8) {
+                    Label("Review \(commitmentMemory.pendingProposals.count) commitment\(commitmentMemory.pendingProposals.count == 1 ? "" : "s")", systemImage: "checklist")
+                        .font(.caption)
+                    Spacer()
+                    Button("Open Tasks") { openCommitments() }
+                        .buttonStyle(.bordered)
+                }
+                .padding(.horizontal, 18)
+                .padding(.bottom, 8)
             }
 
             // Settings

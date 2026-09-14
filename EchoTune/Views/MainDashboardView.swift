@@ -37,7 +37,6 @@ struct MainDashboardView: View {
                     .frame(width: 600, height: 700)
             }
 
-            // Model Loading Overlay
             if whisperEngine.isLoading {
                 VStack {
                     Spacer()

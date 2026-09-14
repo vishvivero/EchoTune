@@ -63,8 +63,8 @@ class EchoMemoryManager: ObservableObject {
         loadProfile()
         updateProfile()
         updateCoach()
-        // Populate task memory from whatever this user already dictated, once.
-        CommitmentMemoryManager.shared.backfillIfNeeded(from: entries)
+        // Commitment memory is confirmation-gated. Existing transcripts remain
+        // ordinary dictation and are not silently converted into tasks.
     }
 
     // MARK: - Public API
@@ -77,7 +77,7 @@ class EchoMemoryManager: ObservableObject {
         provider: String?,
         frontmostApp: String? = nil,
         windowTitle: String? = nil
-    ) {
+    ) -> UUID {
         let entry = EchoMemoryEntry(
             id: UUID(),
             date: Date(),
@@ -95,11 +95,8 @@ class EchoMemoryManager: ObservableObject {
         saveEntries()
         updateProfile()
         updateCoach()
+        return entry.id
 
-        // Task memory rides on the same local transcript stream: mine the
-        // sentence for a commitment, or for confirmation that a known one is
-        // finished.
-        CommitmentMemoryManager.shared.ingest(text: text, sourceEntryID: entry.id, date: entry.date)
     }
 
     /// Outcome of decoding the stored transcript blob.
