@@ -55,6 +55,7 @@ jobs:
       # down while still treating onboarding as completed, which is the normal
       # state a unit-test host expects.
       - name: Unit Tests (no signing)
+        id: unit_tests
         env:
           ECHO_UI_TEST_FORCE_ONBOARDING: "0"
         run: |
@@ -66,5 +67,19 @@ jobs:
             -only-testing:EchoTuneTests \
             -parallel-testing-enabled NO \
             -maximum-parallel-testing-workers 1 \
+            -resultBundlePath "$RUNNER_TEMP/EchoTuneTests.xcresult" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO
+
+      # xcodebuild can exit non-zero on a runner-only host bootstrap failure
+      # even when every test passed. Print the machine-readable verdict so a red
+      # job always says which of the two it was.
+      - name: Test result summary
+        if: always()
+        run: |
+          RESULT="$RUNNER_TEMP/EchoTuneTests.xcresult"
+          if [ ! -d "$RESULT" ]; then echo "no result bundle"; exit 0; fi
+          xcrun xcresulttool get test-results summary --path "$RESULT" || true
+          echo '--- failing tests ---'
+          xcrun xcresulttool get test-results tests --path "$RESULT" \
+            | grep -E '"testName"|"result"|failureText' | head -60 || true
