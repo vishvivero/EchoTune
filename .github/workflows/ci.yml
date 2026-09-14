@@ -12,13 +12,18 @@ concurrency:
 jobs:
   build-and-test:
     name: Build & Unit Tests (macOS)
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_15.4.app || sudo xcode-select -s /Applications/Xcode_16.0.app || true
+      # The project file is in a newer format than some pinned runner images, so
+      # always select the newest Xcode the image actually ships.
+      - name: Select newest available Xcode
+        run: |
+          set -euo pipefail
+          sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+          xcodebuild -version
 
       - name: Resolve Swift Packages
         run: |
@@ -26,24 +31,32 @@ jobs:
             -project EchoTune.xcodeproj \
             -scheme EchoTune
 
+      # EchoTune/Resources/CompiledModels is a required build resource but is
+      # intentionally gitignored (it holds locally compiled CoreML models), so
+      # CI has to provide the directory for the resource copy phase.
+      - name: Provide required build resource directory
+        run: mkdir -p EchoTune/Resources/CompiledModels
+
       - name: Build (Debug, no signing)
         run: |
+          set -o pipefail
           xcodebuild build \
             -project EchoTune.xcodeproj \
             -scheme EchoTune \
             -configuration Debug \
             -destination 'platform=macOS' \
             CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            | xcpretty && exit ${PIPESTATUS[0]}
+            CODE_SIGNING_REQUIRED=NO
 
       - name: Unit Tests (no signing)
         run: |
+          set -o pipefail
           xcodebuild test \
             -project EchoTune.xcodeproj \
             -scheme EchoTune \
             -destination 'platform=macOS' \
             -only-testing:EchoTuneTests \
+            -parallel-testing-enabled NO \
+            -maximum-parallel-testing-workers 1 \
             CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            | xcpretty && exit ${PIPESTATUS[0]}
+            CODE_SIGNING_REQUIRED=NO
