@@ -8,9 +8,6 @@ Licensed under the GNU General Public License v3.0 (see `LICENSE`).
 
 EchoTune's dictation experience was inspired by **VoiceInk**
 (https://github.com/Beingpax/VoiceInk), an open-source macOS dictation app
-licensed under GPL-3.0. EchoTune is an independent implementation; its
-dictation-related source was rewritten from behavior specifications. In the
-spirit of that lineage, EchoTune is likewise released under GPL-3.0.
 by **Prakash Joshi Pax**, licensed under GPL-3.0 (https://tryvoiceink.com).
 EchoTune began as a learning exercise while studying VoiceInk's approach to
 on-device dictation, born from a desire for a cleaner interface and a fully
