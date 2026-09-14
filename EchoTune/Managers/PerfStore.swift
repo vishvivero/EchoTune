@@ -2,7 +2,14 @@ import Foundation
 
 /// Local append-only session telemetry. It deliberately contains no network,
 /// analytics, or remote I/O code; the dashboard reads this store directly.
-final class PerfStore {
+///
+/// Explicitly `nonisolated`: the project builds with the MainActor default
+/// actor isolation, but this type is a lock-guarded value store that is safe
+/// from any thread. Leaving it MainActor-isolated made deallocation on older
+/// runtimes (macOS 14/15) go through the back-deployed isolated-deinit path,
+/// which crashed with heap corruption when an instance was released off the
+/// main actor (observed in CI on macOS 15).
+nonisolated final class PerfStore {
     static let shared = PerfStore()
 
     struct SessionRecord: Codable, Equatable, Identifiable, Sendable {
