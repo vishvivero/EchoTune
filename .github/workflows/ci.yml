@@ -90,6 +90,17 @@ jobs:
           shopt -s nullglob
           for f in "$HOME"/Library/Logs/DiagnosticReports/EchoTune*.ips; do
             echo "===== $f ====="
-            head -c 4000 "$f"
-            echo
+            python3 - "$f" <<'PY'
+          import json, sys
+          raw = open(sys.argv[1]).read()
+          body = json.loads(raw[raw.index('\n') + 1:])
+          print('exception:', body.get('exception'), body.get('asi'))
+          print('termination:', body.get('termination'))
+          for thread in body.get('threads', []):
+              if not thread.get('triggered'):
+                  continue
+              print('queue:', thread.get('queue'))
+              for frame in thread.get('frames', [])[:40]:
+                  print('   ', frame.get('symbol'), frame.get('symbolLocation'), 'imageIndex', frame.get('imageIndex'))
+          PY
           done
