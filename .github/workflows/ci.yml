@@ -83,3 +83,13 @@ jobs:
           echo '--- failing tests ---'
           xcrun xcresulttool get test-results tests --path "$RESULT" \
             | grep -E '"testName"|"result"|failureText' | head -60 || true
+
+      - name: Crash reports
+        if: always()
+        run: |
+          shopt -s nullglob
+          for f in "$HOME"/Library/Logs/DiagnosticReports/EchoTune*.ips; do
+            echo "===== $f ====="
+            head -c 4000 "$f"
+            echo
+          done
