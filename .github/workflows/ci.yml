@@ -15,7 +15,7 @@ jobs:
     runs-on: macos-15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # The project file is in a newer format than some pinned runner images, so
       # always select the newest Xcode the image actually ships.
@@ -48,7 +48,15 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO
 
+      # EchoTune exits a second instance on launch (single-instance guard). On
+      # CI the test host can be spawned more than once, so the extra hosts would
+      # terminate before XCTest connects and report a bootstrap failure even
+      # though every test passed. Setting this to "0" makes the guard stand
+      # down while still treating onboarding as completed, which is the normal
+      # state a unit-test host expects.
       - name: Unit Tests (no signing)
+        env:
+          ECHO_UI_TEST_FORCE_ONBOARDING: "0"
         run: |
           set -o pipefail
           xcodebuild test \
