@@ -51,6 +51,23 @@ struct LiveDecodingOptionsTests {
         #expect(opts.language == "es-ES")
     }
 
+    // MARK: - No decoder-side conditioning (7.4.7 regression)
+
+    /// WhisperKit 0.15.0 returns an empty transcription for *every* decode when
+    /// `promptTokens` is non-nil with the local CoreML Whisper models. EchoTune
+    /// used to pass the user's vocabulary (which always contained "EchoTune")
+    /// on every decode, so all local transcription came back blank. Guard the
+    /// decoder against ever being fed conditioning tokens again.
+    @Test func optionsNeverCarryDecoderConditioning() {
+        let engine = WhisperEngine.shared
+
+        for mode in [WhisperEngine.DecodeMode.live, .final] {
+            let opts = engine.makeDecodingOptions(mode: mode, detectLanguage: true, language: "en")
+            #expect(opts.promptTokens == nil)
+            #expect(opts.prefixTokens == nil)
+        }
+    }
+
     // MARK: - Language detection pinning (P2.1)
 
     @Test func detectLanguageIsRequestedWhenPinIsNil() {

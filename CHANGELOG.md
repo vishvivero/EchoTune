@@ -3,6 +3,31 @@
 All notable changes to EchoTune are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [7.4.7] — 2026-09-16
+
+Critical fix: local Whisper transcription returned **empty text for every
+recording** on 7.4.4 / 7.4.5 / 7.4.6.
+
+### Fixed
+- Stopped passing `promptTokens` to WhisperKit. With the local CoreML Whisper
+  models, WhisperKit 0.15.0 returns an empty transcription whenever
+  `promptTokens` is non-nil — the identical audio transcribes correctly with no
+  conditioning and returns nothing with a prompt of any length. EchoTune built
+  that prompt from the vocabulary list, which always contained the app term
+  `EchoTune`, so **every** local decode was conditioned and every result was
+  blank. Sending the same terms as `prefixTokens` is equally unsafe: the decoder
+  treats them as already-produced text, echoes them and drops real audio.
+- Vocabulary is now applied to the finished transcript instead, where it always
+  worked. "Apply my vocabulary to transcribed text" gates that pass
+  (`AppCoordinator.processTranscription` and
+  `TextInsertionManager.processTextReplacements`).
+- Added `optionsNeverCarryDecoderConditioning` to lock the decoder input against
+  prompt/prefix regression.
+
+### Notes
+- Cloud (Groq/Deepgram) and Apple Speech paths were never affected.
+- `VocabularyBiasing` remains in the tree but is no longer wired to the decoder.
+
 ## [7.4.6] — 2026-09-16
 
 Emergency fix for a microphone permission regression introduced in 7.4.5.

@@ -239,8 +239,11 @@ class TextInsertionManager {
     private func processTextReplacements(_ text: String) -> String {
         var processedText = text
 
-        // Step 1: Apply custom dictionary replacements (from EchoTune)
-        processedText = DictionaryManager.shared.process(text: processedText)
+        // Step 1: Apply custom dictionary replacements (from EchoTune), when the
+        // vocabulary toggle is on. System replacements below always run.
+        if AppSettings.shared.vocabularyBiasingEnabled {
+            processedText = DictionaryManager.shared.process(text: processedText)
+        }
 
         // Step 2: Apply macOS system text replacements
         processedText = applySystemTextReplacements(processedText)

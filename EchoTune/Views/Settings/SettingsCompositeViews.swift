@@ -76,9 +76,9 @@ struct GeneralSettingsView: View {
             .padding(.bottom, 8)
 
             Section("Vocabulary") {
-                Toggle("Bias decoding with my vocabulary", isOn: $settings.vocabularyBiasingEnabled)
-                    .help("Give dictionary entries and learned corrections to the decoder before transcription. Post-hoc corrections remain enabled.")
-                Text("Enabled terms influence live and final local decodes. Turn this off when comparing regression benchmarks.")
+                Toggle("Apply my vocabulary to transcribed text", isOn: $settings.vocabularyBiasingEnabled)
+                    .help("Replace dictionary entries and learned corrections in the finished transcript.")
+                Text("Corrections are applied after transcription. Decoder-side biasing was removed because passing vocabulary to the local Whisper decoder made it return empty results.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }

@@ -216,11 +216,17 @@ extension WhisperEngine {
     /// one decode pass given a `mode` and whether to run language detection.
     /// `mode == .final` must reproduce WhisperKit's defaults so batch output
     /// stays byte-identical to 7.1.0.
+    /// `promptTokens` is deliberately never set. WhisperKit 0.15.0 returns an
+    /// EMPTY transcription for every decode when `promptTokens` is non-nil with
+    /// the local CoreML Whisper models: the same audio transcribes correctly
+    /// with no conditioning and returns "" with any prompt, however short.
+    /// Sending the same terms as `prefixTokens` is no better — the decoder
+    /// treats them as already-produced text, echoes them and drops real audio.
+    /// Vocabulary is therefore applied to the finished text instead.
     func makeDecodingOptions(
         mode: DecodeMode,
         detectLanguage: Bool,
         language: String?,
-        promptTokens: [Int]? = nil,
         wordTimestamps: Bool? = nil
     ) -> DecodingOptions {
         DecodingOptions(
@@ -230,8 +236,7 @@ extension WhisperEngine {
             temperatureFallbackCount: mode == .live ? 0 : 5,
             detectLanguage: detectLanguage,
             skipSpecialTokens: false,
-            wordTimestamps: wordTimestamps ?? (mode == .live),
-            promptTokens: promptTokens
+            wordTimestamps: wordTimestamps ?? (mode == .live)
         )
     }
 
@@ -246,32 +251,14 @@ extension WhisperEngine {
 
         let shouldDetect = detectLanguage ?? (settings.autoDetectLanguage || settings.translateToEnglish)
         let languageForDecode = sessionDetectedLanguage ?? preferredLanguage
-        let vocabularyTerms: [String]
-        if settings.vocabularyBiasingEnabled {
-            let collected = VocabularyBiasing.terms(
-                dictionary: DictionaryManager.shared,
-                learner: CorrectionLearner.shared
-            )
-            vocabularyTerms = VocabularyBiasing.filterByLanguage(collected, language: languageForDecode)
-        } else {
-            vocabularyTerms = []
-        }
-        let promptTokens: [Int]?
-        if let tokenizer = whisperKit.tokenizer, !vocabularyTerms.isEmpty {
-            let encoded = VocabularyBiasing.promptTokens(
-                for: vocabularyTerms,
-                language: languageForDecode,
-                encode: { tokenizer.encode(text: $0) }
-            )
-            promptTokens = encoded.isEmpty ? nil : encoded
-        } else {
-            promptTokens = nil
-        }
+
+        // NOTE: no decoder-side vocabulary conditioning is passed here — see
+        // makeDecodingOptions() for why. `settings.vocabularyBiasingEnabled`
+        // now gates the post-hoc dictionary pass in the text pipeline.
         let transcriptionOptions = makeDecodingOptions(
             mode: mode,
             detectLanguage: shouldDetect,
             language: languageForDecode,
-            promptTokens: promptTokens,
             // WhisperKit's word-timestamp alignment is enabled only for live
             // ticks; the final path retains its pre-Phase-7 defaults.
             wordTimestamps: mode == .live

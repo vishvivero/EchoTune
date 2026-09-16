@@ -747,8 +747,12 @@ extension AppCoordinator {
     func processTranscription(_ text: String) -> String {
         var processed = text
 
-        // Apply dictionary transformations (word replacements + correct spellings)
-        processed = DictionaryManager.shared.process(text: processed)
+        // Apply dictionary transformations (word replacements + correct
+        // spellings). With decoder-side biasing removed this is the vocabulary
+        // mechanism, so it honours the same user toggle.
+        if settings.vocabularyBiasingEnabled {
+            processed = DictionaryManager.shared.process(text: processed)
+        }
 
         // Apply settings (capitalization is handled in TranscriptionEngine.processText)
         if settings.insertSpaceAfterText {
