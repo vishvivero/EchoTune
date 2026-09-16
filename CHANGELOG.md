@@ -3,6 +3,22 @@
 All notable changes to EchoTune are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [7.4.6] — 2026-09-16
+
+Emergency fix for a microphone permission regression introduced in 7.4.5.
+
+### Fixed
+- Restored `com.apple.security.device.audio-input` (and the rest of the
+  hardened-runtime entitlements) that were dropped when the 7.4.5 artifact was
+  re-signed. Without the entitlement, macOS refused to show the microphone
+  prompt and denied `kTCCServiceMicrophone`, so dictation could not start.
+- Release signing now goes through `Scripts/release_direct.sh`, which always
+  passes `--entitlements EchoTune/EchoTune.entitlements` and verifies the
+  entitlements are present before the build is accepted as shippable.
+
+### Notes
+- No source behaviour changes relative to 7.4.5.
+
 ## [7.4.5] — 2026-09-14
 
 A privacy-first agentic follow-up feature layered onto finalized local dictation.
