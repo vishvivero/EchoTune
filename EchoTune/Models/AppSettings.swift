@@ -406,11 +406,18 @@ class AppSettings: ObservableObject {
 
         let legacyMap: [String: String] = [
             "whisper-tiny": defaultLocalTranscriptionModel,
-            "whisper-base": "base",
+            "whisper-base": defaultLocalTranscriptionModel,
             "whisper-small": defaultLocalTranscriptionModel,
             "whisper-medium": defaultLocalTranscriptionModel,
+            // Bare size names people may have had stored directly.
+            "tiny": defaultLocalTranscriptionModel,
+            "base": defaultLocalTranscriptionModel,
+            "small": "openai_whisper-small.en",
+            "medium": defaultLocalTranscriptionModel,
+            "large": "openai_whisper-large-v3-v20240930_turbo",
             "whisper-large-v3": AIModel.recommendedModelID,
             "whisper-large-v3-turbo": "openai_whisper-large-v3-v20240930_turbo",
+            "openai_whisper-large-v3-turbo": "openai_whisper-large-v3-v20240930_turbo",
             "large-v3": "openai_whisper-large-v3-v20240930_turbo",
             "distil-large-v3": AIModel.recommendedModelID,
             "distil-large-v3-turbo": AIModel.recommendedModelID,
@@ -421,6 +428,7 @@ class AppSettings: ObservableObject {
             "sensevoice-small": "paraformer-large-zh",
             "parakeet-unified-en-0.6b": AIModel.recommendedModelID,
             "parakeet-tdt-ctc-110m": AIModel.recommendedModelID,
+            "parakeet-tdt-0.6b-v2": AIModel.recommendedModelID,
             "parakeet": AIModel.recommendedModelID,
             "parakeet-v3": AIModel.recommendedModelID,
             "parakeet-v2": AIModel.recommendedModelID

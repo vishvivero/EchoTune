@@ -56,6 +56,30 @@ final class ParakeetBackendTests: XCTestCase {
         XCTAssertEqual(AppSettings.defaultLocalTranscriptionModel, AIModel.recommendedModelID)
     }
 
+    /// Retired ids must resolve to something the app still offers, never to a
+    /// dangling name that leaves the user with no engine.
+    func testRetiredModelIDsMigrateToOfferedModels() {
+        let offered = Set(ModelManager.shared.availableModels.map(\.id))
+        let retired = ["distil-whisper_distil-large-v3_turbo_600MB",
+                       "distil-whisper_distil-large-v3",
+                       "openai_whisper-base",
+                       "base",
+                       "whisper-base",
+                       "openai_whisper-large-v3-turbo",
+                       "parakeet-tdt-0.6b-v2",
+                       "parakeet-tdt-ctc-110m",
+                       "parakeet-unified-en-0.6b",
+                       "sensevoice-small"]
+        for id in retired {
+            let resolved = AppSettings.canonicalTranscriptionModelID(id)
+            XCTAssertTrue(offered.contains(resolved),
+                          "\(id) migrated to \(resolved), which is not offered")
+        }
+        // A model that is still offered must pass through untouched.
+        XCTAssertEqual(AppSettings.canonicalTranscriptionModelID("openai_whisper-small.en"),
+                       "openai_whisper-small.en")
+    }
+
     func testParakeetIDsMapToPinnedFluidAudioVersions() {
         XCTAssertEqual(ParakeetEngine.ModelVersion(rawValue: "parakeet-tdt-0.6b-v2"), .v2)
         XCTAssertEqual(ParakeetEngine.ModelVersion(rawValue: "parakeet-tdt-0.6b-v3"), .v3)
