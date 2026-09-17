@@ -56,6 +56,13 @@ struct AIModel: Identifiable, Equatable, Hashable {
         self.isBuiltIn = isBuiltIn
     }
 
+    /// The single model EchoTune recommends and selects by default, on every
+    /// Mac. Onboarding, Settings and the fallback default all read this so the
+    /// recommendation can only ever be changed in one place.
+    static let recommendedModelID = "parakeet-tdt-0.6b-v3"
+
+    var isRecommended: Bool { id == Self.recommendedModelID }
+
     private static func defaultBackend(for id: String, isBuiltIn: Bool, category: ModelCategory) -> AIModelBackend {
         if isBuiltIn || id == "apple-speech" { return .appleSpeech }
         if id.hasPrefix("groq-") { return .groq }
@@ -94,30 +101,18 @@ struct AIModel: Identifiable, Equatable, Hashable {
             return "Built into macOS — no download. Great for quick notes and drafts."
         case "openai_whisper-small", "openai_whisper-small.en":
             return "Lightweight — noticeably better than Base for English, ideal for 8GB Macs."
-        case "distil-whisper_distil-large-v3", "distil-whisper_distil-large-v3_594MB":
-            return "Best speed + accuracy balance — near-large accuracy, loads in seconds."
-        case "distil-whisper_distil-large-v3_turbo", "distil-whisper_distil-large-v3_turbo_600MB":
-            return "Fastest distilled model — great on every Apple Silicon Mac."
         case "openai_whisper-large-v3-v20240930_turbo", "openai_whisper-large-v3-v20240930_turbo_632MB":
-            return "Slim flagship — max accuracy, 34% smaller download. Best on M2+."
-        case "openai_whisper-large-v3-turbo":
-            return "Top accuracy — ideal for long, technical, or precise dictation. Needs 16GB+ RAM."
-        case "openai_whisper-base":
-            return "Lightweight and fast — suits Macs with less RAM and quick dictation bursts."
-        case "parakeet-tdt-0.6b-v3", "parakeet-tdt-0.6b-v2":
-            return description
+            return "Slim Whisper flagship — max accuracy, 34% smaller download. Best on M2+."
+        case AIModel.recommendedModelID:
+            return "Recommended for every Mac — the fastest local model, running on the Neural Engine."
         case "groq-whisper-large-v3-turbo":
             return "Cloud-powered — top accuracy with no local download (needs free Groq API key)."
         case "deepgram-nova":
             return "Cloud-powered — fast and accurate (needs API key)."
-        case "sensevoice-small":
-            return "Experimental multilingual local ASR — 50+ languages, no API key."
         case "paraformer-large-zh":
             return "Experimental Mandarin local ASR — optimized for zh dictation."
         case "parakeet-ja-0.6b":
             return "Experimental Japanese local ASR — optimized for ja dictation."
-        case "parakeet-tdt-ctc-110m":
-            return "Experimental tiny local ASR — fastest FluidAudio batch tier."
         default:
             return description
         }

@@ -15,17 +15,18 @@ struct SetupStep: View {
     @State private var showAllModels = false
     let onNext: () -> Void
 
-    private static let leanModelID = "openai_whisper-base"
-
-    /// Best model for this specific Mac, based on RAM/CPU/chip generation.
-    /// Onboarding never recommends Apple Speech, even on low-end hardware —
-    /// it falls back to the lean Base model instead.
-    private var recommendedModel: AIModel? {
-        if let hardwareRecommended = SystemSpecsAnalyzer.shared.getRecommendedModel(from: modelManager.availableModels),
-           !hardwareRecommended.isBuiltIn {
-            return hardwareRecommended
+    /// The model shown in the top card. Once the user picks anything from the
+    /// catalog below it moves straight into this slot; until then the curated
+    /// recommendation (Parakeet TDT v3) is shown as the default.
+    private var featuredModel: AIModel? {
+        if let current = modelManager.currentModel,
+           let inCatalog = modelManager.availableModels.first(where: { $0.id == current.id }),
+           inCatalog.category == .local,
+           !inCatalog.isBuiltIn {
+            return inCatalog
         }
-        return modelManager.availableModels.first { $0.id == Self.leanModelID }
+        return modelManager.availableModels.first { $0.id == AIModel.recommendedModelID }
+            ?? localModels.first { !$0.isBuiltIn }
     }
 
     /// Every locally-running model (excludes cloud models that need API keys —
@@ -53,8 +54,10 @@ struct SetupStep: View {
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 16) {
-                    if let model = recommendedModel {
-                        modelCard(model: model, badge: "Recommended for your \(SystemSpecsAnalyzer.shared.chipGeneration.displayName)")
+                    if let model = featuredModel {
+                        modelCard(model: model, badge: model.isRecommended
+                                  ? "Recommended for your Mac"
+                                  : "Your selection")
                     } else {
                         ProgressView()
                             .frame(height: 120)
@@ -128,6 +131,7 @@ struct SetupStep: View {
         let isInstalled = modelManager.isInstalledAndUsable(model)
         let isActive = modelManager.currentModel?.id == model.id
         let isDownloadingThis = modelManager.isDownloading && modelManager.currentDownloadModel?.id == model.id
+        let isFeatured = featuredModel?.id == model.id
 
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
@@ -200,7 +204,30 @@ struct SetupStep: View {
                 .disabled(modelManager.isDownloading)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 8)
+        .padding(.horizontal, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(isFeatured ? OnboardingTheme.accent.opacity(0.10) : Color.clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(isFeatured ? OnboardingTheme.accent.opacity(0.55) : Color.primary.opacity(0.06),
+                        lineWidth: isFeatured ? 1.5 : 1)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            // Picking anything here promotes it into the top card; an
+            // un-downloaded model downloads first and selects on completion.
+            guard !isActive else { return }
+            if model.isBuiltIn {
+                let _ = modelManager.setCurrentModel(model)
+            } else if isInstalled {
+                selectAndCompileModel(model)
+            } else if !modelManager.isDownloading {
+                downloadModel(model)
+            }
+        }
     }
 
     // MARK: - Chip-fit badge

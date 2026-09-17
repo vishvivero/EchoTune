@@ -3,6 +3,38 @@
 All notable changes to EchoTune are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [7.4.8] — 2026-09-16
+
+Curated the model roster and made the default recommendation consistent
+everywhere.
+
+### Changed — model roster
+- The app now offers five local models plus the built-in fallback:
+  Parakeet TDT v3, Small (English), Large v3 Turbo (slim),
+  Paraformer Large (中文) and Parakeet 0.6B (日本語), then Apple Speech.
+- Removed: Distil Large v3, Distil Large v3 Turbo, Large v3 Turbo (full),
+  Base, Parakeet TDT v2, SenseVoice Small, Parakeet TDT-CTC 110M and the
+  never-shown "Coming soon" Parakeet Unified entry.
+- Existing installs pointing at a removed model are migrated to the
+  recommended default instead of falling through to nothing.
+
+### Changed — Parakeet TDT v3 is the default
+- One source of truth, `AIModel.recommendedModelID`, drives onboarding, the
+  fit badge, `getRecommendedModel()` and the fallback default. It is offered
+  first in the catalog and carries a **Recommended** badge.
+
+### Changed — choosing a model
+- Onboarding: the chosen model is promoted into the top card (titled "Your
+  selection"), so the header always reflects what you picked.
+- Settings: tapping a row is now the primary action. Installed models switch
+  immediately; a model that is not downloaded starts downloading and then
+  switches automatically. The row stays highlighted while that happens, with
+  **Recommended** / **Selected** / **Active** chips.
+
+### Tests
+- Added `testCatalogIsTheCuratedRoster` (pins the exact roster and asserts the
+  removed models stay gone) and `testParakeetTDTv3IsTheRecommendedDefault`.
+
 ## [7.4.7] — 2026-09-16
 
 Critical fix: local Whisper transcription returned **empty text for every

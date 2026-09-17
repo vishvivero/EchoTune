@@ -396,7 +396,9 @@ class AppSettings: ObservableObject {
         self.geminiAPIKey = KeychainHelper.load(forKey: "geminiAPIKey")
     }
 
-    static let defaultLocalTranscriptionModel = "distil-whisper_distil-large-v3_turbo_600MB"
+    /// Fallback local engine when no model has been chosen (and when cloud is
+    /// switched off). Kept in sync with the curated recommendation.
+    static let defaultLocalTranscriptionModel = AIModel.recommendedModelID
     private static let defaultEnhancementModel = AIEnhancementEngine.EnhancementModel.hosted.rawValue
 
     static func canonicalTranscriptionModelID(_ rawValue: String) -> String {
@@ -407,16 +409,21 @@ class AppSettings: ObservableObject {
             "whisper-base": "base",
             "whisper-small": defaultLocalTranscriptionModel,
             "whisper-medium": defaultLocalTranscriptionModel,
-            "whisper-large-v3": "openai_whisper-large-v3-turbo",
-            "whisper-large-v3-turbo": "openai_whisper-large-v3-turbo",
-            "large-v3": "openai_whisper-large-v3-turbo",
-            "distil-large-v3": "openai_whisper-base",
-            "distil-large-v3-turbo": defaultLocalTranscriptionModel,
-            "distil-whisper_distil-large-v3": "openai_whisper-base",
-            "distil-whisper_distil-large-v3_turbo": defaultLocalTranscriptionModel,
-            "parakeet": "parakeet-tdt-0.6b-v3",
-            "parakeet-v3": "parakeet-tdt-0.6b-v3",
-            "parakeet-v2": "parakeet-tdt-0.6b-v2"
+            "whisper-large-v3": AIModel.recommendedModelID,
+            "whisper-large-v3-turbo": "openai_whisper-large-v3-v20240930_turbo",
+            "large-v3": "openai_whisper-large-v3-v20240930_turbo",
+            "distil-large-v3": AIModel.recommendedModelID,
+            "distil-large-v3-turbo": AIModel.recommendedModelID,
+            "distil-whisper_distil-large-v3": AIModel.recommendedModelID,
+            "distil-whisper_distil-large-v3_turbo": AIModel.recommendedModelID,
+            "distil-whisper_distil-large-v3_turbo_600MB": AIModel.recommendedModelID,
+            "openai_whisper-base": AIModel.recommendedModelID,
+            "sensevoice-small": "paraformer-large-zh",
+            "parakeet-unified-en-0.6b": AIModel.recommendedModelID,
+            "parakeet-tdt-ctc-110m": AIModel.recommendedModelID,
+            "parakeet": AIModel.recommendedModelID,
+            "parakeet-v3": AIModel.recommendedModelID,
+            "parakeet-v2": AIModel.recommendedModelID
         ]
 
         if let mapped = legacyMap[normalized] {

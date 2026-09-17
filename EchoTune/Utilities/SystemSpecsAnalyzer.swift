@@ -58,17 +58,11 @@ enum PerformanceTier {
         }
     }
 
+    /// EchoTune recommends a single model on every Mac. Kept per-tier so the
+    /// existing tier plumbing (fit badges, onboarding copy) keeps compiling,
+    /// but every tier resolves to the same curated default.
     var recommendedModelID: String {
-        switch self {
-        case .veryLow:
-            return "apple-speech" // Built-in only for very low-end
-        case .low:
-            return "openai_whisper-base" // Base model for low-end systems
-        case .medium:
-            return "distil-whisper_distil-large-v3" // Best speed+accuracy on most Macs
-        case .high:
-            return "openai_whisper-large-v3-v20240930_turbo" // Slim flagship for M2+ 16GB
-        }
+        AIModel.recommendedModelID
     }
 }
 
@@ -128,28 +122,14 @@ class SystemSpecsAnalyzer {
         )
     }
 
+    /// Always the curated default. Falls back to the first downloadable local
+    /// model if the recommended one is ever missing from the catalog, so
+    /// onboarding can never end up with nothing to show.
     func getRecommendedModel(from availableModels: [AIModel]) -> AIModel? {
-        let specs = getSystemSpecs()
-        let recommendedID = specs.performanceTier.recommendedModelID
-
-        // Find the recommended model
-        // Device-aware recommendation override
-        let finalID: String
-        switch chipGeneration {
-        case .m1:
-            // M1 runs the distilled family comfortably; the full classic turbo is heavy
-            if recommendedID == "openai_whisper-large-v3-v20240930_turbo" || recommendedID == "openai_whisper-large-v3-turbo" {
-                finalID = "distil-whisper_distil-large-v3"
-            } else {
-                finalID = recommendedID
-            }
-        case .intel:
-            finalID = "openai_whisper-base"
-        default:
-            finalID = recommendedID
+        if let recommended = availableModels.first(where: { $0.id == AIModel.recommendedModelID }) {
+            return recommended
         }
-
-        return availableModels.first(where: { $0.id == finalID })
+        return availableModels.first { $0.category == .local && !$0.isBuiltIn }
     }
 
     // MARK: - Chip generation + per-model fit
@@ -219,8 +199,12 @@ class SystemSpecsAnalyzer {
             return ("", false, false)
         }
 
+        if model.isRecommended {
+            return ("Recommended", true, false)
+        }
+
         if let recommended = getRecommendedModel(from: availableModels), recommended.id == model.id {
-            return ("Best for this chip", true, false)
+            return ("Recommended", true, false)
         }
 
         switch fitOf(model) {
@@ -237,7 +221,9 @@ class SystemSpecsAnalyzer {
         let isLowRAM = ramGB < 16
 
         switch model.id {
-        case "apple-speech", "openai_whisper-base":
+        case AIModel.recommendedModelID:
+            return .best
+        case "apple-speech":
             return .best
         case "openai_whisper-small", "openai_whisper-small.en":
             return .best // tiny enough for everything
@@ -281,17 +267,7 @@ class SystemSpecsAnalyzer {
         let specs = getSystemSpecs()
         let ramGB = Int(specs.totalRAMInGB)
         let chip = chipGeneration.displayName
-
-        switch specs.performanceTier {
-        case .veryLow:
-            return "Based on your system (\(ramGB)GB RAM, \(chip)), we recommend the built-in Apple Speech — zero download, always works."
-        case .low:
-            return "Based on your system (\(ramGB)GB RAM, \(chip)), we recommend the Base model for a good balance of speed and accuracy."
-        case .medium:
-            return "Based on your system (\(ramGB)GB RAM, \(chip)), we recommend Distil Large v3 — near-large accuracy with fast, offline speed."
-        case .high:
-            return "Based on your system (\(ramGB)GB RAM, \(chip)), your Mac can comfortably run Large v3 Turbo — maximum accuracy, still offline and free."
-        }
+        return "Based on your system (\(ramGB)GB RAM, \(chip)), we recommend Parakeet TDT v3 — the fastest local engine, running on the Neural Engine with no cloud and no API key."
     }
 
     func getSystemInfoString() -> String {

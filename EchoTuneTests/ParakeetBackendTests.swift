@@ -6,19 +6,54 @@ final class ParakeetBackendTests: XCTestCase {
     func testCatalogAssignsStableBackends() {
         let models = ModelManager.shared.availableModels
         XCTAssertEqual(models.first(where: { $0.id == "apple-speech" })?.backend, .appleSpeech)
-        XCTAssertEqual(models.first(where: { $0.id == "distil-whisper_distil-large-v3_turbo_600MB" })?.backend, .whisper)
-        XCTAssertEqual(models.first(where: { $0.id == "parakeet-tdt-0.6b-v2" })?.backend, .parakeet)
-        XCTAssertEqual(models.first(where: { $0.id == "parakeet-tdt-0.6b-v3" })?.backend, .parakeet)
-        XCTAssertEqual(models.first(where: { $0.id == "parakeet-unified-en-0.6b" })?.backend, .parakeet)
-        XCTAssertEqual(models.first(where: { $0.id == "sensevoice-small" })?.backend, .senseVoice)
+        XCTAssertEqual(models.first(where: { $0.id == "openai_whisper-small.en" })?.backend, .whisper)
+        XCTAssertEqual(models.first(where: { $0.id == "openai_whisper-large-v3-v20240930_turbo" })?.backend, .whisper)
+        XCTAssertEqual(models.first(where: { $0.id == AIModel.recommendedModelID })?.backend, .parakeet)
         XCTAssertEqual(models.first(where: { $0.id == "paraformer-large-zh" })?.backend, .paraformer)
         XCTAssertEqual(models.first(where: { $0.id == "parakeet-ja-0.6b" })?.backend, .parakeet)
-        XCTAssertEqual(models.first(where: { $0.id == "parakeet-tdt-ctc-110m" })?.backend, .parakeet)
         XCTAssertEqual(models.first(where: { $0.id == "paraformer-large-zh" })?.fixedLanguage, "zh-CN")
         XCTAssertEqual(models.first(where: { $0.id == "parakeet-ja-0.6b" })?.fixedLanguage, "ja-JP")
-        XCTAssertNil(models.first(where: { $0.id == "sensevoice-small" })?.fixedLanguage)
         XCTAssertEqual(models.first(where: { $0.id == "groq-whisper-large-v3-turbo" })?.backend, .groq)
         XCTAssertEqual(models.first(where: { $0.id == "deepgram-nova" })?.backend, .deepgram)
+    }
+
+    /// The roster is curated on purpose — this pins it so a model can only be
+    /// added back deliberately.
+    func testCatalogIsTheCuratedRoster() {
+        let models = ModelManager.shared.availableModels
+        XCTAssertEqual(models.map(\.id), [
+            AIModel.recommendedModelID,
+            "openai_whisper-small.en",
+            "openai_whisper-large-v3-v20240930_turbo",
+            "paraformer-large-zh",
+            "parakeet-ja-0.6b",
+            "apple-speech",
+            "groq-whisper-large-v3-turbo",
+            "deepgram-nova"
+        ])
+        // The removed entries must not come back by accident.
+        for gone in ["distil-whisper_distil-large-v3",
+                     "distil-whisper_distil-large-v3_turbo_600MB",
+                     "openai_whisper-large-v3-turbo",
+                     "openai_whisper-base",
+                     "parakeet-tdt-0.6b-v2",
+                     "sensevoice-small",
+                     "parakeet-tdt-ctc-110m",
+                     "parakeet-unified-en-0.6b"] {
+            XCTAssertNil(models.first(where: { $0.id == gone }), "\(gone) should not be offered")
+        }
+    }
+
+    /// Parakeet TDT v3 is the default on every Mac and must always be offered
+    /// first so onboarding and Settings surface it as the recommendation.
+    func testParakeetTDTv3IsTheRecommendedDefault() {
+        let models = ModelManager.shared.availableModels
+        XCTAssertEqual(models.first?.id, AIModel.recommendedModelID)
+        XCTAssertEqual(models.first?.name, "Parakeet TDT v3")
+        XCTAssertTrue(models.first?.isRecommended ?? false)
+        XCTAssertEqual(SystemSpecsAnalyzer.shared.getRecommendedModel(from: models)?.id,
+                       AIModel.recommendedModelID)
+        XCTAssertEqual(AppSettings.defaultLocalTranscriptionModel, AIModel.recommendedModelID)
     }
 
     func testParakeetIDsMapToPinnedFluidAudioVersions() {
@@ -48,7 +83,7 @@ final class ParakeetBackendTests: XCTestCase {
         }
         let modelID = ProcessInfo.processInfo.environment["PHASE9_MODEL"]
             ?? defaults.string(forKey: "phase9Model")
-            ?? "sensevoice-small"
+            ?? "parakeet-tdt-0.6b-v3"
         let model = ModelManager.shared.availableModels.first(where: { $0.id == modelID })
             ?? AIModel(id: modelID, name: modelID, size: 0, description: "benchmark", language: "auto", url: URL(string: "https://example.com")!, type: .balanced, category: .local, backend: modelID == "sensevoice-small" ? .senseVoice : (modelID == "paraformer-large-zh" ? .paraformer : .parakeet))
         let audio = try Data(contentsOf: URL(fileURLWithPath: fixturePath))

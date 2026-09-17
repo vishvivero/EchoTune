@@ -21,7 +21,7 @@ set -euo pipefail
 
 VERSION="${1:?usage: release_direct.sh <version> [app-path]}"
 IDENTITY="Developer ID Application: VISHNU RAJ (VYPVWG69P8)"
-NOTARY_PROFILE="${NOTARY_PROFILE:-EchoTune Notary 2}"
+NOTARY_PROFILE="${NOTARY_PROFILE:-echotune-notary}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENTITLEMENTS="$ROOT/EchoTune/EchoTune.entitlements"
 OUT="$ROOT/build/release-$VERSION"
@@ -47,8 +47,33 @@ ditto "$APP_SOURCE" "$APP"
 SHORT=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")
 [ "$SHORT" = "$VERSION" ] || { echo "error: app is $SHORT, expected $VERSION" >&2; exit 1; }
 
-# --- sign WITH entitlements (the whole point) ---------------------------------
-echo "==> signing with entitlements"
+# --- sign nested code first, deepest-first -----------------------------------
+# A Developer ID distribution build must re-sign every nested Mach-O and bundle.
+# The Xcode archive's Sparkle/Sentry helpers are signed with the local
+# "Apple Development" identity, which notarization rejects outright
+# ("not signed with a valid Developer ID certificate" / "no secure timestamp").
+# Sign innermost first, or each outer signature is invalidated by the next.
+sign_path() {
+  [ -e "$1" ] || return 0
+  codesign --force --options runtime --timestamp --sign "$IDENTITY" "$1"
+}
+
+echo "==> signing nested frameworks and helpers"
+SPARKLE_B="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
+sign_path "$SPARKLE_B/Autoupdate"
+sign_path "$SPARKLE_B/XPCServices/Downloader.xpc"
+sign_path "$SPARKLE_B/XPCServices/Installer.xpc"
+sign_path "$SPARKLE_B/Updater.app"
+sign_path "$APP/Contents/Frameworks/Sparkle.framework"
+sign_path "$APP/Contents/Frameworks/Sentry.framework"
+for extra in "$APP/Contents/Frameworks"/*.framework "$APP/Contents/Frameworks"/*.dylib; do
+  [ -e "$extra" ] || continue
+  case "$extra" in *Sparkle.framework|*Sentry.framework) continue ;; esac
+  sign_path "$extra"
+done
+
+# --- sign the app itself WITH entitlements (the whole point of this script) ---
+echo "==> signing app with entitlements"
 codesign --force --options runtime --timestamp \
   --entitlements "$ENTITLEMENTS" --sign "$IDENTITY" "$APP"
 
@@ -58,6 +83,23 @@ if ! codesign -d --entitlements :- "$APP" 2>/dev/null | grep -q 'com.apple.secur
   exit 1
 fi
 codesign --verify --deep --strict --verbose=1 "$APP"
+
+# --- pre-flight: every Mach-O must carry a Developer ID signature + timestamp -
+# Cheaper than a failed notarization round-trip.
+echo "==> pre-flight signature audit"
+bad=0
+while IFS= read -r -d '' candidate; do
+  file -b "$candidate" | grep -q 'Mach-O' || continue
+  info=$(codesign -dvv "$candidate" 2>&1 || true)
+  if ! grep -q 'Developer ID Application' <<<"$info"; then
+    echo "error: not Developer ID signed: ${candidate#$APP/}" >&2; bad=1
+  fi
+  if ! grep -q '^Timestamp=' <<<"$info"; then
+    echo "error: no secure timestamp: ${candidate#$APP/}" >&2; bad=1
+  fi
+done < <(find "$APP/Contents" -type f -print0)
+[ "$bad" -eq 0 ] || { echo "error: refusing to notarize an inconsistent build" >&2; exit 1; }
+echo "    all nested code Developer ID signed with timestamps"
 
 # --- notarize the app ---------------------------------------------------------
 echo "==> notarizing app"

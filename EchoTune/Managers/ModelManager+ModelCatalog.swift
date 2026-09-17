@@ -2,8 +2,11 @@
 //  ModelManager+ModelCatalog.swift
 //  EchoTune
 //
-//  Model catalog — curated for Apple Silicon (M1-M5).
-//  Only models that make sense: fast, accurate (English-optimised for this release).
+//  Model catalog — curated roster for Apple Silicon (M1-M5) and Intel Macs.
+//  Kept deliberately short: one recommended default, one lighter Whisper, one
+//  slim Whisper flagship, and the two verified FluidAudio language models.
+//  The built-in Apple Speech entry stays as the zero-download fallback, and the
+//  cloud providers stay behind the API-key gate in Settings.
 //
 
 import Foundation
@@ -15,22 +18,26 @@ extension ModelManager {
     func loadAvailableModels() {
         availableModels = [
 
+            // MARK: - Recommended default
+
+            // Recommended on every Mac: fastest verified local model, runs on
+            // the Neural Engine through FluidAudio. This is the model onboarding
+            // and Settings surface first, and the one new installs select.
             AIModel(
-                id: "apple-speech",
-                name: "Apple Speech",
-                size: 0,
-                description: "Built-in macOS transcription. No download required.",
+                id: AIModel.recommendedModelID,
+                name: "Parakeet TDT v3",
+                size: 600 * 1024 * 1024,
+                description: "Latest fast on-device English transcription using FluidAudio and the Neural Engine.",
                 language: "English",
-                url: URL(string: "https://developer.apple.com/documentation/speech")!,
+                url: URL(string: "https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v3-coreml")!,
                 type: .fast,
                 category: .local,
-                speedRating: 4,
-                accuracyRating: 3,
-                isBuiltIn: true,
-                backend: .appleSpeech
+                speedRating: 5,
+                accuracyRating: 4,
+                backend: .parakeet
             ),
 
-            // MARK: - Local Models (WhisperKit / CoreML)
+            // MARK: - WhisperKit / CoreML
 
             // Budget tier — light English dictation on 8GB Macs
             AIModel(
@@ -45,35 +52,6 @@ extension ModelManager {
                 speedRating: 5,
                 accuracyRating: 3,
                 isBuiltIn: false
-            ),
-
-            // Recommended balance — best speed/accuracy for most Macs
-            AIModel(
-                id: "distil-whisper_distil-large-v3",
-                name: "Distil Large v3",
-                size: 594 * 1024 * 1024,
-                description: "Nearly large-v3 accuracy at a fraction of the load. The best free speed + accuracy pick.",
-                language: "English",
-                url: URL(string: "https://huggingface.co/argmaxinc/whisperkit-coreml")!,
-                type: .fast,
-                category: .local,
-                speedRating: 5,
-                accuracyRating: 4,
-                isBuiltIn: false
-            ),
-
-            // Fastest distilled default — compatible with all Apple Silicon
-            AIModel(
-                id: "distil-whisper_distil-large-v3_turbo_600MB",
-                name: "Distil Large v3 Turbo",
-                size: 600 * 1024 * 1024,
-                description: "Recommended. Fastest large model — distilled + turbo optimized. Great on all Apple Silicon.",
-                language: "English",
-                url: URL(string: "https://huggingface.co/argmaxinc/whisperkit-coreml")!,
-                type: .fast,
-                category: .local,
-                speedRating: 5,
-                accuracyRating: 4
             ),
 
             // Slim flagship — v3 turbo accuracy, ~34% smaller download
@@ -91,93 +69,7 @@ extension ModelManager {
                 isBuiltIn: false
             ),
 
-            // Premium accuracy — for users who want the best
-            AIModel(
-                id: "openai_whisper-large-v3-turbo",
-                name: "Large v3 Turbo",
-                size: 954 * 1024 * 1024,
-                description: "Maximum accuracy with turbo speed. Best for M2+ with 16GB+ RAM.",
-                language: "English",
-                url: URL(string: "https://huggingface.co/argmaxinc/whisperkit-coreml")!,
-                type: .balanced,
-                category: .local,
-                speedRating: 3,
-                accuracyRating: 5
-            ),
-
-            // M1-compatible base model (turbo not supported on M1)
-            AIModel(
-                id: "openai_whisper-base",
-                name: "Base",
-                size: 143 * 1024 * 1024,
-                description: "Lightweight model compatible with all Apple Silicon (including M1) and Intel Macs.",
-                language: "English",
-                url: URL(string: "https://huggingface.co/argmaxinc/whisperkit-coreml")!,
-                type: .fast,
-                category: .local,
-                speedRating: 5,
-                accuracyRating: 3
-            ),
-
-            // MARK: - Parakeet (FluidAudio / CoreML)
-
-            AIModel(
-                id: "parakeet-tdt-0.6b-v2",
-                name: "Parakeet TDT v2",
-                size: 600 * 1024 * 1024,
-                description: "Very fast on-device English transcription using FluidAudio and the Neural Engine.",
-                language: "English",
-                url: URL(string: "https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v2-coreml")!,
-                type: .fast,
-                category: .local,
-                speedRating: 5,
-                accuracyRating: 4,
-                backend: .parakeet
-            ),
-
-            AIModel(
-                id: "parakeet-tdt-0.6b-v3",
-                name: "Parakeet TDT v3",
-                size: 600 * 1024 * 1024,
-                description: "Latest fast on-device English transcription using FluidAudio and the Neural Engine.",
-                language: "English",
-                url: URL(string: "https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v3-coreml")!,
-                type: .fast,
-                category: .local,
-                speedRating: 5,
-                accuracyRating: 4,
-                backend: .parakeet
-            ),
-
-            AIModel(
-                id: "parakeet-unified-en-0.6b",
-                name: "Parakeet Unified (English)",
-                size: 600 * 1024 * 1024,
-                description: "FluidAudio's unified Parakeet English model; available when the pinned FluidAudio API exposes it.",
-                language: "English",
-                url: URL(string: "https://huggingface.co/FluidInference/parakeet-unified-en-0.6b-coreml")!,
-                type: .fast,
-                category: .comingSoon,
-                speedRating: 5,
-                accuracyRating: 4,
-                backend: .parakeet
-            ),
-
             // MARK: - Multilingual FluidAudio Models
-
-            AIModel(
-                id: "sensevoice-small",
-                name: "SenseVoice Small (Multilingual)",
-                size: 472_467_765,
-                description: "Experimental multilingual on-device ASR with 50+ language coverage. Tags are removed before insertion.",
-                language: "50+ languages (auto)",
-                url: URL(string: "https://huggingface.co/FluidInference/sensevoice-small-coreml")!,
-                type: .balanced,
-                category: .local,
-                speedRating: 4,
-                accuracyRating: 3,
-                backend: .senseVoice
-            ),
 
             AIModel(
                 id: "paraformer-large-zh",
@@ -209,22 +101,24 @@ extension ModelManager {
                 backend: .parakeet
             ),
 
+            // MARK: - Built-in fallback (no download)
+
             AIModel(
-                id: "parakeet-tdt-ctc-110m",
-                name: "Parakeet TDT-CTC 110M",
-                size: 227_453_720,
-                description: "Experimental smallest FluidAudio Parakeet tier for fast English batch transcription.",
+                id: "apple-speech",
+                name: "Apple Speech",
+                size: 0,
+                description: "Built-in macOS transcription. No download required.",
                 language: "English",
-                fixedLanguage: "en-US",
-                url: URL(string: "https://huggingface.co/FluidInference/parakeet-tdt-ctc-110m-coreml")!,
+                url: URL(string: "https://developer.apple.com/documentation/speech")!,
                 type: .fast,
                 category: .local,
-                speedRating: 5,
-                accuracyRating: 2,
-                backend: .parakeet
+                speedRating: 4,
+                accuracyRating: 3,
+                isBuiltIn: true,
+                backend: .appleSpeech
             ),
 
-            // MARK: - Cloud Models
+            // MARK: - Cloud Models (shown once a key is stored)
 
             AIModel(
                 id: "groq-whisper-large-v3-turbo",

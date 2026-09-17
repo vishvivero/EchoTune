@@ -14,6 +14,9 @@ struct AIModelsSettingsView: View {
     @StateObject private var whisperEngine = WhisperEngine.shared
     @State private var selectedProvider: CloudAPIKeyProvider = .groq
     @State private var downloadErrorMessage: String?
+    /// Model the user just chose that still has to download. Keeps the row
+    /// highlighted as "Selected" until the switch actually completes.
+    @State private var pendingSelectionID: String?
 
     var body: some View {
         ScrollView {
@@ -128,12 +131,44 @@ struct AIModelsSettingsView: View {
 
     // MARK: - Model Row (mirrors onboarding clarity)
 
+    /// Tapping a row is the primary action: installed models switch right away,
+    /// missing ones download first and then switch. The row stays highlighted
+    /// while that happens so the pending choice is obvious.
+    private func selectModel(_ model: AIModel) {
+        if modelManager.currentModel?.id == model.id { return }
+
+        if model.isBuiltIn || modelManager.isInstalledAndUsable(model) {
+            pendingSelectionID = nil
+            let _ = modelManager.setCurrentModel(model)
+            if !model.isBuiltIn {
+                whisperEngine.loadModel(model) { _ in }
+            }
+            return
+        }
+
+        guard !modelManager.isDownloading else { return }
+        downloadErrorMessage = nil
+        pendingSelectionID = model.id
+        modelManager.downloadModel(model) { result in
+            pendingSelectionID = nil
+            switch result {
+            case .success(let downloaded):
+                let _ = modelManager.setCurrentModel(downloaded)
+                whisperEngine.loadModel(downloaded) { _ in }
+            case .failure(let error):
+                downloadErrorMessage = "\(model.name) could not be downloaded: \(error.localizedDescription)"
+            }
+        }
+    }
+
     @ViewBuilder
     private func modelRow(_ model: AIModel) -> some View {
         let isInstalled = modelManager.isInstalledAndUsable(model)
         let isActive = modelManager.currentModel?.id == model.id
         let isDownloadingThis = modelManager.isDownloading && modelManager.currentDownloadModel?.id == model.id
         let isLoadingThis = whisperEngine.isLoading && modelManager.currentModel?.id == model.id
+        let isPending = pendingSelectionID == model.id
+        let isSelected = isActive || isPending
 
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
@@ -147,8 +182,14 @@ struct AIModelsSettingsView: View {
                         chip("Built-in", color: .secondary)
                     }
 
+                    if model.isRecommended {
+                        chip("Recommended", color: .green)
+                    }
+
                     if isActive {
                         chip("Active", color: .red)
+                    } else if isPending {
+                        chip("Selected", color: .accentColor)
                     }
 
                     fitBadge(model)
@@ -177,12 +218,16 @@ struct AIModelsSettingsView: View {
             actionButton(for: model, isInstalled: isInstalled, isActive: isActive, isDownloadingThis: isDownloadingThis, isLoadingThis: isLoadingThis)
         }
         .padding(14)
-        .background(Color.primary.opacity(0.03))
-        .cornerRadius(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(isSelected ? Color.accentColor.opacity(0.08) : Color.primary.opacity(0.03))
+        )
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(
-            isActive ? Color.accentColor.opacity(0.4) : Color.primary.opacity(0.05),
-            lineWidth: isActive ? 1.5 : 1
+            isSelected ? Color.accentColor.opacity(0.55) : Color.primary.opacity(0.05),
+            lineWidth: isSelected ? 1.5 : 1
         ))
+        .contentShape(Rectangle())
+        .onTapGesture { selectModel(model) }
     }
 
     @ViewBuilder
@@ -214,10 +259,7 @@ struct AIModelsSettingsView: View {
                             .lineLimit(1)
                     }
                 } else {
-                    Button(isActive ? "Active" : "Select") {
-                        let _ = modelManager.setCurrentModel(model)
-                        whisperEngine.loadModel(model) { _ in }
-                    }
+                    Button(isActive ? "Active" : "Select") { selectModel(model) }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
                     .disabled(isActive)
@@ -247,16 +289,10 @@ struct AIModelsSettingsView: View {
                         .minimumScaleFactor(0.75)
                 }
             } else {
-                Button("Download") {
-                    modelManager.downloadModel(model) { result in
-                        if case .failure(let error) = result {
-                            downloadErrorMessage = "\(model.name) could not be downloaded: \(error.localizedDescription)"
-                        }
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-                .disabled(modelManager.isDownloading)
+                Button("Download & Use") { selectModel(model) }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .disabled(modelManager.isDownloading)
             }
         }
     }
