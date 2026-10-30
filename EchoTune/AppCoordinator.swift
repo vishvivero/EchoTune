@@ -356,13 +356,16 @@ class AppCoordinator: ObservableObject {
 
     /// Pre-load the default transcription model at startup so the first
     /// dictation is instant. Runs on a background thread to avoid blocking UI.
+    /// FluidAudio batch engines (Parakeet/SenseVoice/Paraformer) keep their
+    /// model loaded separately from WhisperEngine, so the preload is routed
+    /// to the engine that matches the selected model's backend.
     private func preloadDefaultModel() {
         guard let currentModel = modelManager.currentModel else {
             debugLog("⚠️ No default model set — skipping preload")
             return
         }
 
-        // Only preload local Whisper models (not Apple Speech or cloud)
+        // Only preload local models (not Apple Speech or cloud)
         guard currentModel.category == .local && !currentModel.isBuiltIn else {
             debugLog("ℹ️ Default model is \(currentModel.name) — no preload needed")
             return
@@ -373,22 +376,83 @@ class AppCoordinator: ObservableObject {
             return
         }
 
-        // Skip if already loaded (e.g., rapid re-init)
-        if whisperEngine.isAvailable && whisperEngine.loadedModelName == currentModel.name {
-            debugLog("ℹ️ Model \(currentModel.name) already loaded — skipping preload")
-            return
-        }
+        // Warm the FluidAudio engine matching the selected backend so the
+        // first dictation after launch is instant. Only preload when the model
+        // files are already cached — a first-use download stays behind the
+        // explicit "Setting Up Model" flow at dictation start.
+        switch currentModel.backend {
+        case .parakeet:
+            guard ParakeetEngine.isModelInstalled(for: currentModel.id) else {
+                debugLog("⚠️ Parakeet model \(currentModel.id) not cached — skipping preload")
+                return
+            }
+            guard !(ParakeetEngine.shared.isAvailable && ParakeetEngine.shared.currentModelID == currentModel.id) else {
+                debugLog("ℹ️ Parakeet \(currentModel.name) already warm — skipping preload")
+                return
+            }
+            debugLog("🚀 Pre-loading Parakeet at launch: \(currentModel.name)")
+            ParakeetEngine.shared.loadModel(currentModel) { result in
+                switch result {
+                case .success:
+                    debugLog("✅ Parakeet pre-loaded and ready: \(currentModel.name)")
+                case .failure(let error):
+                    debugLog("⚠️ Parakeet preload failed (will retry on first dictation): \(error)")
+                }
+            }
+        case .senseVoice:
+            guard SenseVoiceEngine.isModelInstalled() else {
+                debugLog("⚠️ SenseVoice model not cached — skipping preload")
+                return
+            }
+            guard !(SenseVoiceEngine.shared.isAvailable && SenseVoiceEngine.shared.currentModelID == currentModel.id) else {
+                debugLog("ℹ️ SenseVoice \(currentModel.name) already warm — skipping preload")
+                return
+            }
+            debugLog("🚀 Pre-loading SenseVoice at launch: \(currentModel.name)")
+            SenseVoiceEngine.shared.loadModel(currentModel) { result in
+                switch result {
+                case .success:
+                    debugLog("✅ SenseVoice pre-loaded and ready: \(currentModel.name)")
+                case .failure(let error):
+                    debugLog("⚠️ SenseVoice preload failed (will retry on first dictation): \(error)")
+                }
+            }
+        case .paraformer:
+            guard FileManager.default.fileExists(atPath: FluidAudioModelPaths.directory(for: .paraformer).path) else {
+                debugLog("⚠️ Paraformer model not cached — skipping preload")
+                return
+            }
+            guard !(ParaformerEngine.shared.isAvailable && ParaformerEngine.shared.currentModelID == currentModel.id) else {
+                debugLog("ℹ️ Paraformer \(currentModel.name) already warm — skipping preload")
+                return
+            }
+            debugLog("🚀 Pre-loading Paraformer at launch: \(currentModel.name)")
+            ParaformerEngine.shared.loadModel(currentModel) { result in
+                switch result {
+                case .success:
+                    debugLog("✅ Paraformer pre-loaded and ready: \(currentModel.name)")
+                case .failure(let error):
+                    debugLog("⚠️ Paraformer preload failed (will retry on first dictation): \(error)")
+                }
+            }
+        default:
+            // Whisper models load through WhisperEngine.
+            if whisperEngine.isAvailable && whisperEngine.loadedModelName == currentModel.name {
+                debugLog("ℹ️ Model \(currentModel.name) already loaded — skipping preload")
+                return
+            }
 
-        debugLog("🚀 Pre-loading default model at launch: \(currentModel.name)")
-        debugLog("   Model: \(currentModel.name) (id: \(currentModel.id), category: \(currentModel.category))")
+            debugLog("🚀 Pre-loading default model at launch: \(currentModel.name)")
+            debugLog("   Model: \(currentModel.name) (id: \(currentModel.id), category: \(currentModel.category))")
 
-        whisperEngine.loadModel(currentModel) { result in
-            switch result {
-            case .success:
-                debugLog("✅ Model pre-loaded and ready: \(currentModel.name)")
-                debugLog("   whisperEngine.isAvailable=\(self.whisperEngine.isAvailable) loadedModelName=\(self.whisperEngine.loadedModelName ?? "nil")")
-            case .failure(let error):
-                debugLog("⚠️ Model preload failed (will retry on first dictation): \(error)")
+            whisperEngine.loadModel(currentModel) { result in
+                switch result {
+                case .success:
+                    debugLog("✅ Model pre-loaded and ready: \(currentModel.name)")
+                    debugLog("   whisperEngine.isAvailable=\(self.whisperEngine.isAvailable) loadedModelName=\(self.whisperEngine.loadedModelName ?? "nil")")
+                case .failure(let error):
+                    debugLog("⚠️ Model preload failed (will retry on first dictation): \(error)")
+                }
             }
         }
     }
