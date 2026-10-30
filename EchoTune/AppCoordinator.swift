@@ -244,6 +244,20 @@ class AppCoordinator: ObservableObject {
 
     // MARK: - Setup
 
+    // Hold/double-press gesture state (push-to-talk only).
+    // Short holds (< holdThreshold) defer the stop by doublePressWindow so a
+    // second press can consume the gesture as a double-press. Long holds stop
+    // immediately — the zero-latency push-to-talk feel is unchanged. Toggle
+    // mode is untouched.
+    private var gestureLastPressAt: Date?
+    private var gesturePendingBlipStop: DispatchWorkItem?
+    private var gestureConsumedRelease = false
+    /// Set right before a gesture-discarded stop; read-and-cleared at the top
+    /// of stopDictation() so intentional blip discards stay quiet.
+    var suppressNextNoSpeechNotice = false
+    static let holdThreshold: TimeInterval = 0.3
+    static let doublePressWindow: TimeInterval = 0.25
+
     private func setupKeyboardShortcut() {
         shortcutManager.onShortcutTriggered = { [weak self] in
             guard let self = self else { return }
@@ -257,6 +271,18 @@ class AppCoordinator: ObservableObject {
             }
 
             if AppSettings.shared.recordingMode == .pushToTalk {
+                // A second press inside the double-press window consumes the
+                // gesture: no new dictation starts, the short recording from
+                // the first press is discarded, and the double-press action runs.
+                if self.gesturePendingBlipStop != nil {
+                    self.gesturePendingBlipStop?.cancel()
+                    self.gesturePendingBlipStop = nil
+                    self.gestureConsumedRelease = true
+                    debugLog("⌨️✌️ Double-press detected — running double-press action")
+                    self.handleDoublePressGesture()
+                    return
+                }
+                self.gestureLastPressAt = Date()
                 // Push-to-talk: key down always starts recording
                 if self.appState.recordingState == .idle {
                     self.toggleDictation()
@@ -271,15 +297,63 @@ class AppCoordinator: ObservableObject {
             guard let self = self else { return }
             // Push-to-talk: key up stops recording
             if AppSettings.shared.recordingMode == .pushToTalk {
+                // The release after a double-press belongs to that gesture.
+                if self.gestureConsumedRelease {
+                    self.gestureConsumedRelease = false
+                    self.gestureLastPressAt = nil
+                    return
+                }
                 if self.appState.recordingState == .recording {
-                    debugLog("⌨️ Push-to-talk: key released, stopping recording")
-                    self.toggleDictation()
+                    let held = self.gestureLastPressAt.map { Date().timeIntervalSince($0) } ?? .infinity
+                    if held < AppCoordinator.holdThreshold {
+                        // Short hold: either an accidental tap or the first half
+                        // of a double-press. Defer the stop by the double-press
+                        // window; if nothing follows, discard the blip quietly.
+                        let work = DispatchWorkItem { [weak self] in
+                            guard let self else { return }
+                            self.gesturePendingBlipStop = nil
+                            self.gestureLastPressAt = nil
+                            if self.appState.recordingState == .recording {
+                                debugLog("⌨️ Single tap — discarding short recording quietly")
+                                self.suppressNextNoSpeechNotice = true
+                                self.toggleDictation()
+                            }
+                        }
+                        self.gesturePendingBlipStop = work
+                        DispatchQueue.main.asyncAfter(
+                            deadline: .now() + AppCoordinator.doublePressWindow,
+                            execute: work
+                        )
+                    } else {
+                        debugLog("⌨️ Push-to-talk: key released, stopping recording")
+                        self.toggleDictation()
+                    }
                 }
             }
         }
 
         debugLog("✅ Keyboard shortcut callback configured (push-to-talk + toggle modes)")
         debugLog("   Current shortcut: \(shortcutManager.getCurrentShortcutString())")
+    }
+
+    /// Double-press action. Long-term this routes to an agent/command mode
+    /// (Speakly-style double-tap); for now it discards the blip recording
+    /// quietly and brings the EchoTune dashboard to the front.
+    private func handleDoublePressGesture() {
+        if appState.recordingState == .recording {
+            debugLog("⌨️✌️ Discarding double-press blip recording quietly")
+            suppressNextNoSpeechNotice = true
+            toggleDictation()
+        }
+        gestureLastPressAt = nil
+        NSApp.activate(ignoringOtherApps: true)
+        if let mainWindow = NSApp.windows.first(where: { window in
+            window.isVisible && window.canBecomeKey
+        }) {
+            mainWindow.makeKeyAndOrderFront(nil)
+            mainWindow.orderFrontRegardless()
+        }
+        debugLog("⌨️✌️ Double-press action complete (dashboard focused)")
     }
 
     /// Called after onboarding completes (or on launch if already done).

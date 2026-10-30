@@ -653,6 +653,12 @@ extension AppCoordinator {
         debugLog("🛑 Stop dictation")
         os_log("🛑 stopDictation called, useWhisper=%d", log: appLog, type: .info, useWhisper ? 1 : 0)
 
+        // Read-and-clear: intentional gesture discards (single tap or
+        // double-press in push-to-talk) suppress the no-speech notice for
+        // this stop only.
+        let wasGestureDiscard = suppressNextNoSpeechNotice
+        suppressNextNoSpeechNotice = false
+
         // Play stop sound (if enabled)
         SoundManager.shared.playStopSound()
 
@@ -700,15 +706,18 @@ extension AppCoordinator {
             if !hasSignificantSpeech {
                 debugLog("⚠️ No significant speech detected - skipping transcription")
 
-                // Show "No speech detected" notification
-                self.notificationManager.showNotification(
-                    title: "No Speech Detected",
-                    body: "The recording didn't contain any clear speech. Please try again.",
-                    sound: false
-                )
+                // Intentional gesture discards are not errors — stay quiet.
+                if !wasGestureDiscard {
+                    // Show "No speech detected" notification
+                    self.notificationManager.showNotification(
+                        title: "No Speech Detected",
+                        body: "The recording didn't contain any clear speech. Please try again.",
+                        sound: false
+                    )
 
-                // Log to analytics
-                self.analyticsManager.recordError(type: "VAD", context: "No speech detected")
+                    // Log to analytics
+                    self.analyticsManager.recordError(type: "VAD", context: "No speech detected")
+                }
 
                 // Reset state
                 self.appState.recordingState = .idle
