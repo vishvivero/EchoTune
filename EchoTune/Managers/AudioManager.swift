@@ -94,6 +94,22 @@ class AudioManager: NSObject, ObservableObject {
     // repeatedly resample the accumulated native-format recording.
     var onWhisperAudioBuffer: ((AVAudioPCMBuffer) -> Void)?
 
+    /// When true, the 16 kHz whisper-format samples are accumulated in memory
+    /// during recording so batch engines can transcribe without a temp-file
+    /// roundtrip at stop. Set by the coordinator BEFORE startRecording() for
+    /// FluidAudio batch sessions and never changed mid-session (~64 KB/s at
+    /// 16 kHz Float32).
+    var accumulateWhisperSamples = false
+
+    /// Converted samples for the just-finished recording. Snapshotted by
+    /// stopRecording() on the caller thread after the conversion queue is
+    /// drained; valid until the next startRecording().
+    private(set) var lastWhisperSamples: [Float] = []
+
+    /// Append-only on whisperConversionQueue. Reset in startRecording(),
+    /// snapshotted into lastWhisperSamples by stopRecording().
+    private var whisperSampleAccumulator: [Float] = []
+
     // MARK: - Temporary File URL
 
     // Temporary file URL for recording (using CAF format for better Float32 support)
@@ -201,6 +217,11 @@ class AudioManager: NSObject, ObservableObject {
         audioChunks.removeAll()
         currentChunk = nil
         currentChunkFrameOffset = 0
+
+        // Reset the in-memory whisper sample capture. The conversion queue is
+        // idle here: the tap is not installed yet.
+        whisperSampleAccumulator.removeAll(keepingCapacity: true)
+        lastWhisperSamples.removeAll(keepingCapacity: true)
 
         // Initialize audio engine
         audioEngine = AVAudioEngine()
@@ -345,13 +366,14 @@ class AudioManager: NSObject, ObservableObject {
             // Convert once into Whisper's 16 kHz mono format. This replaces
             // the previous per-tick AVAudioConverter construction in
             // WhisperEngine.convertBuffersToFloatArray().
-            if self.onWhisperAudioBuffer != nil {
+            if self.onWhisperAudioBuffer != nil || self.accumulateWhisperSamples {
                 self.whisperConversionQueue.async { [weak self] in
                     guard let self else { return }
                     guard let whisperBuffer = self.convertToWhisperBuffer(safeCopy) else {
                         debugLog("⚠️ Failed to convert capture buffer to Whisper format")
                         return
                     }
+                    self.appendAccumulatedSamples(from: whisperBuffer)
                     self.onWhisperAudioBuffer?(whisperBuffer)
                 }
             }
@@ -431,6 +453,12 @@ class AudioManager: NSObject, ObservableObject {
         whisperConversionQueue.sync {
             self.flushWhisperConverter()
         }
+
+        // Snapshot the in-memory whisper samples for the batch-engine stop
+        // path. The tap is gone and the queue is drained, so no further
+        // appends can race this read on the caller thread.
+        lastWhisperSamples = whisperSampleAccumulator
+        whisperSampleAccumulator.removeAll(keepingCapacity: true)
 
         // Wait for all remaining disk writes to finish, then close file
         fileWriteQueue.sync {
@@ -516,7 +544,18 @@ class AudioManager: NSObject, ObservableObject {
             return
         }
         guard status != .error, output.frameLength > 0 else { return }
+        appendAccumulatedSamples(from: output)
         onWhisperAudioBuffer?(output)
+    }
+
+    /// Appends a converted buffer's samples to the in-memory capture.
+    /// Must be called only on whisperConversionQueue.
+    private func appendAccumulatedSamples(from buffer: AVAudioPCMBuffer) {
+        guard accumulateWhisperSamples,
+              let channel = buffer.floatChannelData?[0] else { return }
+        whisperSampleAccumulator.append(
+            contentsOf: UnsafeBufferPointer(start: channel, count: Int(buffer.frameLength))
+        )
     }
 
     // MARK: - Duration Helpers

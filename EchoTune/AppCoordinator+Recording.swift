@@ -266,6 +266,10 @@ extension AppCoordinator {
             liveDeepgram = nil
         }
 
+        // Cloud sessions transcribe from the recorded file; no in-memory
+        // whisper sample capture needed.
+        audioManager.accumulateWhisperSamples = false
+
         // Start audio recording - we'll use the recorded audio for cloud transcription
         guard audioManager.startRecording().isSuccess else {
             debugLog("❌ Cloud audio capture failed to start — aborting cloud recording")
@@ -561,6 +565,16 @@ extension AppCoordinator {
         // Show recording indicator (style-aware)
         showRecorderUI()
 
+        // FluidAudio batch engines have no streaming callback; accumulate the
+        // converted 16 kHz samples in memory so the stop path can transcribe
+        // without a temp-file roundtrip. Must be set before startRecording()
+        // so the first tap buffer is captured.
+        if case .fluidBatch = capturedEngineKind {
+            audioManager.accumulateWhisperSamples = true
+        } else {
+            audioManager.accumulateWhisperSamples = false
+        }
+
         // Start audio recording. 7.4.4: only enter the recording flow when the
         // audio engine actually started; a failed start used to leave the UI in
         // .recording with no tap installed, so a long recording produced nothing.
@@ -742,6 +756,9 @@ extension AppCoordinator {
                 handleTranscriptionError("Failed to capture audio data")
                 return
             }
+            // Snapshot on the main thread before the Task: a new recording
+            // could otherwise reset the capture mid-flight.
+            let inMemorySamples = audioManager.lastWhisperSamples
             Task { [weak self] in
                 guard let self else { return }
                 do {
@@ -752,7 +769,15 @@ extension AppCoordinator {
                     case .paraformer:
                         result = try await ParaformerEngine.shared.transcribe(audioData: capturedAudioData)
                     default:
-                        result = try await ParakeetEngine.shared.transcribe(audioData: capturedAudioData)
+                        // In-memory path: transcribe straight from the samples
+                        // accumulated during recording — no temp-file
+                        // write/read/convert roundtrip. Falls back to the CAF
+                        // data path if the capture is unavailable.
+                        if !inMemorySamples.isEmpty {
+                            result = try await ParakeetEngine.shared.transcribe(audioArray: inMemorySamples)
+                        } else {
+                            result = try await ParakeetEngine.shared.transcribe(audioData: capturedAudioData)
+                        }
                     }
                     await MainActor.run { self.handleWhisperResult(.success(result)) }
                 } catch {
