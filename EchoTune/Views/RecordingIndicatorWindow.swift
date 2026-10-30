@@ -72,6 +72,10 @@ struct RecordingIndicatorContentView: View {
                 .font(.system(size: 11, weight: .bold, design: .rounded))
                 .foregroundColor(.white)
 
+            if appState.recordingState == .recording {
+                CaptureWaveformView(barCount: 14, barWidth: 2, barSpacing: 1, maxHeight: 14)
+            }
+
             Spacer()
 
             if appState.recordingState == .recording || appState.recordingState == .processing {

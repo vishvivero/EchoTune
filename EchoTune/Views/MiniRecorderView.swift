@@ -143,13 +143,11 @@ class MiniRecorderWindow: NSPanel {
 struct MiniRecorderContentView: View {
     @ObservedObject private var audioManager = AudioManager.shared
     @ObservedObject private var appState = AppState.shared
-    @State private var phase: Double = 0
     @State private var liveText: String = ""
     @State private var pendingText: String = ""   // in-progress tail — shown dimmed until next tick confirms it
     @State private var textContentHeight: CGFloat = 0
 
     var onHeightChange: ((CGFloat) -> Void)?
-    private let barCount = 20
     /// Max height for the transcript scroll area before it locks and scrolls
     private let transcriptMaxHeight: CGFloat = 200
     /// Height of the controls bar (waveform + button row)
@@ -212,15 +210,8 @@ struct MiniRecorderContentView: View {
 
             // Controls bar
             HStack(spacing: 8) {
-                // Waveform bars
-                HStack(alignment: .center, spacing: 1.5) {
-                    ForEach(0..<barCount, id: \.self) { i in
-                        RoundedRectangle(cornerRadius: 1)
-                            .fill(barGradient)
-                            .frame(width: 3, height: barHeight(for: i, in: 20))
-                    }
-                }
-                .frame(height: 20)
+                // Real capture waveform — traces the user's live audio level
+                CaptureWaveformView()
 
                 Spacer()
 
@@ -266,13 +257,6 @@ struct MiniRecorderContentView: View {
         )
         .padding(4) // Breathing room so shadow isn't clipped by window edge
         // Notifications
-        .onReceive(Timer.publish(every: 0.06, on: .main, in: .common).autoconnect()) { _ in
-            if isRecording {
-                withAnimation(.linear(duration: 0.06)) {
-                    phase = (phase + 0.3).truncatingRemainder(dividingBy: .pi * 4)
-                }
-            }
-        }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("LiveTranscriptionUpdate"))) { n in
             if let text = n.userInfo?["text"] as? String {
                 liveText = text
@@ -308,6 +292,35 @@ struct MiniRecorderContentView: View {
         let m = Int(time) / 60, s = Int(time) % 60, t = Int((time.truncatingRemainder(dividingBy: 1)) * 10)
         return String(format: "%d:%02d.%d", m, s, t)
     }
+}
+
+// MARK: - Preference Key for measuring text content height
+
+private struct TextHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+// MARK: - Live capture waveform (shared by both recorder styles)
+
+/// Real capture waveform: bars trace the user's actual voice via a rolling
+/// history of AudioManager's per-buffer level updates — newest sample at the
+/// right edge, scrolling left. Replaces the earlier synthetic sine animation:
+/// what you see is what the microphone captured. Green while speech is
+/// detected, quiet floor when idle.
+struct CaptureWaveformView: View {
+    @ObservedObject private var audioManager = AudioManager.shared
+    @ObservedObject private var appState = AppState.shared
+    @State private var levelHistory: [CGFloat] = []
+
+    var barCount: Int = 20
+    var barWidth: CGFloat = 3
+    var barSpacing: CGFloat = 1.5
+    var maxHeight: CGFloat = 20
+
+    private var isRecording: Bool { appState.recordingState == .recording }
 
     private var barGradient: LinearGradient {
         if !isRecording {
@@ -319,20 +332,38 @@ struct MiniRecorderContentView: View {
         }
     }
 
-    private func barHeight(for index: Int, in maxHeight: CGFloat) -> CGFloat {
-        guard isRecording else { return 2 }
-        let level = CGFloat(max(0, min(1, (audioManager.audioLevel - 0.0005) / 0.05)))
-        let wave = 0.5 + 0.5 * sin(Double(index) * 0.5 + phase)
-        let dynamic = max(0.1, min(1.0, Double(level) * 0.85 + wave * 0.4))
-        return max(2, CGFloat(dynamic) * maxHeight)
+    var body: some View {
+        HStack(alignment: .center, spacing: barSpacing) {
+            ForEach(0..<barCount, id: \.self) { i in
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(barGradient)
+                    .frame(width: barWidth, height: barHeight(for: i))
+            }
+        }
+        .frame(height: maxHeight)
+        .animation(.linear(duration: 0.08), value: levelHistory)
+        .onChange(of: audioManager.audioLevel) { _, newLevel in
+            guard isRecording else { return }
+            let normalized = CGFloat(max(0, min(1, (newLevel - 0.0005) / 0.05)))
+            levelHistory.append(normalized)
+            if levelHistory.count > barCount {
+                levelHistory.removeFirst(levelHistory.count - barCount)
+            }
+        }
+        .onChange(of: appState.recordingState) { _, newState in
+            if newState == .recording {
+                levelHistory.removeAll()
+            }
+        }
     }
-}
 
-// MARK: - Preference Key for measuring text content height
-
-private struct TextHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
+    private func barHeight(for index: Int) -> CGFloat {
+        guard isRecording, !levelHistory.isEmpty else { return 2 }
+        // Bars map onto the rolling history, oldest at the left. Slots not
+        // yet filled show a quiet floor so the trace grows in from the right
+        // as capture begins.
+        let historyIndex = index - (barCount - levelHistory.count)
+        guard historyIndex >= 0 else { return 2 }
+        return max(2, max(0.08, levelHistory[historyIndex]) * maxHeight)
     }
 }
