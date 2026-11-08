@@ -217,6 +217,7 @@ struct PermissionsPrivacySettingsView: View {
                     title: "Screen Recording",
                     description: "Required for context-aware transcription hints.",
                     hasPermission: permissions.hasScreenRecordingPermission,
+                    activatesAfterRelaunch: permissions.screenCaptureActivatesAfterRelaunch,
                     action: { permissions.requestScreenRecordingPermission() }
                 )
             }
@@ -234,8 +235,9 @@ struct PermissionRow: View {
     let title: String
     let description: String
     let hasPermission: Bool
+    var activatesAfterRelaunch: Bool = false
     let action: () -> Void
-    
+
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
@@ -244,10 +246,15 @@ struct PermissionRow: View {
                 Text(description)
                     .font(.caption)
                     .foregroundColor(.secondary)
+                if hasPermission && activatesAfterRelaunch {
+                    Text("Granted — takes effect next time EchoTune starts.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
-            
+
             Spacer()
-            
+
             if hasPermission {
                 Label("Granted", systemImage: "checkmark.circle.fill")
                     .foregroundColor(.green)

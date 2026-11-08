@@ -43,10 +43,10 @@ final class OnboardingPhase1UITests: XCTestCase {
 
     @MainActor
     func testLiveDemoProducesResult() throws {
-        prepareOnboarding(step: 3)
+        prepareOnboarding(step: 2)
 
         let app = XCUIApplication()
-        app.launchArguments += ["--ui-test-force-onboarding", "--ui-test-onboarding-step", "3"]
+        app.launchArguments += ["--ui-test-force-onboarding", "--ui-test-onboarding-step", "2"]
         addUIInterruptionMonitor(withDescription: "System Permission Alerts") { alert in
             for label in ["Allow", "OK", "Open System Settings", "Continue"] {
                 let button = alert.buttons[label]

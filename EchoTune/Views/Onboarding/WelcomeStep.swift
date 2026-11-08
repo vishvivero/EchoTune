@@ -9,6 +9,7 @@ import SwiftUI
 
 struct WelcomeStep: View {
     let onNext: () -> Void
+    @State private var iconAppeared = false
 
     var body: some View {
         VStack(spacing: 30) {
@@ -29,6 +30,8 @@ struct WelcomeStep: View {
             .frame(width: 120, height: 120)
             .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
             .shadow(color: OnboardingTheme.accent.opacity(0.35), radius: 16, x: 0, y: 8)
+            .scaleEffect(iconAppeared ? 1.0 : 0.6)
+            .opacity(iconAppeared ? 1.0 : 0)
             .overlay(
                 // Soft brand-glow ring behind the icon — echoes the dashboard's gradient circles
                 RoundedRectangle(cornerRadius: 26, style: .continuous)
@@ -41,6 +44,11 @@ struct WelcomeStep: View {
                         lineWidth: 2
                     )
             )
+            .onAppear {
+                withAnimation(.spring(response: 0.55, dampingFraction: 0.7).delay(0.1)) {
+                    iconAppeared = true
+                }
+            }
 
             VStack(spacing: 12) {
                 Text("Welcome to EchoTune")

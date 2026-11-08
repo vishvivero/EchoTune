@@ -115,12 +115,8 @@ ditto -c -k --keepParent "$APP" "$OUT/EchoTune-$VERSION.zip"
 
 # --- DMG ----------------------------------------------------------------------
 echo "==> building DMG"
-STAGE=$(mktemp -d)
-ditto "$APP" "$STAGE/EchoTune.app"
-ln -s /Applications "$STAGE/Applications"
 DMG="$OUT/EchoTune-$VERSION-arm64.dmg"
-hdiutil create -volname "EchoTune" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
-rm -rf "$STAGE"
+"$ROOT/Scripts/build_dmg.sh" "$APP" "$DMG"
 codesign --force --sign "$IDENTITY" --timestamp "$DMG"
 xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait
 xcrun stapler staple "$DMG"

@@ -50,6 +50,21 @@ final class ScreenContextManager: ObservableObject {
 
     // MARK: - Public
 
+    /// Probes whether a mid-session Screen Recording grant is already usable
+    /// by this process. The preflight flag flips the moment the user toggles
+    /// the switch, but WindowServer may only honor the grant for a process
+    /// after it relaunches — so the live answer comes from an actual content
+    /// query, not from the flag.
+    static func grantIsActiveWithoutRelaunch() async -> Bool {
+        guard CGPreflightScreenCaptureAccess() else { return false }
+        do {
+            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            return content.windows.contains { $0.owningApplication != nil }
+        } catch {
+            return false
+        }
+    }
+
     /// One-line context hint for the enhancement prompt, or nil.
     func promptHint() async -> String? {
         guard let ctx = await currentContextIfAvailable() else { return nil }

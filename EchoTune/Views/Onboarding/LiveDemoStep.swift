@@ -26,7 +26,7 @@ struct LiveDemoStep: View {
                     .font(.system(size: 26, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
 
-                Text("Let's record a quick phrase to verify your microphone and chosen AI engine work perfectly together.")
+                Text("Press record and say anything — your words appear in the field below, instantly.")
                     .font(.system(size: 13))
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
@@ -34,103 +34,25 @@ struct LiveDemoStep: View {
             }
             .padding(.top, 16)
 
-            // Audio Waveform Visualization
-            if audioManager.isRecording {
-                LiveWaveformView()
-                    .padding(.horizontal, 40)
-                    .frame(height: 100)
-            } else {
-                // Static placeholder wave
-                HStack(spacing: 4) {
-                    ForEach(0..<20, id: \.self) { i in
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(OnboardingTheme.accent.opacity(0.3))
-                            .frame(width: 4, height: CGFloat.random(in: 10...30))
-                    }
-                }
-                .frame(height: 100)
-            }
+            dictationField
+                .padding(.horizontal, 20)
 
-            // Record Button
             VStack(spacing: 12) {
-                Button(action: toggleRecording) {
-                    ZStack {
-                        Circle()
-                            .fill(
-                                audioManager.isRecording
-                                    ? AnyGradient(Gradient(colors: [Color.red, Color.red.opacity(0.7)]))
-                                    : AnyGradient(Gradient(colors: [OnboardingTheme.accent, OnboardingTheme.accent2]))
-                            )
-                            .frame(width: 80, height: 80)
-                            .shadow(
-                                color: (audioManager.isRecording ? Color.red : OnboardingTheme.accent).opacity(0.4),
-                                radius: 10, x: 0, y: 5
-                            )
+                recordButton
+                    .accessibilityIdentifier("onboarding.liveDemo.recordButton")
 
-                        if audioManager.isRecording {
-                            Circle()
-                                .stroke(Color.red.opacity(0.6), lineWidth: 2)
-                                .frame(width: 76, height: 76)
-                                .scaleEffect(1.0 + CGFloat(audioManager.audioLevel) * 0.5)
-                        }
-
-                        Image(systemName: audioManager.isRecording ? "stop.fill" : "mic.fill")
-                            .font(.system(size: 32))
-                            .foregroundColor(.white)
-                    }
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("onboarding.liveDemo.recordButton")
-                .disabled(isProcessing)
-
-                Text(audioManager.isRecording ? "Recording... (\(AudioManager.formatDuration(audioManager.recordingDuration)))" : (isProcessing ? "Processing transcription..." : "Click to Speak"))
+                Text(audioManager.isRecording ? "Recording… (\(AudioManager.formatDuration(audioManager.recordingDuration))) — tap to stop" : (isProcessing ? "Transcribing…" : "Tap the mic and speak"))
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(.secondary)
+                    .accessibilityIdentifier("onboarding.liveDemo.statusLabel")
             }
 
-            // Transcription Results Card
-            OnboardingCardView {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text("Transcription Result")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        if isProcessing {
-                            ProgressView()
-                                .controlSize(.small)
-                        }
-                    }
+            Spacer(minLength: 0)
 
-                    ScrollView {
-                        Text(transcriptionText.isEmpty ? (audioManager.isRecording ? "Listening to your voice..." : "Your spoken words will appear here.") : transcriptionText)
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(transcriptionText.isEmpty ? .secondary : .primary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .multilineTextAlignment(.leading)
-                    }
-                    .frame(height: 60)
+            waveform
+                .padding(.horizontal, 40)
+                .frame(height: 80)
 
-                    Divider()
-
-                    Text(transcriptionCaption)
-                        .font(.system(size: 11))
-                        .foregroundColor(transcriptionText.isEmpty ? .secondary : OnboardingTheme.accent)
-                        .accessibilityIdentifier("onboarding.liveDemo.resultCaption")
-                }
-            }
-            .padding(.horizontal, 20)
-
-            // Hidden element for XCTest to read transcribed text
-            Text(transcriptionText.isEmpty ? " " : transcriptionText)
-                .opacity(0.01)
-                .frame(width: 1, height: 1)
-                .accessibilityHidden(false)
-                .accessibilityIdentifier("onboarding.liveDemo.resultText")
-
-            Spacer()
-
-            // Continue Button (enabled after successful demo transcription)
             if !transcriptionText.isEmpty && !isProcessing {
                 Button(action: onNext) {
                     Text("Continue")
@@ -139,12 +61,146 @@ struct LiveDemoStep: View {
                 .buttonStyle(GradientProminentButtonStyle())
                 .controlSize(.large)
                 .padding(.bottom, 20)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else {
+                Color.clear.frame(height: 20)
             }
         }
         .onDisappear {
             autoStopTimer?.cancel()
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("LiveTranscriptionUpdate"))) { notification in
+            if let text = notification.userInfo?["text"] as? String, !text.isEmpty {
+                transcriptionText = text
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("TranscriptionComplete"))) { notification in
+            if let text = notification.userInfo?["text"] as? String, !text.isEmpty {
+                transcriptionText = text
+            }
+        }
     }
+
+    // MARK: - Dictation field
+
+    private var dictationField: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Message")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.secondary)
+                Spacer()
+                if isProcessing {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            }
+
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color(NSColor.textBackgroundColor))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(
+                                audioManager.isRecording
+                                    ? OnboardingTheme.accent.opacity(0.7)
+                                    : Color.primary.opacity(0.12),
+                                lineWidth: audioManager.isRecording ? 1.8 : 1
+                            )
+                    )
+                    .shadow(color: Color.black.opacity(0.05), radius: 6, x: 0, y: 2)
+
+                HStack(alignment: .center, spacing: 8) {
+                    if audioManager.isRecording {
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: 7, height: 7)
+                    } else if !transcriptionText.isEmpty {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 13))
+                            .foregroundColor(.green)
+                    }
+
+                    ScrollView {
+                        Text(fieldPlaceholderText)
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(transcriptionText.isEmpty && !audioManager.isRecording ? .secondary : .primary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .multilineTextAlignment(.leading)
+                            .padding(.vertical, 4)
+                            .accessibilityIdentifier("onboarding.liveDemo.resultText")
+                    }
+                    .frame(height: 64)
+                }
+                .padding(.horizontal, 12)
+            }
+
+            Text(transcriptionCaption)
+                .font(.system(size: 11))
+                .foregroundColor(transcriptionText.isEmpty ? .secondary : OnboardingTheme.accent)
+                .accessibilityIdentifier("onboarding.liveDemo.resultCaption")
+        }
+    }
+
+    private var fieldPlaceholderText: String {
+        if audioManager.isRecording {
+            return transcriptionText.isEmpty ? "Listening to your voice…" : transcriptionText
+        }
+        return transcriptionText.isEmpty ? "Your words will appear here…" : transcriptionText
+    }
+
+    // MARK: - Record button
+
+    private var recordButton: some View {
+        Button(action: toggleRecording) {
+            ZStack {
+                Circle()
+                    .fill(
+                        audioManager.isRecording
+                            ? AnyGradient(Gradient(colors: [Color.red, Color.red.opacity(0.7)]))
+                            : AnyGradient(Gradient(colors: [OnboardingTheme.accent, OnboardingTheme.accent2]))
+                    )
+                    .frame(width: 72, height: 72)
+                    .shadow(
+                        color: (audioManager.isRecording ? Color.red : OnboardingTheme.accent).opacity(0.4),
+                        radius: 10, x: 0, y: 5
+                    )
+
+                if audioManager.isRecording {
+                    Circle()
+                        .stroke(Color.red.opacity(0.6), lineWidth: 2)
+                        .frame(width: 68, height: 68)
+                        .scaleEffect(1.0 + CGFloat(audioManager.audioLevel) * 0.5)
+                }
+
+                Image(systemName: audioManager.isRecording ? "stop.fill" : "mic.fill")
+                    .font(.system(size: 28))
+                    .foregroundColor(.white)
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(isProcessing)
+    }
+
+    // MARK: - Waveform
+
+    @ViewBuilder
+    private var waveform: some View {
+        if audioManager.isRecording {
+            LiveWaveformView()
+        } else {
+            HStack(spacing: 4) {
+                ForEach(0..<20, id: \.self) { i in
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(OnboardingTheme.accent.opacity(0.3))
+                        .frame(width: 4, height: CGFloat.random(in: 10...30))
+                }
+            }
+            .frame(height: 80)
+        }
+    }
+
+    // MARK: - Recording
 
     private func toggleRecording() {
         if audioManager.isRecording {
@@ -156,7 +212,7 @@ struct LiveDemoStep: View {
 
     private func startRecording() {
         transcriptionText = ""
-        transcriptionCaption = "Recording... speak now."
+        transcriptionCaption = "Recording… speak now."
 
         #if DEBUG
         // UI tests must not depend on microphone permissions, speaker routing,
@@ -225,7 +281,7 @@ struct LiveDemoStep: View {
         }
 
         isProcessing = true
-        transcriptionCaption = "Converting voice to text..."
+        transcriptionCaption = "Converting voice to text…"
 
         transcriptionEngine.transcribeAudio(audioData) { result in
             isProcessing = false

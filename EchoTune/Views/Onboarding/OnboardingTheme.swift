@@ -14,6 +14,10 @@ struct OnboardingTheme {
     static let accent2 = Color(red: 0.18, green: 0.58, blue: 0.72)     // deep cyan for gradient depth
     static let success = Color.green
 
+    // Onboarding 7.5.1: violet used ONLY for the hotkey keycap highlight,
+    // mirroring superwhisper's press-to-test key feedback.
+    static let keyHighlight = Color(red: 0.55, green: 0.36, blue: 0.96) // #8B5CF6 violet
+
     /// Primary brand gradient — logo cyan → deep cyan.
     static var brandGradient: LinearGradient {
         LinearGradient(

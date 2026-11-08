@@ -21,11 +21,19 @@ struct PermissionsStep: View {
                     .foregroundColor(.primary)
                     .accessibilityIdentifier("onboarding.permissions.title")
 
-                Text("EchoTune needs microphone and accessibility access to record audio and insert text. Screen recording is optional but enables contextual AI features.")
-                    .font(.system(size: 13))
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 40)
+                VStack(spacing: 6) {
+                    Text("EchoTune needs microphone and accessibility access to record speech and type for you.")
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 40)
+
+                    Text("When System Settings opens, find EchoTune in the list and turn on its switch. macOS may ask you to confirm with Touch ID or your password.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary.opacity(0.85))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 50)
+                }
             }
             .padding(.top, 16)
 
@@ -59,7 +67,7 @@ struct PermissionsStep: View {
                 // Card 3: Screen Recording (Optional)
                 permissionCard(
                     title: "Screen Context (Optional)",
-                    description: "Allows analyzing active window contents to provide smart, context-aware transcriptions.",
+                    description: "Optional. Lets EchoTune read the active window for smarter, context-aware transcriptions. You can enable it later in Settings.",
                     isGranted: pm.hasScreenRecordingPermission,
                     grantAction: {
                         pm.requestScreenRecordingPermission()
@@ -81,10 +89,17 @@ struct PermissionsStep: View {
             .controlSize(.large)
             .disabled(!canContinue)
             .accessibilityIdentifier("onboarding.permissions.continueButton")
+            .modifier(PulseWhenEnabled(enabled: canContinue))
             .padding(.bottom, 20)
         }
         .onAppear {
             pm.checkAllPermissions()
+        }
+        .onChange(of: pm.hasMicrophonePermission) { _, granted in
+            if granted { OnboardingSound.play(.confirm) }
+        }
+        .onChange(of: pm.hasAccessibilityPermission) { _, granted in
+            if granted { OnboardingSound.play(.confirm) }
         }
     }
 
@@ -160,5 +175,20 @@ struct PermissionsStep: View {
                 }
             }
         }
+    }
+}
+
+private struct PulseWhenEnabled: ViewModifier {
+    let enabled: Bool
+    @State private var pulsing = false
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(enabled && pulsing ? 1.03 : 1.0)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
+                    pulsing = true
+                }
+            }
     }
 }

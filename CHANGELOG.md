@@ -3,6 +3,77 @@
 All notable changes to EchoTune are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [7.5.3] — 2026-11-01
+
+Screen context no longer asks you to quit and reopen.
+
+### Changed — screen context permission
+- Removed the "Restart EchoTune" banner and button from onboarding and
+  Settings. Persistent restart prompts are gone.
+- Screen Recording is now requested through ScreenCaptureKit only; the
+  legacy CGRequestScreenCaptureAccess path (the one that makes macOS
+  show its own "Quit & Reopen" dialog) is no longer used.
+- After a grant, EchoTune retries a live capture probe (immediately,
+  then 2s, 5s, 10s, 20s). If it becomes usable, screen context turns on
+  right away; if not, it simply activates on the next natural launch,
+  with a passive note in Settings and no prompt.
+
+### Added — install location guard
+- Running EchoTune from the mounted DMG now shows a "Move to
+  Applications" banner. macOS ties Screen Recording grants to the
+  app's location, so a DMG copy re-prompts forever; moving to
+  Applications removes the loop. Relaunch actions also prefer the
+  installed copy.
+
+## [7.5.2] — 2026-11-01
+
+Screen Recording now activates correctly after it is granted.
+
+### Fixed — screen recording permission
+- The permissions card used to flip to "Granted" the moment the toggle
+  was flipped, but macOS only honors the grant for the running process
+  after a relaunch — so screen context silently stayed broken.
+- On grant, EchoTune now probes ScreenCaptureKit live: if the grant
+  works without a restart (recent macOS builds), the card goes green
+  immediately. If not, it says "Granted — macOS applies it after
+  EchoTune restarts" with a one-click Restart EchoTune button (mirrors
+  superwhisper's restart-capture-pipeline behavior, better than its
+  manual-restart copy).
+- The grant is now caught without refocusing the app (2s watch while
+  ungranted, same pattern as the accessibility watch), and the Settings
+  permissions row shows the same restart affordance.
+
+## [7.5.1] — 2026-10-31
+
+Onboarding rebuilt around the superwhisper / Speakly playbooks: fewer
+questions, permission guidance that speaks System Settings' language,
+a press-to-test hotkey step, and a branded DMG install experience.
+
+### Added — onboarding
+- New hotkey step: the dictation key (default ⌥ Option) shows as a large
+  keycap that lights up violet while held, with a live "Change key"
+  capture that rebinds and saves immediately.
+- Branded onboarding sound design: soft intro chime when onboarding opens,
+  a subtle pop on step transitions, and a confirm tick when a permission
+  flips to granted or a shortcut is saved (custom-synthesized, bundled
+  in-app).
+- Animated aurora backdrop behind onboarding (single-pass Canvas, no
+  real blur, stays cheap on the GPU).
+- DMG now opens to a branded drag-to-Applications window (background,
+  icon layout, Applications symlink) via Scripts/build_dmg.sh.
+
+### Changed — onboarding flow
+- Model selection is gone from onboarding. The curated default
+  (Parakeet TDT v3, multi-language) now downloads silently in the
+  background while the user walks through the remaining steps.
+- Order is now: Welcome → Permissions → Live dictation → Hotkey →
+  Purchase/trial → home.
+- Live demo step redesigned as a message field with the text on top and
+  the live waveform directly below the record control.
+- Permissions step guidance now mirrors the System Settings copy
+  ("find EchoTune in the list and turn on its switch…"), and Continue
+  pulses once both core permissions are granted.
+
 ## [7.4.8] — 2026-09-16
 
 Curated the model roster and made the default recommendation consistent

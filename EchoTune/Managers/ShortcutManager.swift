@@ -31,6 +31,10 @@ class ShortcutManager: NSObject {
     /// Whether the dictation shortcut is physically held right now (read-only).
     var isCurrentlyPressed: Bool { isShortcutPressed }
 
+    /// Onboarding 7.5.1: read access for the hotkey test step.
+    var currentShortcutKeyCode: UInt32 { shortcutKeyCode }
+    var currentShortcutModifiers: UInt32 { shortcutModifiers }
+
     override init() {
         super.init()
         loadCustomShortcut()
