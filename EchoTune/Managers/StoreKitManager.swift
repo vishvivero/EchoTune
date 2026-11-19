@@ -21,6 +21,8 @@ class StoreKitManager: ObservableObject {
     @Published var products: [Product] = []
     @Published var purchasedProductIDs = Set<String>()
     @Published var isPurchasing = false
+    @Published var isLoadingProducts = false
+    @Published var productLoadError: String? = nil
 
     // Transaction listener
     private var transactionListener: Task<Void, Error>?
@@ -44,15 +46,23 @@ class StoreKitManager: ObservableObject {
     // MARK: - Product Loading
 
     func loadProducts() async {
+        isLoadingProducts = true
+        productLoadError = nil
+        defer { isLoadingProducts = false }
+
         do {
             let loadedProducts = try await Product.products(for: [proUnlockID])
             products = loadedProducts
+            if loadedProducts.isEmpty {
+                productLoadError = "EchoTune Pro is currently unavailable in the App Store."
+            }
             debugLog("✓ Loaded \(products.count) products from App Store")
 
             if let product = products.first {
                 debugLog("  Product: \(product.displayName) - \(product.displayPrice)")
             }
         } catch {
+            productLoadError = "Could not load App Store product. Check your connection and try again."
             debugLog("❌ Failed to load products: \(error)")
         }
     }

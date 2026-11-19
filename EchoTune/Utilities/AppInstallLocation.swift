@@ -45,9 +45,10 @@ enum AppInstallLocation {
         }
 
         debugLog("📦 Moved EchoTune to Applications — relaunching installed copy")
+        let selfPID = String(ProcessInfo.processInfo.processIdentifier)
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        task.arguments = [destination.path]
+        task.arguments = ["-n", destination.path, "--args", "--relaunch-wait-pid", selfPID]
         do {
             try task.run()
         } catch {

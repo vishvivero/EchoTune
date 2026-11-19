@@ -46,8 +46,7 @@ Cloud models (Groq, Deepgram) require internet.
 
 EchoTune is open source (GPL-3.0) — you can build it yourself for free.
 
-A signed, notarized build with a license key is **$10 (one-time)**, which
-supports development and saves you building from source.
+A signed, notarized build with a lifetime license key is **£29.99 for Individual (1 Mac)** or **£49.99 for Pro (up to 3 Macs)** at [echotune.app/buy](https://echotune.app/buy), which supports development and includes signed Sparkle updates.
 
 ### Is there a free trial?
 
@@ -84,7 +83,7 @@ on the old one first, then activate on the new one.
 
 ### Is my voice data stored?
 
-**No.** Audio recordings are NOT stored anywhere. They're processed and immediately discarded after transcription.
+**By default, no.** Audio recordings are discarded after transcription unless you explicitly turn on **Keep Local Audio Recordings** in **Settings → Privacy** (with configurable 1/7/30-day retention and one-click local data export or erase).
 
 ### Where is my data processed?
 
@@ -420,23 +419,9 @@ We appreciate honest feedback! 🙏
 
 ---
 
-## 🎁 Referral Program (Direct Purchase Only)
+## 🎁 Sharing Your Progress
 
-### How does the referral program work?
-
-1. Settings → Referral
-2. Copy your unique link
-3. Share with friends/colleagues
-4. Earn 20% commission on each sale
-5. Get paid via PayPal or credit
-
-### When do I get paid?
-
-Commissions paid monthly, minimum $50 threshold.
-
-### Can App Store users use referrals?
-
-No, referral program is only for direct purchases (due to Apple's policies).
+You can export a PNG summary card of your local dictation streak, word count, and time saved from the **Share** tab in the dashboard sidebar.
 
 ---
 

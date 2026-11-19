@@ -3,6 +3,26 @@
 All notable changes to EchoTune are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [7.5.4] — 2026-11-19
+
+Production hardening, privacy protection, and commercial rollout fixes.
+
+### Fixed — onboarding, relaunch & dictation reliability
+- Fixed a single-instance race when clicking **Move to Applications** or relaunching EchoTune, where the newly spawned app exited on seeing the terminating instance.
+- Global dictation shortcuts now stay disarmed until onboarding completes, so testing or rebinding your shortcut on the Hotkey step no longer triggers background dictation.
+- Short accidental push-to-talk taps (`<300ms`) and double-tap gestures now discard audio immediately without running VAD, inference, or inserting stray text.
+- Onboarding Live Demo now reports background model download progress and includes a **Skip for now** option so first-run setup never blocks on large downloads.
+- Recording sessions now freeze Whisper-to-Apple-Speech fallback and cloud/FluidAudio model choices at start, preventing mid-session settings changes from misrouting audio at stop.
+
+### Security & privacy
+- Removed all transcript text bodies from macOS Unified Logging (`os_log`); release logs record lengths and timing only.
+- Added **Export All Local Data…** (JSON) and **Erase All Local History, Notes, Tasks & Logs…** to **Settings → Privacy**, and restricted saved audio recordings to owner-only (`0600`) file permissions.
+- Added Apple `PrivacyInfo.xcprivacy` manifest, updated permission usage descriptions to accurately distinguish on-device vs. optional cloud processing, and purged legacy `UserDefaults` license-key residue.
+
+### Licensing & purchase
+- Unified all purchase CTAs onto `https://echotune.app/buy` and added Polar per-device activation & deactivation (`Deactivate This Mac`) with explicit Keychain persistence verification and post-onboarding 7-day trial start.
+- Added StoreKit product-load error and retry state for App Store builds, and gated unconfigured referral backend calls.
+
 ## [7.5.3] — 2026-11-01
 
 Screen context no longer asks you to quit and reopen.

@@ -441,14 +441,14 @@ Enable "Code Mode" in settings for better programming support.
 ### Trial Expired
 
 **App Store Version:**
-1. Click "Upgrade to Pro"
-2. Complete purchase ($10)
+1. Click "Unlock EchoTune Pro"
+2. Complete one-time App Store purchase
 3. Instant unlock
 
 **Direct Purchase:**
-1. Visit echotune.app/purchase
-2. Purchase license key
-3. Enter in Settings → License
+1. Visit https://echotune.app/buy
+2. Purchase an Individual (1 Mac) or Pro (up to 3 Macs) license key
+3. Enter in Settings → About & License
 4. Click "Activate"
 
 ---

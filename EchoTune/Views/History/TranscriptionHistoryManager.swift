@@ -19,7 +19,12 @@ class TranscriptionHistoryManager: ObservableObject {
         let paths = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
         let appSupportDir = paths[0].appendingPathComponent("EchoTune", isDirectory: true)
         let recordingsDir = appSupportDir.appendingPathComponent("Recordings", isDirectory: true)
-        try? FileManager.default.createDirectory(at: recordingsDir, withIntermediateDirectories: true, attributes: nil)
+        try? FileManager.default.createDirectory(
+            at: recordingsDir,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: recordingsDir.path)
         return recordingsDir
     }
     
@@ -30,7 +35,8 @@ class TranscriptionHistoryManager: ObservableObject {
     func saveAudioFile(data: Data, id: UUID) -> String? {
         let fileURL = Self.recordingsDirectory.appendingPathComponent("\(id.uuidString).caf")
         do {
-            try data.write(to: fileURL)
+            try data.write(to: fileURL, options: .atomic)
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
             return fileURL.path
         } catch {
             debugLog("❌ TranscriptionHistoryManager: Failed to save audio file: \(error)")

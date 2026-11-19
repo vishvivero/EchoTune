@@ -47,19 +47,16 @@ class ShortcutManager: NSObject {
             object: nil
         )
 
-        // Only register global shortcut if onboarding is already completed
-        // Otherwise, wait until after onboarding to avoid triggering system dialogs
-        let hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
-        if hasCompletedOnboarding {
+        // Always listen for onboarding completion (supports reset-onboarding flows too)
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(onOnboardingCompleted),
+            name: NSNotification.Name("OnboardingCompleted"),
+            object: nil
+        )
+
+        if OnboardingStateStore.shared.hasCompletedOnboarding {
             registerGlobalShortcut()
-        } else {
-            // Register after onboarding completes
-            NotificationCenter.default.addObserver(
-                self,
-                selector: #selector(onOnboardingCompleted),
-                name: NSNotification.Name("OnboardingCompleted"),
-                object: nil
-            )
         }
 
         debugLog("✓ ShortcutManager initialized and listening for permission changes")
@@ -67,12 +64,16 @@ class ShortcutManager: NSObject {
 
     @objc private func onOnboardingCompleted() {
         debugLog("🔔 Onboarding completed - registering global shortcut")
+        unregisterGlobalShortcut()
         registerGlobalShortcut()
-        NotificationCenter.default.removeObserver(self, name: NSNotification.Name("OnboardingCompleted"), object: nil)
     }
 
     @objc private func onAccessibilityPermissionGranted() {
         debugLog("🔔 Received AccessibilityPermissionGranted notification")
+        guard OnboardingStateStore.shared.hasCompletedOnboarding else {
+            debugLog("   Deferring global shortcut registration until onboarding completes")
+            return
+        }
         debugLog("   Re-registering global shortcuts...")
 
         // Re-register shortcuts now that we have permission
@@ -105,6 +106,11 @@ class ShortcutManager: NSObject {
     
     func registerGlobalShortcut() {
         debugLog("🔧 Attempting to register global shortcut...")
+
+        guard OnboardingStateStore.shared.hasCompletedOnboarding else {
+            debugLog("⏳ Skipping global shortcut registration while onboarding is active")
+            return
+        }
 
         // Check for accessibility permissions
         // Check silently — don't trigger macOS prompt dialog here

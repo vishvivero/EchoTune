@@ -14,6 +14,7 @@ struct LicenseInfo: Codable {
     let activatedOn: Date
     let expiryDate: Date?
     let deviceFingerprint: String
+    var activationId: String? = nil
 
     var isValid: Bool {
         if let expiry = expiryDate {
@@ -75,6 +76,7 @@ enum LicenseError: LocalizedError {
     case alreadyActivated
     case deviceLimitReached
     case licenseExpired
+    case storageFailed
 
     var errorDescription: String? {
         switch self {
@@ -89,9 +91,11 @@ enum LicenseError: LocalizedError {
         case .alreadyActivated:
             return "This license is already activated on this device."
         case .deviceLimitReached:
-            return "Device limit reached. Please deactivate another device first."
+            return "Device limit reached for this license. Deactivate another Mac first."
         case .licenseExpired:
             return "This license has expired."
+        case .storageFailed:
+            return "Could not securely store your license in macOS Keychain."
         }
     }
 }

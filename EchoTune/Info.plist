@@ -29,7 +29,7 @@
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>EchoTune needs access to your microphone to record and transcribe your voice.</string>
+	<string>EchoTune needs access to your microphone to record and transcribe your voice. Local models process audio on your Mac; if you select a cloud transcription model, audio is sent to that provider.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>NSRequiresAquaSystemAppearance</key>
@@ -45,8 +45,8 @@
 	<key>SUPublicEDKey</key>
 	<string>$(SPARKLE_PUBLIC_ED_KEY)</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>EchoTune uses speech recognition to convert your voice into text. All processing happens on your device.</string>
+	<string>EchoTune uses Apple Speech Recognition as a built-in fallback when transcribing your voice.</string>
 	<key>NSScreenCaptureUsageDescription</key>
-	<string>EchoTune needs screen recording permission to capture context from your screen for improved transcription accuracy. This helps the AI understand what you're working on (e.g., code, emails, documents) and provide better results. Your screen content is never stored or transmitted.</string>
+	<string>EchoTune uses optional screen context (active app name, window title, or browser URL) to improve spelling of names and technical terms. Images are never stored; context is only included in AI cleanup requests when AI Enhancement is enabled.</string>
 </dict>
 </plist>

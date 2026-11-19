@@ -445,18 +445,13 @@ class TextInsertionManager {
             &focusedElement
         )
 
-        guard result == .success, let element = focusedElement else {
-            debugLog("❌ Failed to get focused element")
-            return false
-        }
-
-        // Try to set the value
-        guard let element = focusedElement,
+        guard result == .success,
+              let element = focusedElement,
               CFGetTypeID(element) == AXUIElementGetTypeID() else {
-            debugLog("❌ Focused element is not an AXUIElement")
+            debugLog("❌ Focused element unavailable or not an AXUIElement")
             return false
         }
-        let axElement = element as! AXUIElement
+        let axElement = unsafeBitCast(element, to: AXUIElement.self)
         let setValue = AXUIElementSetAttributeValue(
             axElement,
             kAXSelectedTextAttribute as CFString,
@@ -582,8 +577,9 @@ class TextInsertionManager {
         let result = AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &value)
         guard result == .success, let window = value,
               CFGetTypeID(window) == AXUIElementGetTypeID() else { return nil }
+        let axWindow = unsafeBitCast(window, to: AXUIElement.self)
         var titleRef: CFTypeRef?
-        let titleResult = AXUIElementCopyAttributeValue(window as! AXUIElement, kAXTitleAttribute as CFString, &titleRef)
+        let titleResult = AXUIElementCopyAttributeValue(axWindow, kAXTitleAttribute as CFString, &titleRef)
         guard titleResult == .success, let title = titleRef as? String, !title.isEmpty else { return nil }
         return title
     }
@@ -614,7 +610,7 @@ class TextInsertionManager {
         )
         guard result == .success, let element = focusedRef,
               CFGetTypeID(element) == AXUIElementGetTypeID() else { return nil }
-        let axElement = element as! AXUIElement
+        let axElement = unsafeBitCast(element, to: AXUIElement.self)
 
         // Plain text fields expose their contents as AXValue.
         var valueRef: CFTypeRef?

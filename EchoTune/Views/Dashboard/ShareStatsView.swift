@@ -158,7 +158,7 @@ struct ShareStatsView: View {
                         timeSaved: formatDuration(stats.timeSaved),
                         streak: appState.currentStreak,
                         modelBadge: modelBadgeText,
-                        referralCode: referral.isRegistered && !referral.referralCode.isEmpty ? referral.referralCode : nil,
+                        referralCode: activeReferralCode,
                         qrImage: makeQRCode()
                     )
                     .frame(maxWidth: 440, minHeight: 320)
@@ -209,7 +209,7 @@ struct ShareStatsView: View {
             timeSaved: formatDuration(stats.timeSaved),
             streak: appState.currentStreak,
             modelBadge: modelBadgeText,
-            referralCode: referral.isRegistered && !referral.referralCode.isEmpty ? referral.referralCode : nil,
+            referralCode: activeReferralCode,
             qrImage: makeQRCode()
         )
     }
@@ -282,10 +282,20 @@ struct ShareStatsView: View {
         return "Local AI-Powered Dictation"
     }
 
+    private var activeReferralCode: String? {
+        guard referral.isConfigured, referral.isRegistered, !referral.referralCode.isEmpty else {
+            return nil
+        }
+        return referral.referralCode
+    }
+
+    private var activeShareLink: String {
+        activeReferralCode != nil ? referral.referralLink : "https://echotune.app"
+    }
+
     private func shareToX() {
         let text = "I've transcribed \(appState.totalWordsTranscribed) words and saved \(formatDuration(stats.timeSaved)) using EchoTune AI dictation! 🎙️✨"
-        let link = referral.isRegistered && !referral.referralCode.isEmpty
-            ? referral.referralLink : "https://echotune.app"
+        let link = activeShareLink
         let encodedText = text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         let urlString = "https://twitter.com/intent/tweet?text=\(encodedText)&url=\(link)"
         if let url = URL(string: urlString) {
@@ -295,8 +305,7 @@ struct ShareStatsView: View {
 
     /// QR code for the referral link (CIQRCodeGenerator), tinted white.
     private func makeQRCode() -> NSImage? {
-        let link = referral.isRegistered && !referral.referralCode.isEmpty
-            ? referral.referralLink : "https://echotune.app"
+        let link = activeShareLink
         guard let data = link.data(using: .utf8) else { return nil }
         let filter = CIFilter.qrCodeGenerator()
         filter.message = data

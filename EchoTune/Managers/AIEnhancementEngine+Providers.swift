@@ -39,6 +39,7 @@ extension AIEnhancementEngine {
         var request = URLRequest(url: URL(string: endpoint)!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("EchoTune-macOS/\(Bundle.main.appVersionString)", forHTTPHeaderField: "X-EchoTune-Client")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         request.timeoutInterval = 60
 

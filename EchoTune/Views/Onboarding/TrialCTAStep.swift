@@ -158,13 +158,11 @@ struct TrialCTAStep: View {
     private func openCheckoutBrowser() {
         statusMessage = "Opening browser..."
         isSuccess = true
-        if let url = URL(string: "https://echotune.app/checkout") {
-            if NSWorkspace.shared.open(url) {
-                statusMessage = "Browser opened. Complete purchase, then return here to activate."
-            } else {
-                isSuccess = false
-                statusMessage = "Failed to open browser. Please visit https://echotune.app."
-            }
+        if LicenseManager.shared.openPurchaseURL() {
+            statusMessage = "Browser opened. Complete purchase, then return here to activate."
+        } else {
+            isSuccess = false
+            statusMessage = "Failed to open browser. Please visit https://echotune.app/buy."
         }
     }
 

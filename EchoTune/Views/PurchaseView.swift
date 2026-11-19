@@ -37,6 +37,18 @@ struct PurchaseView: View {
                     // Purchase button
                     if let product = storeManager.proProduct {
                         purchaseSection(product: product)
+                    } else if let loadError = storeManager.productLoadError, !storeManager.isLoadingProducts {
+                        VStack(spacing: 12) {
+                            Text(loadError)
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                            Button("Retry") {
+                                Task { await storeManager.loadProducts() }
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                        .padding()
                     } else {
                         ProgressView("Loading...")
                             .padding()
@@ -126,7 +138,7 @@ struct PurchaseView: View {
                 FeatureRow(icon: "arrow.down.circle", color: .blue, text: "Automatic text insertion")
                 FeatureRow(icon: "chart.bar", color: .cyan, text: "Detailed statistics and analytics")
                 FeatureRow(icon: "clock.arrow.circlepath", color: .indigo, text: "Complete session history")
-                FeatureRow(icon: "arrow.clockwise", color: .green, text: "Lifetime updates (v1.x)")
+                FeatureRow(icon: "arrow.clockwise", color: .green, text: "Lifetime updates")
             }
         }
     }

@@ -46,13 +46,15 @@ struct RecordingSession {
     let kind: RecordingEngineKind
     let startedAt: Date
 
-    init(model: AIModel) {
+    init(model: AIModel, useLocalWhisper: Bool = true) {
         self.id = UUID()
         self.modelID = model.id
         self.modelName = model.name
         self.startedAt = Date()
 
-        if model.category == .cloud {
+        if model.backend == .whisper && !useLocalWhisper {
+            self.kind = .appleSpeech
+        } else if model.category == .cloud {
             self.kind = .cloud
         } else {
             switch model.backend {
@@ -166,7 +168,7 @@ class AppCoordinator: ObservableObject {
     var capturedEngineKind: RecordingEngineKind {
         if let session = activeRecordingSession { return session.kind }
         guard let model = modelManager.currentModel else { return .appleSpeech }
-        return RecordingSession(model: model).kind
+        return RecordingSession(model: model, useLocalWhisper: useWhisper).kind
     }
 
     var useParakeet: Bool {

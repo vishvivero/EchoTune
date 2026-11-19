@@ -11,6 +11,7 @@ import Combine
 struct LiveDemoStep: View {
     @ObservedObject private var audioManager = AudioManager.shared
     @ObservedObject private var transcriptionEngine = TranscriptionEngine.shared
+    @ObservedObject private var modelManager = ModelManager.shared
     @State private var transcriptionText = ""
     @State private var transcriptionCaption = "Press record and say something."
     @State private var autoStopTimer: AnyCancellable?
@@ -41,7 +42,7 @@ struct LiveDemoStep: View {
                 recordButton
                     .accessibilityIdentifier("onboarding.liveDemo.recordButton")
 
-                Text(audioManager.isRecording ? "Recording… (\(AudioManager.formatDuration(audioManager.recordingDuration))) — tap to stop" : (isProcessing ? "Transcribing…" : "Tap the mic and speak"))
+                Text(statusLabelText)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(.secondary)
                     .accessibilityIdentifier("onboarding.liveDemo.statusLabel")
@@ -62,6 +63,15 @@ struct LiveDemoStep: View {
                 .controlSize(.large)
                 .padding(.bottom, 20)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else if !audioManager.isRecording {
+                Button(action: onNext) {
+                    Text("Skip for now")
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .padding(.bottom, 20)
+                .accessibilityIdentifier("onboarding.liveDemo.skipButton")
             } else {
                 Color.clear.frame(height: 20)
             }
@@ -140,6 +150,19 @@ struct LiveDemoStep: View {
                 .foregroundColor(transcriptionText.isEmpty ? .secondary : OnboardingTheme.accent)
                 .accessibilityIdentifier("onboarding.liveDemo.resultCaption")
         }
+    }
+
+    private var statusLabelText: String {
+        if audioManager.isRecording {
+            return "Recording… (\(AudioManager.formatDuration(audioManager.recordingDuration))) — tap to stop"
+        }
+        if isProcessing {
+            return modelManager.isDownloading ? "Finishing model setup & transcribing…" : "Transcribing…"
+        }
+        if modelManager.isDownloading {
+            return "Tap the mic and speak (downloading local model in background…)"
+        }
+        return "Tap the mic and speak"
     }
 
     private var fieldPlaceholderText: String {
@@ -281,23 +304,41 @@ struct LiveDemoStep: View {
         }
 
         isProcessing = true
-        transcriptionCaption = "Converting voice to text…"
+        transcriptionCaption = modelManager.isDownloading
+            ? "Waiting for local AI model download, then transcribing…"
+            : "Converting voice to text…"
 
-        transcriptionEngine.transcribeAudio(audioData) { result in
-            isProcessing = false
-            switch result {
-            case .success(let text):
-                if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    transcriptionText = "No words were detected"
-                    transcriptionCaption = "Audio captured but no speech recognized."
-                } else {
-                    transcriptionText = text
-                    transcriptionCaption = "Transcribed successfully using \(defaultModel.name)!"
+        let runTranscription = {
+            transcriptionEngine.transcribeAudio(audioData) { result in
+                isProcessing = false
+                switch result {
+                case .success(let text):
+                    if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        transcriptionText = "No words were detected"
+                        transcriptionCaption = "Audio captured but no speech recognized."
+                    } else {
+                        transcriptionText = text
+                        transcriptionCaption = "Transcribed successfully using \(defaultModel.name)!"
+                    }
+                case .failure(let error):
+                    transcriptionText = "Failed to transcribe."
+                    transcriptionCaption = "Error: \(error.localizedDescription)"
                 }
-            case .failure(let error):
-                transcriptionText = "Failed to transcribe."
-                transcriptionCaption = "Error: \(error.localizedDescription)"
             }
+        }
+
+        if defaultModel.backend == .appleSpeech && !transcriptionEngine.isPermissionGranted {
+            transcriptionEngine.requestPermission { granted in
+                if granted {
+                    runTranscription()
+                } else {
+                    isProcessing = false
+                    transcriptionText = "Speech permission needed."
+                    transcriptionCaption = "Enable Speech Recognition in System Settings or continue."
+                }
+            }
+        } else {
+            runTranscription()
         }
     }
 }

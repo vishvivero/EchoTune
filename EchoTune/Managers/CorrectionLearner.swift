@@ -199,4 +199,12 @@ class CorrectionLearner: ObservableObject {
             UserDefaults.standard.set(data, forKey: candidatesKey)
         }
     }
+
+    func clearAll() {
+        candidates.removeAll()
+        suggestions.removeAll()
+        learnedTotal = 0
+        UserDefaults.standard.removeObject(forKey: candidatesKey)
+        UserDefaults.standard.removeObject(forKey: learnedTotalKey)
+    }
 }

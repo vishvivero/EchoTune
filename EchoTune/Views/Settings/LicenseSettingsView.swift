@@ -11,6 +11,7 @@ struct LicenseSettingsView: View {
     @EnvironmentObject var coordinator: AppCoordinator
     @State private var licenseKey: String = ""
     @State private var isActivating: Bool = false
+    @State private var isDeactivating: Bool = false
     @State private var activationError: String? = nil
     @State private var showSuccessAlert = false
     
@@ -91,6 +92,22 @@ struct LicenseSettingsView: View {
                                 }
                             }
                         }
+
+                        Divider()
+
+                        HStack {
+                            Spacer()
+                            Button(role: .destructive, action: deactivateCurrentMac) {
+                                if isDeactivating {
+                                    ProgressView().controlSize(.small)
+                                } else {
+                                    Text("Deactivate This Mac")
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .disabled(isDeactivating)
+                        }
                     }
                     .padding()
                     .background(Color.green.opacity(0.05))
@@ -147,7 +164,7 @@ struct LicenseSettingsView: View {
                         }) {
                             HStack {
                                 Image(systemName: "cart.fill")
-                                Text("Purchase License from Polar.sh")
+                                Text("Buy EchoTune Pro License")
                             }
                             .fontWeight(.medium)
                             .frame(maxWidth: .infinity)
@@ -195,6 +212,22 @@ struct LicenseSettingsView: View {
                     coordinator.appState.isLicensed = true
                     coordinator.appState.licenseInfo = info
                     showSuccessAlert = true
+                case .failure(let error):
+                    activationError = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    private func deactivateCurrentMac() {
+        isDeactivating = true
+        activationError = nil
+        coordinator.licenseManager.deactivateLicense { result in
+            DispatchQueue.main.async {
+                isDeactivating = false
+                switch result {
+                case .success:
+                    coordinator.updateLicenseState()
                 case .failure(let error):
                     activationError = error.localizedDescription
                 }

@@ -499,7 +499,7 @@ extension WhisperEngine {
                     sessionID: sessionID
                 )
                 let tailText = tailResult.outputText.trimmingCharacters(in: .whitespacesAndNewlines)
-                os_log("📝 Tail transcription: '%@'", log: wLog, type: .info, tailText)
+                os_log("📝 Tail transcription: chars=%d", log: wLog, type: .info, tailText.count)
 
                 await MainActor.run {
                     PerformanceMonitor.shared.endTranscription(

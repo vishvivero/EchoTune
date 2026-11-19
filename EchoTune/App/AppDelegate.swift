@@ -25,15 +25,36 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // Single-instance guard: if another EchoTune is already running, exit.
         // Two instances = two Whisper models fighting for the same GPU, which
         // doubles transcription latency and can double-insert text.
+        let args = ProcessInfo.processInfo.arguments
+        let relaunchWaitPID: pid_t? = {
+            guard let idx = args.firstIndex(of: "--relaunch-wait-pid"),
+                  args.indices.contains(idx + 1),
+                  let parsed = Int32(args[idx + 1]) else { return nil }
+            return parsed
+        }()
+        if let dyingPID = relaunchWaitPID {
+            for _ in 0..<40 {
+                if kill(dyingPID, 0) != 0 { break }
+                usleep(50_000)
+            }
+        }
+
         let selfPID = ProcessInfo.processInfo.processIdentifier
         let others = NSRunningApplication.runningApplications(withBundleIdentifier: "com.echotune.EchoTune")
-            .filter { $0.processIdentifier != selfPID && !$0.isTerminated }
+            .filter {
+                $0.processIdentifier != selfPID
+                    && $0.processIdentifier != relaunchWaitPID
+                    && !$0.isTerminated
+            }
         if let other = others.first {
-            // UI tests launch many instances back-to-back and terminate them
-            // immediately — don't treat a test-runner app as "already running".
-            let isUITest = ProcessInfo.processInfo.arguments.contains("--ui-test-force-onboarding")
-                || ProcessInfo.processInfo.environment["ECHO_UI_TEST_FORCE_ONBOARDING"] != nil
-            if !isUITest {
+            // Unit/UI test hosts launch alongside a live EchoTune session or
+            // spawn back-to-back on CI — never kill an XCTest/Swift-Testing host.
+            let env = ProcessInfo.processInfo.environment
+            let isTestHost = env["XCTestConfigurationFilePath"] != nil
+                || env["XCTestSessionIdentifier"] != nil
+                || args.contains("--ui-test-force-onboarding")
+                || env["ECHO_UI_TEST_FORCE_ONBOARDING"] != nil
+            if !isTestHost {
                 debugLog("⚠️ EchoTune already running (pid \(other.processIdentifier)) — activating it and exiting this instance")
                 other.activate()
                 NSApp.terminate(nil)
@@ -298,18 +319,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     func resetOnboardingAndRestart() {
         OnboardingStateStore.shared.resetProgress()
         debugLog("🔄 Onboarding reset - restarting app...")
-
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        task.arguments = [Bundle.main.bundlePath]
-
-        do {
-            try task.run()
-        } catch {
-            debugLog("❌ Failed to restart app after onboarding reset: \(error)")
-        }
-
-        NSApp.terminate(nil)
+        AppRelauncher.relaunch()
     }
 }
 

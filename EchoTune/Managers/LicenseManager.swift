@@ -17,15 +17,18 @@ class LicenseManager {
     private let storeKit = StoreKitManager.shared
     #endif
 
-    // MARK: - Polar Configuration
+    // MARK: - Polar & Storefront Configuration
     //
     // License checks go through Polar's customer-portal endpoints, which are
     // designed for public clients and need no secret token — only the
     // organization id, which is not sensitive.
+    // All purchase CTAs route through https://echotune.app/buy so checkout
+    // destinations can be updated without shipping a new app binary.
+    static let purchaseURLString = "https://echotune.app/buy"
+
     private let polarAPIBase = "https://api.polar.sh"
     private let soloProductId = "f50d3be4-616c-40aa-9b66-a38a0b565d6f"
     private let polarOrganizationId = "fedfb5b9-01c8-4178-a1cb-90b3f0e1e1ae"
-    private let polarStorefrontURL = "https://polar.sh/HelixNotus/products"
 
     // State
     var isLicensed = false
@@ -39,6 +42,7 @@ class LicenseManager {
     }
 
     var trialDaysRemaining: Int {
+        if trialExpiryDate == .distantFuture { return 7 }
         let remaining = Calendar.current.dateComponents([.day], from: Date(), to: trialExpiryDate).day ?? 0
         return max(0, remaining)
     }
@@ -48,22 +52,33 @@ class LicenseManager {
     private let trialDuration: TimeInterval = 7 * 24 * 60 * 60 // 7 days
 
     private init() {
-        // The trial clock is anchored in the Keychain so deleting UserDefaults
-        // can't restart it. The anchor is set exactly once: from an existing
-        // UserDefaults start date (upgrade path) or from "now" on first launch.
-        trialExpiryDate = .distantFuture // placeholder; resolved below
+        // The 7-day trial clock is anchored in Keychain so deleting UserDefaults
+        // cannot reset it. On fresh installs, the clock starts when onboarding
+        // finishes; existing installs preserve their saved anchor immediately.
+        trialExpiryDate = .distantFuture
 
         let anchorFormatter = ISO8601DateFormatter()
         if let anchorString = getFromKeychain("trialStartAnchor"),
            let anchorDate = anchorFormatter.date(from: anchorString) {
             trialExpiryDate = anchorDate.addingTimeInterval(trialDuration)
-            // Keep the UserDefaults copy in sync for consumers that read it.
             UserDefaults.standard.set(anchorDate, forKey: "trialStartDate")
-        } else {
-            let startDate = (UserDefaults.standard.object(forKey: "trialStartDate") as? Date) ?? Date()
-            saveToKeychain("trialStartAnchor", value: anchorFormatter.string(from: startDate))
+        } else if let legacyDate = UserDefaults.standard.object(forKey: "trialStartDate") as? Date {
+            _ = saveToKeychain("trialStartAnchor", value: anchorFormatter.string(from: legacyDate))
+            trialExpiryDate = legacyDate.addingTimeInterval(trialDuration)
+        } else if UserDefaults.standard.bool(forKey: "hasCompletedOnboarding") {
+            let startDate = Date()
+            _ = saveToKeychain("trialStartAnchor", value: anchorFormatter.string(from: startDate))
             UserDefaults.standard.set(startDate, forKey: "trialStartDate")
             trialExpiryDate = startDate.addingTimeInterval(trialDuration)
+        } else {
+            // Defer starting the 7-day trial until onboarding finishes
+            NotificationCenter.default.addObserver(
+                forName: NSNotification.Name("OnboardingCompleted"),
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.startTrialIfNeeded()
+            }
         }
 
         // Check for existing license
@@ -73,13 +88,27 @@ class LicenseManager {
         debugLog("📅 Trial days remaining: \(trialDaysRemaining)")
     }
 
+    /// Starts the 7-day trial once when onboarding completes (idempotent).
+    func startTrialIfNeeded() {
+        let anchorFormatter = ISO8601DateFormatter()
+        if let anchorString = getFromKeychain("trialStartAnchor"),
+           let anchorDate = anchorFormatter.date(from: anchorString) {
+            trialExpiryDate = anchorDate.addingTimeInterval(trialDuration)
+            return
+        }
+        let startDate = Date()
+        _ = saveToKeychain("trialStartAnchor", value: anchorFormatter.string(from: startDate))
+        UserDefaults.standard.set(startDate, forKey: "trialStartDate")
+        trialExpiryDate = startDate.addingTimeInterval(trialDuration)
+        debugLog("📅 Started 7-day trial anchor after onboarding")
+    }
+
     // MARK: - Stored License Validation
 
     private func validateStoredLicense() {
         #if APPSTORE
         debugLog("⏳ App Store build — no license key check")
         #else
-        // Must match storeLicense's .iso8601 date encoding or the decode always fails.
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         guard let _ = getFromKeychain("licenseKey"),
@@ -97,7 +126,7 @@ class LicenseManager {
 
             // Re-validate with Polar in background (don't block startup)
             Task {
-                await revalidateWithPolar(key: storedInfo.key)
+                await revalidateWithPolar(stored: storedInfo)
             }
         } else {
             debugLog("❌ Stored license expired or invalid")
@@ -132,9 +161,15 @@ class LicenseManager {
                 tier: .individual,
                 activatedOn: Date(),
                 expiryDate: nil,
-                deviceFingerprint: getDeviceFingerprint()
+                deviceFingerprint: getDeviceFingerprint(),
+                activationId: "demo-activation"
             )
-            storeLicense(info)
+            guard storeLicense(info) else {
+                isActivating = false
+                activationError = LicenseError.storageFailed.errorDescription
+                completion(.failure(LicenseError.storageFailed))
+                return
+            }
             isLicensed = true
             licenseInfo = info
             isActivating = false
@@ -144,7 +179,6 @@ class LicenseManager {
         }
         #endif
 
-        // Validate with Polar.sh
         validateWithPolar(key: trimmedKey, completion: completion)
         #endif
     }
@@ -153,15 +187,16 @@ class LicenseManager {
 
     // MARK: - Polar Customer-Portal Client
 
-    /// Decoded subset of Polar's ValidatedLicenseKey response.
     private struct PolarKeyState: Decodable {
         let status: String          // "granted" | "revoked" | "disabled"
         let expiresAt: Date?
+        let limitActivations: Int?
         let customerEmail: String?
 
         private enum CodingKeys: String, CodingKey {
             case status
             case expiresAt = "expires_at"
+            case limitActivations = "limit_activations"
             case customer
         }
         private enum CustomerKeys: String, CodingKey {
@@ -172,6 +207,7 @@ class LicenseManager {
             let root = try decoder.container(keyedBy: CodingKeys.self)
             status = try root.decode(String.self, forKey: .status)
             expiresAt = Self.parseTimestamp(try root.decodeIfPresent(String.self, forKey: .expiresAt))
+            limitActivations = try root.decodeIfPresent(Int.self, forKey: .limitActivations)
             if let customer = try? root.nestedContainer(keyedBy: CustomerKeys.self, forKey: .customer) {
                 customerEmail = try customer.decodeIfPresent(String.self, forKey: .email)
             } else {
@@ -179,7 +215,7 @@ class LicenseManager {
             }
         }
 
-        private static func parseTimestamp(_ raw: String?) -> Date? {
+        fileprivate static func parseTimestamp(_ raw: String?) -> Date? {
             guard let raw else { return nil }
             let iso = ISO8601DateFormatter()
             iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -189,22 +225,30 @@ class LicenseManager {
         }
     }
 
+    private struct PolarActivationResponse: Decodable {
+        let id: String
+    }
+
     private enum PolarLookupError: Error {
         case unknownKey
+        case deviceLimitReached
         case httpFailure(Int)
     }
 
-    /// Asks Polar's public customer-portal endpoint about a key. Requires no
-    /// authentication — validated as safe for desktop clients by Polar's docs.
-    private func fetchKeyState(_ key: String) async throws -> PolarKeyState {
+    private func fetchKeyState(_ key: String, activationId: String? = nil) async throws -> PolarKeyState {
         var request = URLRequest(url: URL(string: "\(polarAPIBase)/v1/customer-portal/license-keys/validate")!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 15
-        request.httpBody = try JSONEncoder().encode([
+
+        var payload: [String: String] = [
             "key": key,
             "organization_id": polarOrganizationId
-        ])
+        ]
+        if let activationId, !activationId.isEmpty {
+            payload["activation_id"] = activationId
+        }
+        request.httpBody = try JSONEncoder().encode(payload)
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else {
@@ -221,41 +265,105 @@ class LicenseManager {
         }
     }
 
+    /// Claims a per-device Polar activation slot when `limit_activations` is enabled on the benefit.
+    private func activateDeviceOnPolar(key: String, fingerprint: String) async throws -> String {
+        var request = URLRequest(url: URL(string: "\(polarAPIBase)/v1/customer-portal/license-keys/activate")!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 15
+
+        let label = Host.current().localizedName ?? "Mac"
+        let body: [String: Any] = [
+            "key": key,
+            "organization_id": polarOrganizationId,
+            "label": label,
+            "meta": ["fingerprint": fingerprint]
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw LicenseError.serverUnreachable
+        }
+
+        switch http.statusCode {
+        case 200, 201:
+            let decoded = try JSONDecoder().decode(PolarActivationResponse.self, from: data)
+            return decoded.id
+        case 403, 422:
+            throw PolarLookupError.deviceLimitReached
+        case 404:
+            throw PolarLookupError.unknownKey
+        default:
+            throw PolarLookupError.httpFailure(http.statusCode)
+        }
+    }
+
+    private func deactivateDeviceOnPolar(key: String, activationId: String) async {
+        guard let url = URL(string: "\(polarAPIBase)/v1/customer-portal/license-keys/deactivate") else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 15
+        request.httpBody = try? JSONEncoder().encode([
+            "key": key,
+            "organization_id": polarOrganizationId,
+            "activation_id": activationId
+        ])
+        _ = try? await URLSession.shared.data(for: request)
+    }
+
     private func validateWithPolar(key: String, completion: @escaping (Result<LicenseInfo, Error>) -> Void) {
         Task {
             do {
                 let state = try await fetchKeyState(key)
 
-                await MainActor.run {
-                    self.isActivating = false
-
-                    guard state.status == "granted" else {
+                guard state.status == "granted" else {
+                    await MainActor.run {
+                        self.isActivating = false
                         let reason = state.status == "revoked"
                             ? "This license has been revoked."
                             : "This license is not active (status: \(state.status))."
                         self.activationError = reason
                         completion(.failure(LicenseError.activationFailed))
+                    }
+                    return
+                }
+
+                let fingerprint = self.getDeviceFingerprint()
+                var activationId: String? = nil
+                if let limit = state.limitActivations, limit > 0 {
+                    activationId = try await self.activateDeviceOnPolar(key: key, fingerprint: fingerprint)
+                }
+
+                let inferredTier: LicenseTier = (state.limitActivations ?? 1) >= 3 ? .pro : .individual
+                let info = LicenseInfo(
+                    key: key,
+                    tier: inferredTier,
+                    activatedOn: Date(),
+                    expiryDate: state.expiresAt,
+                    deviceFingerprint: fingerprint,
+                    activationId: activationId
+                )
+
+                await MainActor.run {
+                    self.isActivating = false
+
+                    guard self.storeLicense(info) else {
+                        self.activationError = LicenseError.storageFailed.errorDescription
+                        completion(.failure(LicenseError.storageFailed))
                         return
                     }
 
-                    let info = LicenseInfo(
-                        key: key,
-                        tier: .individual,
-                        activatedOn: Date(),
-                        expiryDate: state.expiresAt,
-                        deviceFingerprint: self.getDeviceFingerprint()
-                    )
-
-                    self.storeLicense(info)
                     self.isLicensed = true
                     self.licenseInfo = info
-                    debugLog("✓ License activated via Polar")
+                    debugLog("✓ License activated via Polar (tier=\(inferredTier.rawValue))")
 
-                    if let email = state.customerEmail {
+                    if ReferralManager.shared.isConfigured, let email = state.customerEmail {
                         Task {
-                            await ReferralManager.shared.register(
+                            _ = await ReferralManager.shared.register(
                                 email: email,
-                                polarLicenseKey: key,
+                                polarLicenseKey: nil,
                                 polarCustomerId: nil,
                                 referredByCode: UserDefaults.standard.string(forKey: "pendingReferralCode"),
                                 licenseExpiresAt: state.expiresAt
@@ -265,6 +373,12 @@ class LicenseManager {
                     }
 
                     completion(.success(info))
+                }
+            } catch PolarLookupError.deviceLimitReached {
+                await MainActor.run {
+                    self.isActivating = false
+                    self.activationError = LicenseError.deviceLimitReached.errorDescription
+                    completion(.failure(LicenseError.deviceLimitReached))
                 }
             } catch PolarLookupError.unknownKey {
                 await MainActor.run {
@@ -288,30 +402,42 @@ class LicenseManager {
         }
     }
 
-    /// Background re-check on launch. Deliberately forgiving: only an explicit
-    /// revoked/disabled verdict removes the cached license — network trouble
-    /// never locks a paying user out.
-    private func revalidateWithPolar(key: String) async {
+    /// Background re-check on launch. Forgiving on network errors; enforces
+    /// server-side revocations, deletions, and device activation limits.
+    private func revalidateWithPolar(stored: LicenseInfo) async {
         do {
-            let state = try await fetchKeyState(key)
+            let state = try await fetchKeyState(stored.key, activationId: stored.activationId)
             if state.status == "revoked" || state.status == "disabled" {
                 await MainActor.run {
                     debugLog("❌ Polar reports license \(state.status) — deactivating")
                     self.isLicensed = false
                     self.licenseInfo = nil
                     self.clearStoredLicense()
+                    AppCoordinator.shared.updateLicenseState()
                 }
-            } else {
-                debugLog("✓ Polar re-validation passed")
+                return
             }
+
+            // Seamless upgrade path: if the Polar benefit enforces device activations
+            // and this pre-7.5.4 install didn't record an activationId yet, claim one.
+            if stored.activationId == nil, let limit = state.limitActivations, limit > 0 {
+                if let claimedId = try? await activateDeviceOnPolar(key: stored.key, fingerprint: stored.deviceFingerprint) {
+                    var updated = stored
+                    updated.activationId = claimedId
+                    _ = await MainActor.run {
+                        self.licenseInfo = updated
+                        return self.storeLicense(updated)
+                    }
+                }
+            }
+            debugLog("✓ Polar re-validation passed")
         } catch PolarLookupError.unknownKey {
-            // Definitive server verdict (key deleted, e.g. after a refund) —
-            // not a network blip. Remove the cached license.
             await MainActor.run {
-                debugLog("❌ Polar reports license key no longer exists — deactivating")
+                debugLog("❌ Polar reports license/activation no longer valid — deactivating")
                 self.isLicensed = false
                 self.licenseInfo = nil
                 self.clearStoredLicense()
+                AppCoordinator.shared.updateLicenseState()
             }
         } catch {
             debugLog("⚠️ Polar re-validation unavailable — keeping cached license")
@@ -327,38 +453,48 @@ class LicenseManager {
             userInfo: [NSLocalizedDescriptionKey: "License deactivation is not supported in App Store builds."])))
         return
         #else
-        guard let _ = licenseInfo else {
+        guard let current = licenseInfo else {
             completion(.failure(LicenseError.noLicenseFound))
             return
         }
 
         debugLog("🔓 Deactivating license")
-
-        clearStoredLicense()
-        isLicensed = false
-        licenseInfo = nil
-
-        completion(.success(()))
-        debugLog("✓ License deactivated")
+        Task {
+            if let activationId = current.activationId, !activationId.isEmpty, !current.key.hasPrefix("DEMO-") {
+                await deactivateDeviceOnPolar(key: current.key, activationId: activationId)
+            }
+            await MainActor.run {
+                self.clearStoredLicense()
+                self.isLicensed = false
+                self.licenseInfo = nil
+                completion(.success(()))
+                debugLog("✓ License deactivated")
+            }
+        }
         #endif
     }
 
     // MARK: - Storage
 
     #if !APPSTORE
-    private func storeLicense(_ info: LicenseInfo) {
+    @discardableResult
+    private func storeLicense(_ info: LicenseInfo) -> Bool {
         do {
-            saveToKeychain("licenseKey", value: info.key)
-
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             let data = try encoder.encode(info)
-            if let dataString = String(data: data, encoding: .utf8) {
-                saveToKeychain("licenseData", value: dataString)
+            guard let dataString = String(data: data, encoding: .utf8) else { return false }
+
+            let savedKey = saveToKeychain("licenseKey", value: info.key)
+            let savedData = saveToKeychain("licenseData", value: dataString)
+            if savedKey && savedData {
                 debugLog("✓ License stored securely in Keychain")
+                return true
             }
+            return false
         } catch {
-            debugLog("❌ Failed to store license: \(error)")
+            debugLog("❌ Failed to encode license: \(error)")
+            return false
         }
     }
 
@@ -370,22 +506,31 @@ class LicenseManager {
 
     // MARK: - Keychain Helpers
 
-    private func saveToKeychain(_ key: String, value: String) {
-        guard let data = value.data(using: .utf8) else { return }
+    @discardableResult
+    private func saveToKeychain(_ key: String, value: String) -> Bool {
+        guard let data = value.data(using: .utf8) else { return false }
 
-        let query: [String: Any] = [
+        let deleteQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: serviceName,
+            kSecAttrAccount as String: key
+        ]
+        SecItemDelete(deleteQuery as CFDictionary)
+
+        let addQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
             kSecAttrAccount as String: key,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
             kSecValueData as String: data
         ]
 
-        SecItemDelete(query as CFDictionary)
-
-        let status = SecItemAdd(query as CFDictionary, nil)
+        let status = SecItemAdd(addQuery as CFDictionary, nil)
         if status != errSecSuccess {
             debugLog("❌ Keychain save failed for \(key): \(status)")
+            return false
         }
+        return true
     }
 
     private func getFromKeychain(_ key: String) -> String? {
@@ -399,16 +544,8 @@ class LicenseManager {
 
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
-
-        if status == errSecUserCanceled || status == errSecAuthFailed {
-            return nil
-        } else if status == errSecItemNotFound {
-            return nil
-        } else if status != errSecSuccess {
-            return nil
-        }
-
-        guard let data = result as? Data,
+        guard status == errSecSuccess,
+              let data = result as? Data,
               let string = String(data: data, encoding: .utf8) else {
             return nil
         }
@@ -450,7 +587,7 @@ class LicenseManager {
             "IOPlatformUUID" as CFString,
             kCFAllocatorDefault,
             0
-        ).takeRetainedValue() as? String else {
+        )?.takeRetainedValue() as? String else {
             return UUID().uuidString
         }
 
@@ -458,7 +595,7 @@ class LicenseManager {
     }
     #endif
 
-    // MARK: - Pro Access
+    // MARK: - Pro Access & 7-Day Trial
 
     var isPro: Bool {
         #if APPSTORE
@@ -477,46 +614,19 @@ class LicenseManager {
     }
 
     func getRemainingFeatureUses() -> Int? {
-        if isPro { return nil }
-        if isTrialExpired { return 0 }
-
-        let usedCount = trialUsageCount
-        let limit = 50
-        return max(0, limit - usedCount)
-    }
-
-    /// Trial usage counter, Keychain-backed so trashing the UserDefaults plist
-    /// cannot reset the 50-use trial (7.4.4). Existing UserDefaults values are
-    /// migrated once on read so in-flight trials keep their count.
-    private var trialUsageCount: Int {
-        if let raw = getFromKeychain("trialUsageCount"), let value = Int(raw) {
-            return value
-        }
-        // Upgrade path: adopt whatever the old UserDefaults counter held.
-        let legacy = UserDefaults.standard.integer(forKey: "trialUsageCount")
-        if legacy > 0 {
-            saveToKeychain("trialUsageCount", value: String(legacy))
-        }
-        return legacy
+        return nil // Trial is a clean 7-day unlimited evaluation
     }
 
     func incrementTrialUsage() {
-        guard !isPro else { return }
-        let next = trialUsageCount + 1
-        saveToKeychain("trialUsageCount", value: String(next))
-        // Kept in sync for diagnostics only; the Keychain is authoritative.
-        UserDefaults.standard.set(next, forKey: "trialUsageCount")
+        // Retained for binary/API compatibility; trial is gated solely by the 7-day window.
     }
 
     // MARK: - Purchase
 
     @discardableResult
     func openPurchaseURL() -> Bool {
-        // Checkout-session creation needs an organization secret, which a
-        // desktop client must never embed — send buyers to the storefront,
-        // where Polar hosts the checkout itself.
-        guard let url = URL(string: polarStorefrontURL) else { return false }
-        debugLog("🛒 Opening Polar storefront")
+        guard let url = URL(string: Self.purchaseURLString) else { return false }
+        debugLog("🛒 Opening EchoTune purchase page: \(Self.purchaseURLString)")
         return NSWorkspace.shared.open(url)
     }
 }

@@ -94,7 +94,7 @@ You may NOT:
 ### 4.1 System Requirements
 
 You are responsible for:
-- ✅ Compatible Mac (macOS 13.0+)
+- ✅ Compatible Mac (macOS 14.0 Sonoma or later)
 - ✅ Microphone access
 - ✅ Granting accessibility permissions
 - ✅ Internet connection (for cloud models)
@@ -237,7 +237,7 @@ TO THE MAXIMUM EXTENT PERMITTED BY LAW:
 - Indirect, incidental, or consequential damages
 
 **Maximum Liability:**
-Limited to the amount you paid for the license (the one-time $10 license)
+Limited to the amount you paid for the EchoTune license.
 
 **Exceptions:**
 This does not limit liability for:

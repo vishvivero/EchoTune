@@ -107,11 +107,6 @@ class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(muteBackgroundAudio, forKey: "muteBackgroundAudio") }
     }
 
-    // License Settings
-    @Published var licenseKey: String {
-        didSet { UserDefaults.standard.set(licenseKey, forKey: "licenseKey") }
-    }
-
     // Phase 6A: Auto-Send Settings
     @Published var autoSendEnabled: Bool {
         didSet { UserDefaults.standard.set(autoSendEnabled, forKey: "autoSendEnabled") }
@@ -310,7 +305,8 @@ class AppSettings: ObservableObject {
             self.muteBackgroundAudio = true // default ON
         }
 
-        self.licenseKey = UserDefaults.standard.string(forKey: "licenseKey") ?? ""
+        // Purge any legacy plaintext licenseKey left in UserDefaults (stored in Keychain instead)
+        UserDefaults.standard.removeObject(forKey: "licenseKey")
 
         // Phase 6A: Initialize Auto-Send Settings
         if UserDefaults.standard.object(forKey: "autoSendEnabled") != nil {

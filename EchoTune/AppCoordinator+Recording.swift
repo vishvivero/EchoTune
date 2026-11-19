@@ -328,8 +328,13 @@ extension AppCoordinator {
     func stopCloudRecording() {
         os_log("🛑 stopCloudRecording called", log: appLog, type: .info)
 
-        // Play stop sound (if enabled)
-        SoundManager.shared.playStopSound()
+        let wasGestureDiscard = suppressNextNoSpeechNotice
+        suppressNextNoSpeechNotice = false
+
+        // Play stop sound (if enabled, skip for silent gesture discards)
+        if !wasGestureDiscard {
+            SoundManager.shared.playStopSound()
+        }
 
         // Update state
         appState.recordingState = .processing
@@ -346,7 +351,28 @@ extension AppCoordinator {
 
         // Stop audio recording and get audio data as proper WAV for cloud services
         let engineType: AudioManager.AudioEngine = .cloud
-        guard let audioData = audioManager.stopRecording(forEngine: engineType) else {
+        let capturedAudio = audioManager.stopRecording(forEngine: engineType)
+        let liveSession = cloudStreamingSession
+        cloudStreamingSession = nil
+        audioManager.onAudioBuffer = nil
+        audioManager.onWhisperAudioBuffer = nil
+
+        if wasGestureDiscard {
+            liveSession?.cancel()
+            cloudStreamingTask?.cancel()
+            cloudStreamingTask = nil
+            lastRecordedAudioData = nil
+            appState.recordingState = .idle
+            appState.recordingStatusDetail = nil
+            clearCurrentProcessingState()
+            if let appDelegate = NSApp.delegate as? AppDelegate,
+               let statusBar = appDelegate.statusBarController {
+                statusBar.updateIcon(for: .idle)
+            }
+            return
+        }
+
+        guard let audioData = capturedAudio else {
             os_log("❌ stopRecording returned nil", log: appLog, type: .error)
             handleTranscriptionError("Failed to capture audio data")
             return
@@ -359,10 +385,6 @@ extension AppCoordinator {
         currentProcessingMetadata.audioByteCount = audioData.count
 
         let recordingDuration = audioManager.lastRecordingDuration
-        let liveSession = cloudStreamingSession
-        cloudStreamingSession = nil
-        audioManager.onAudioBuffer = nil
-        audioManager.onWhisperAudioBuffer = nil
         PerformanceMonitor.shared.endRecording(
             duration: recordingDuration,
             bufferCount: 0
@@ -393,8 +415,16 @@ extension AppCoordinator {
             }
         }
 
-        // Determine which cloud service to use based on model
-        guard let currentModel = modelManager.currentModel else {
+        // Resolve the cloud model from the frozen session first so changing
+        // settings mid-recording cannot switch cloud providers at stop time.
+        let resolvedModel: AIModel? = {
+            if let frozenID = activeRecordingSession?.modelID,
+               let match = modelManager.availableModels.first(where: { $0.id == frozenID }) {
+                return match
+            }
+            return modelManager.currentModel
+        }()
+        guard let currentModel = resolvedModel else {
             handleTranscriptionError("No model selected")
             return
         }
@@ -465,7 +495,7 @@ extension AppCoordinator {
                         language: AppSettings.shared.autoDetectLanguage ? nil : settings.preferredLanguage.components(separatedBy: "-").first,
                         apiKey: apiKey
                     )
-                    os_log("✅ %{public}@ returned: '%@'", log: appLog, type: .info, providerName, transcribedText)
+                    os_log("✅ %{public}@ returned %d chars", log: appLog, type: .info, providerName, transcribedText.count)
 
                 } else if currentModel.backend == .deepgram {
                     // Use Deepgram
@@ -542,8 +572,8 @@ extension AppCoordinator {
 
         if let currentModel = modelManager.currentModel {
             startRecordingAudit(for: currentModel)
-            // Freeze engine/model choice for the whole session.
-            activeRecordingSession = RecordingSession(model: currentModel)
+            // Freeze engine/model choice (including Whisper -> Apple Speech fallback) for the whole session.
+            activeRecordingSession = RecordingSession(model: currentModel, useLocalWhisper: useWhisper)
         }
 
         // Start performance monitoring
@@ -654,13 +684,15 @@ extension AppCoordinator {
         os_log("🛑 stopDictation called, useWhisper=%d", log: appLog, type: .info, useWhisper ? 1 : 0)
 
         // Read-and-clear: intentional gesture discards (single tap or
-        // double-press in push-to-talk) suppress the no-speech notice for
-        // this stop only.
+        // double-press in push-to-talk) discard the blip recording immediately
+        // without running VAD, inference, or text insertion.
         let wasGestureDiscard = suppressNextNoSpeechNotice
         suppressNextNoSpeechNotice = false
 
-        // Play stop sound (if enabled)
-        SoundManager.shared.playStopSound()
+        // Play stop sound (if enabled, skip for silent gesture discards)
+        if !wasGestureDiscard {
+            SoundManager.shared.playStopSound()
+        }
 
         // Update state
         appState.recordingState = .processing
@@ -680,6 +712,27 @@ extension AppCoordinator {
         audioManager.onAudioBuffer = nil
         audioManager.onWhisperAudioBuffer = nil
 
+        // Restore system output volume (if we actually muted it at start)
+        if didMuteSystemOutput {
+            SystemAudioManager.shared.restoreSystemOutput()
+            didMuteSystemOutput = false  // Reset flag
+        }
+
+        if wasGestureDiscard {
+            whisperEngine.cancelStreamingWorkForNewSession()
+            transcriptionEngine.cancelTranscription()
+            TextInsertionManager.shared.streamedPrologue = ""
+            self.lastRecordedAudioData = nil
+            self.appState.recordingState = .idle
+            self.appState.recordingStatusDetail = nil
+            self.clearCurrentProcessingState()
+            if let appDelegate = NSApp.delegate as? AppDelegate,
+               let statusBar = appDelegate.statusBarController {
+                statusBar.updateIcon(for: .idle)
+            }
+            return
+        }
+
         // Store audio data for retention
         self.lastRecordedAudioData = capturedAudioData
 
@@ -691,12 +744,6 @@ extension AppCoordinator {
             duration: recordingDuration,
             bufferCount: 0  // Buffer count will be tracked internally in AudioManager
         )
-
-        // Restore system output volume (if we actually muted it at start)
-        if didMuteSystemOutput {
-            SystemAudioManager.shared.restoreSystemOutput()
-            didMuteSystemOutput = false  // Reset flag
-        }
 
         // VAD: Check if there's significant speech before transcribing
         if VADManager.shared.config.enabled {
@@ -754,10 +801,9 @@ extension AppCoordinator {
                 guard let self = self else { return }
                 self.handleWhisperResult(result)
             }
-        } else if capturedEngineKind != .appleSpeech, capturedEngineKind != .cloud {
-            let model = modelManager.currentModel
-            let modelName = model?.name ?? "FluidAudio"
-            let provider = model?.backend == .senseVoice ? "SenseVoice" : (model?.backend == .paraformer ? "Paraformer" : "Parakeet")
+        } else if case .fluidBatch(let frozenBackend) = capturedEngineKind {
+            let modelName = activeRecordingSession?.modelName ?? modelManager.currentModel?.name ?? "FluidAudio"
+            let provider = frozenBackend == "senseVoice" ? "SenseVoice" : (frozenBackend == "paraformer" ? "Paraformer" : "Parakeet")
             debugLog("🛑 Ending \(provider) batch transcription")
             beginTranscriptionAudit(provider: provider, model: modelName, detail: "Transcribing locally with \(provider)…")
             PerformanceMonitor.shared.startTranscription(engine: provider, model: modelName)
@@ -772,10 +818,10 @@ extension AppCoordinator {
                 guard let self else { return }
                 do {
                     let result: WhisperTranscriptionResult
-                    switch model?.backend {
-                    case .senseVoice:
+                    switch frozenBackend {
+                    case "senseVoice":
                         result = try await SenseVoiceEngine.shared.transcribe(audioData: capturedAudioData)
-                    case .paraformer:
+                    case "paraformer":
                         result = try await ParaformerEngine.shared.transcribe(audioData: capturedAudioData)
                     default:
                         // In-memory path: transcribe straight from the samples
@@ -906,11 +952,6 @@ extension AppCoordinator {
         if !licenseManager.canUsePremiumFeatures() {
             showTrialExpiredAlert()
             return false
-        }
-
-        // Increment trial usage
-        if !licenseManager.isLicensed {
-            licenseManager.incrementTrialUsage()
         }
 
         // Check microphone permission

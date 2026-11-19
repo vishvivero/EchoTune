@@ -14,9 +14,10 @@ enum AppRelauncher {
             ? (AppInstallLocation.installedBundleURL ?? Bundle.main.bundleURL)
             : Bundle.main.bundleURL
 
+        let selfPID = String(ProcessInfo.processInfo.processIdentifier)
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        task.arguments = [target.path]
+        task.arguments = ["-n", target.path, "--args", "--relaunch-wait-pid", selfPID]
 
         do {
             try task.run()

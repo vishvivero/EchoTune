@@ -22,8 +22,13 @@ class ReferralManager {
         // Stored in UserDefaults after first setup, or hardcoded for beta
         UserDefaults.standard.string(forKey: "supabaseAnonKey") ?? Self.defaultAnonKey
     }
-    // TODO: Replace with actual anon key from Supabase dashboard
-    private static let defaultAnonKey = "REPLACE_WITH_ANON_KEY"
+    private static let defaultAnonKey = ""
+
+    /// True only when a real Supabase anon key has been configured.
+    var isConfigured: Bool {
+        let key = supabaseAnonKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !key.isEmpty && key != "REPLACE_WITH_ANON_KEY"
+    }
 
     // MARK: - State
     var referralCode: String = ""
@@ -62,7 +67,7 @@ class ReferralManager {
         referralCode = UserDefaults.standard.string(forKey: kReferralCode) ?? ""
         isRegistered = UserDefaults.standard.bool(forKey: kIsRegistered)
 
-        if isRegistered && !referralCode.isEmpty {
+        if isConfigured && isRegistered && !referralCode.isEmpty {
             // Refresh stats in background
             Task { await refreshStats() }
         }
@@ -79,7 +84,7 @@ class ReferralManager {
         referredByCode: String? = nil,
         licenseExpiresAt: Date? = nil
     ) async -> Bool {
-        guard !email.isEmpty else { return false }
+        guard isConfigured, !email.isEmpty else { return false }
 
         isLoading = true
         errorMessage = nil
@@ -88,7 +93,6 @@ class ReferralManager {
         var params: [String: Any] = [
             "p_email": email
         ]
-        if let key = polarLicenseKey { params["p_polar_license_key"] = key }
         if let cid = polarCustomerId { params["p_polar_customer_id"] = cid }
         if let ref = referredByCode, !ref.isEmpty { params["p_referred_by"] = ref }
         if let exp = licenseExpiresAt {

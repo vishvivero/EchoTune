@@ -7,6 +7,8 @@
 
 import SwiftUI
 import Combine
+import AppKit
+import UniformTypeIdentifiers
 
 // MARK: - General Settings
 struct GeneralSettingsView: View {
@@ -272,13 +274,15 @@ struct PermissionRow: View {
 // MARK: - Privacy Settings
 struct PrivacySettingsView: View {
     @EnvironmentObject var settings: AppSettings
-    
+    @State private var showEraseAllConfirmation = false
+    @State private var statusBanner: String? = nil
+
     var body: some View {
         Form {
             Section("Audio Retention") {
                 Toggle("Keep Local Audio Recordings", isOn: $settings.keepAudioHistory)
                     .help("Saves the audio files along with history recordings.")
-                
+
                 Picker("Retention Period", selection: $settings.audioRetentionDays) {
                     Text("1 Day").tag(1)
                     Text("7 Days").tag(7)
@@ -288,15 +292,93 @@ struct PrivacySettingsView: View {
                 .disabled(!settings.keepAudioHistory)
             }
 
-            Section("Local Storage") {
-                Button("Delete All Cached Audio Recordings") {
-                    let _ = AudioCleanupManager.shared.deleteAllAudioFiles()
+            Section("Your Local Data") {
+                HStack(spacing: 12) {
+                    Button("Export All Local Data…") {
+                        exportAllLocalData()
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button("Delete Cached Audio Only") {
+                        let result = AudioCleanupManager.shared.deleteAllAudioFiles()
+                        statusBanner = "Deleted \(result.deletedCount) cached audio file(s)."
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                Button("Erase All Local History, Notes, Tasks & Logs…", role: .destructive) {
+                    showEraseAllConfirmation = true
                 }
                 .buttonStyle(.bordered)
                 .foregroundColor(.red)
+
+                if let statusBanner {
+                    Text(statusBanner)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
         }
         .formStyle(.grouped)
+        .alert("Erase All Local Data?", isPresented: $showEraseAllConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Erase Everything", role: .destructive) {
+                eraseAllLocalData()
+            }
+        } message: {
+            Text("This permanently removes all local transcription history, Echo memory, notes, tasks, learned corrections, cached audio files, and diagnostic logs from this Mac. Your license and settings are kept.")
+        }
+    }
+
+    private func exportAllLocalData() {
+        struct ExportBundle: Encodable {
+            let exportedAt: Date
+            let appVersion: String
+            let transcriptions: [TranscriptionHistoryItem]
+            let notes: [Note]
+            let commitments: [Commitment]
+        }
+
+        let bundle = ExportBundle(
+            exportedAt: Date(),
+            appVersion: Bundle.main.appVersionWithBuild,
+            transcriptions: TranscriptionHistoryManager.shared.transcriptions,
+            notes: NotesManager.shared.notes,
+            commitments: CommitmentMemoryManager.shared.commitments
+        )
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        guard let data = try? encoder.encode(bundle) else {
+            statusBanner = "Failed to encode export file."
+            return
+        }
+
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = "EchoTune-Export.json"
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            do {
+                try data.write(to: url, options: .atomic)
+                try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+                statusBanner = "Exported to \(url.lastPathComponent)."
+            } catch {
+                statusBanner = "Export failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func eraseAllLocalData() {
+        _ = AudioCleanupManager.shared.deleteAllAudioFiles()
+        TranscriptionHistoryManager.shared.clearAll()
+        EchoMemoryManager.shared.clearAll()
+        NotesManager.shared.clearAll()
+        CommitmentMemoryManager.shared.clearAll()
+        CorrectionLearner.shared.clearAll()
+        ErrorLogger.shared.clearLogs()
+        statusBanner = "All local transcriptions, notes, tasks, audio, and logs have been erased."
     }
 }
 

@@ -76,7 +76,7 @@ extension WhisperEngine {
         Task { @MainActor in
             self.currentText = finalResult.outputText
             self.isProcessing = false
-            os_log("✅ Final cleaned: '%@'", log: wLog, type: .info, finalResult.outputText)
+            os_log("✅ Final cleaned: chars=%d", log: wLog, type: .info, finalResult.outputText.count)
             completion(.success(finalResult))
         }
     }
