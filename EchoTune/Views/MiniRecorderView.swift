@@ -247,6 +247,18 @@ struct MiniRecorderContentView: View {
                     }
                 }
                 .buttonStyle(.plain)
+                .help(isRecording ? "Finish & transcribe" : "Start dictation")
+
+                // Cancel / Close (✕) button — dismisses floating recorder without transcribing
+                Button(action: { AppCoordinator.shared.cancelActiveDictation() }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.white.opacity(0.75))
+                        .frame(width: 24, height: 24)
+                        .background(Circle().fill(Color.white.opacity(0.12)))
+                }
+                .buttonStyle(.plain)
+                .help("Cancel & close recorder")
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)

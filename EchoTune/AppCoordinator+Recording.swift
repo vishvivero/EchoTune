@@ -958,6 +958,29 @@ extension AppCoordinator {
         }
     }
 
+    /// Immediately cancels an active or processing recording and closes the floating recorder UI
+    /// without transcribing or inserting text.
+    func cancelActiveDictation() {
+        if appState.recordingState == .recording {
+            suppressNextNoSpeechNotice = true
+            toggleDictation()
+            return
+        }
+        appState.recordingState = .idle
+        appState.recordingStatusDetail = nil
+        audioManager.onAudioBuffer = nil
+        audioManager.onWhisperAudioBuffer = nil
+        TextInsertionManager.shared.streamedPrologue = ""
+        whisperEngine.cancelStreamingWorkForNewSession()
+        transcriptionEngine.cancelTranscription()
+        clearCurrentProcessingState()
+        hideRecorderUI()
+        if let appDelegate = NSApp.delegate as? AppDelegate,
+           let statusBar = appDelegate.statusBarController {
+            statusBar.updateIcon(for: .idle)
+        }
+    }
+
     func canStartDictation() -> Bool {
         // Check license or trial
         if !licenseManager.canUsePremiumFeatures() {

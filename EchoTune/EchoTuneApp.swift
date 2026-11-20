@@ -92,38 +92,18 @@ final class OnboardingStateStore: ObservableObject {
 @main
 struct EchoTuneApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @StateObject private var onboardingState = OnboardingStateStore.shared
 
     init() {
-        // Initialize app coordinator to setup hotkeys and managers
         _ = AppCoordinator.shared
     }
 
     var body: some Scene {
-        // Main window — shows onboarding until completed, then full dashboard
-        WindowGroup {
-            Group {
-                if onboardingState.hasCompletedOnboarding {
-                    MainDashboardView()
-                        .environmentObject(AppCoordinator.shared)
-                        .environmentObject(AppSettings.shared)
-                        .frame(minWidth: 900, minHeight: 600)
-                } else {
-                    OnboardingView(onComplete: onboardingCompleted)
-                        .frame(width: 700, height: 650)
-                }
-            }
-            .onOpenURL(perform: handleURL)
+        // Primary Dashboard & Onboarding windows are managed solely by AppDelegate
+        // as single-instance NSWindows so SwiftUI WindowGroup never spawns stacked
+        // duplicate windows or blocks red traffic-light Close (✕) clicks.
+        Settings {
+            EmptyView()
         }
-        .defaultSize(
-            width: onboardingState.hasCompletedOnboarding ? 960 : 700,
-            height: onboardingState.hasCompletedOnboarding ? 720 : 650
-        )
-
-        // Settings: routed through AppCoordinator → AppDelegate's controlled
-        // NSWindow (compact 465x345). The SwiftUI `Settings` scene was removed
-        // because it opened its own uncontrolled window (900x450) that ignored
-        // our sizing — Cmd+, is handled by the command below instead.
         .commands {
             CommandGroup(replacing: .appSettings) {
                 Button("Settings…") {
@@ -136,46 +116,6 @@ struct EchoTuneApp: App {
                     UpdateManager.shared.checkForUpdates()
                 }
             }
-        }
-    }
-
-    /// Called when the user finishes the in-window onboarding flow.
-    private func onboardingCompleted() {
-        debugLog("✓ Onboarding completed (inline SwiftUI flow)")
-
-        // Switch to menu-bar-only (accessory) activation policy
-        NSApp.setActivationPolicy(.accessory)
-        debugLog("✓ Switched to .accessory activation policy")
-
-        // Tell AppCoordinator to initialize managers that were deferred
-        NotificationCenter.default.post(name: NSNotification.Name("OnboardingCompleted"), object: nil)
-
-        // Bring the main dashboard window to the front after SwiftUI re-renders
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            NSApp.activate(ignoringOtherApps: true)
-            if let mainWindow = NSApp.windows.first(where: { $0.isVisible && $0.canBecomeKey }) {
-                mainWindow.makeKeyAndOrderFront(nil)
-                mainWindow.orderFrontRegardless()
-                debugLog("🪟 Main dashboard brought to front after onboarding")
-            }
-        }
-    }
-
-    /// Handle echotune:// and https://echotune.app/refer?code=XXX deep links.
-    /// Deep-link input is attacker-controllable, so the referral code is
-    /// strictly validated before anything is stored.
-    private func handleURL(_ url: URL) {
-        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return }
-
-        if let code = components.queryItems?.first(where: { $0.name == "code" })?.value {
-            let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-")
-            guard (4...32).contains(code.count),
-                  code.unicodeScalars.allSatisfy({ allowed.contains($0) }) else {
-                debugLog("📎 Ignoring malformed referral code in deep link")
-                return
-            }
-            debugLog("📎 Referral code received via deep link: \(code)")
-            UserDefaults.standard.set(code, forKey: "pendingReferralCode")
         }
     }
 }

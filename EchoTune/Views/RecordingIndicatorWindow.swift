@@ -88,6 +88,15 @@ struct RecordingIndicatorContentView: View {
                         .background(Circle().fill(Color.white.opacity(0.2)))
                 }
                 .buttonStyle(.plain)
+
+                Button(action: { AppCoordinator.shared.cancelActiveDictation() }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9.5, weight: .bold))
+                        .foregroundColor(.white.opacity(0.75))
+                        .frame(width: 20, height: 20)
+                        .background(Circle().fill(Color.white.opacity(0.14)))
+                }
+                .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 12)

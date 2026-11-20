@@ -2,20 +2,21 @@
 //  AppDelegate.swift
 //  EchoTune
 //
-//  Phase 1: Application Delegate & Menu Bar Setup
+//  Application Delegate, Single-Instance Window Lifecycle & Menu Bar Setup
 //
 
-import SwiftUI
 import AppKit
+import SwiftUI
 import UserNotifications
 
-class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate, NSWindowDelegate {
     var statusBarController: StatusBarController?
     var settingsWindow: NSWindow?
     var dashboardWindow: NSWindow?
     var onboardingWindow: NSWindow?
     var echoProfileWindowController: EchoProfileWindowController?
     var commitmentsWindowController: CommitmentsWindowController?
+
     private let onboardingState = OnboardingStateStore.shared
     private let dashboardSize = NSSize(width: 960, height: 720)
     private let dashboardMinimumSize = NSSize(width: 900, height: 600)
@@ -23,9 +24,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     func applicationDidFinishLaunching(_ notification: Notification) {
         debugLog("🚀 EchoTune launching...")
 
-        // Single-instance guard: if another EchoTune is already running, exit.
-        // Two instances = two Whisper models fighting for the same GPU, which
-        // doubles transcription latency and can double-insert text.
         let args = ProcessInfo.processInfo.arguments
         let relaunchWaitPID: pid_t? = {
             guard let idx = args.firstIndex(of: "--relaunch-wait-pid"),
@@ -47,68 +45,42 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                     && $0.processIdentifier != relaunchWaitPID
                     && !$0.isTerminated
             }
-        if let other = others.first {
-            // Unit/UI test hosts launch alongside a live EchoTune session or
-            // spawn back-to-back on CI — never kill an XCTest/Swift-Testing host.
-            let env = ProcessInfo.processInfo.environment
-            let isTestHost = env["XCTestConfigurationFilePath"] != nil
-                || env["XCTestSessionIdentifier"] != nil
-                || args.contains("--ui-test-force-onboarding")
-                || env["ECHO_UI_TEST_FORCE_ONBOARDING"] != nil
-            if !isTestHost {
-                debugLog("⚠️ EchoTune already running (pid \(other.processIdentifier)) — activating it and exiting this instance")
-                other.activate()
-                NSApp.terminate(nil)
-                return
-            }
+        let env = ProcessInfo.processInfo.environment
+        let isTestHost = env["XCTestConfigurationFilePath"] != nil
+            || env["XCTestSessionIdentifier"] != nil
+            || args.contains("--ui-test-force-onboarding")
+            || env["ECHO_UI_TEST_FORCE_ONBOARDING"] != nil
+
+        if let other = others.first, !isTestHost {
+            debugLog("⚠️ EchoTune already running (pid \(other.processIdentifier)) — activating it and exiting")
+            other.activate()
+            NSApp.terminate(nil)
+            return
         }
 
-        // Start Sparkle's scheduled updater only for the surviving instance.
-        // Without touching this singleton here, automatic checks would not
-        // begin until the user opened About/License settings or the update menu.
         _ = UpdateManager.shared
 
-        // Initialize status bar (always show for accessory apps)
         statusBarController = StatusBarController()
         debugLog("✓ Menu bar icon created")
 
-        // Memory is a lazy singleton, so nothing else touches it until the user
-        // dictates or opens Echo Profile. Start it here so task memory can
-        // backfill from transcriptions that already exist on disk.
         _ = EchoMemoryManager.shared
 
         UNUserNotificationCenter.current().delegate = self
         NotificationManager.shared.setupNotificationCategories()
 
-        // Set activation policy based on onboarding state
-        // Onboarding itself is now rendered inline inside the SwiftUI WindowGroup
-        let hasCompletedOnboarding = onboardingState.hasCompletedOnboarding
-        updateActivationPolicy(hasCompletedOnboarding: hasCompletedOnboarding)
-        debugLog("📋 Onboarding completed: \(hasCompletedOnboarding)")
-
-        // Model preloading is handled by AppCoordinator.initializeAfterOnboarding()
-        // (waits for ModelManagerReady notification to avoid race conditions)
-
-        // WindowGroup creates the dashboard asynchronously. Apply the actual
-        // AppKit window size after SwiftUI has created it, including on launches
-        // where macOS restores a previous larger frame.
-        if onboardingState.hasCompletedOnboarding {
-            DispatchQueue.main.async { [weak self] in
-                self?.showDashboard(item: .home)
+        if !isTestHost {
+            if onboardingState.hasCompletedOnboarding {
+                // Start in menu-bar (.accessory) mode; only open Dashboard when
+                // user clicks the app in Finder/Spotlight or chooses Open Dashboard.
+                NSApp.setActivationPolicy(.accessory)
+            } else {
+                showOnboarding()
             }
-        }
-
-        #if DEBUG
-        // UI tests launch with a forced onboarding argument. WindowGroup creation
-        // is asynchronous for this menu-bar app, so explicitly present the same
-        // onboarding surface used by reset/restart flows instead of relying on
-        // the host to create and focus the initial SwiftUI window.
-        if ProcessInfo.processInfo.arguments.contains("--ui-test-force-onboarding") {
+        } else if args.contains("--ui-test-force-onboarding") {
             DispatchQueue.main.async { [weak self] in
                 self?.showOnboarding()
             }
         }
-        #endif
 
         debugLog("✓ EchoTune ready")
     }
@@ -117,16 +89,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         debugLog("👋 EchoTune shutting down")
     }
 
-    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        [.banner, .sound]
-    }
-
-    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
-        // No custom notification actions currently require handling
-    }
-
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        // Don't quit when windows close (menu bar app)
         return false
     }
 
@@ -136,47 +99,127 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         } else {
             showOnboarding()
         }
-        return true
+        return false
     }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { continue }
+            if let code = components.queryItems?.first(where: { $0.name == "code" })?.value {
+                let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-")
+                if (4...32).contains(code.count), code.unicodeScalars.allSatisfy({ allowed.contains($0) }) {
+                    UserDefaults.standard.set(code, forKey: "pendingReferralCode")
+                }
+            }
+        }
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
+        [.banner, .sound]
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {}
+
+    // MARK: - Window Activation Policy Sync
+
+    /// Promotes EchoTune to `.regular` before presenting any standard window so
+    /// macOS makes the window genuinely active and its red Close (✕) button works
+    /// on the very first click.
+    private func activateAndPresent(_ window: NSWindow) {
+        if NSApp.activationPolicy() != .regular {
+            NSApp.setActivationPolicy(.regular)
+        }
+        NSApp.activate()
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    /// Demotes back to `.accessory` (menu-bar only) once all standard windows close.
+    private func syncAccessoryPolicyAfterWindowClose(closing closingWindow: NSWindow?) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let managed: [NSWindow?] = [
+                self.dashboardWindow,
+                self.settingsWindow,
+                self.onboardingWindow,
+                self.echoProfileWindowController?.window,
+                self.commitmentsWindowController?.window
+            ]
+            let anyStillOpen = managed.compactMap { $0 }.contains { win in
+                win !== closingWindow && win.isVisible && !win.isMiniaturized
+            }
+            if !anyStillOpen && self.onboardingState.hasCompletedOnboarding {
+                NSApp.setActivationPolicy(.accessory)
+                debugLog("✓ All primary windows closed — returned to .accessory menu-bar mode")
+            }
+        }
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        let closing = notification.object as? NSWindow
+        syncAccessoryPolicyAfterWindowClose(closing: closing)
+    }
+
+    // MARK: - Primary Windows
 
     func showOnboarding() {
         if onboardingWindow == nil {
-            let onboardingView = OnboardingView {
+            let onboardingView = OnboardingView { [weak self] in
+                guard let self else { return }
                 debugLog("✓ Onboarding completed")
-                self.updateActivationPolicy(hasCompletedOnboarding: true)
+                NotificationCenter.default.post(name: NSNotification.Name("OnboardingCompleted"), object: nil)
                 self.onboardingWindow?.close()
                 self.onboardingWindow = nil
-
-                self.showPrimaryAppWindows()
-                self.showWelcomeNotification()
+                self.showDashboard(item: .home)
             }
 
             let hostingController = NSHostingController(rootView: onboardingView)
-
-            onboardingWindow = NSWindow(contentViewController: hostingController)
-            onboardingWindow?.title = "Welcome to EchoTune"
-            onboardingWindow?.styleMask = [.titled]
-            onboardingWindow?.titlebarAppearsTransparent = false
-            onboardingWindow?.setContentSize(NSSize(width: 700, height: 650))
-            onboardingWindow?.minSize = NSSize(width: 700, height: 650)
-            onboardingWindow?.maxSize = NSSize(width: 700, height: 650)
-            onboardingWindow?.center()
-            onboardingWindow?.isReleasedWhenClosed = false
-            onboardingWindow?.collectionBehavior = [.moveToActiveSpace]
-            debugLog("🪟 Onboarding window created")
+            let win = NSWindow(contentViewController: hostingController)
+            win.title = "Welcome to EchoTune"
+            win.styleMask = [.titled, .closable, .miniaturizable]
+            win.titlebarAppearsTransparent = false
+            win.setContentSize(NSSize(width: 700, height: 650))
+            win.minSize = NSSize(width: 700, height: 650)
+            win.maxSize = NSSize(width: 700, height: 650)
+            win.center()
+            win.isReleasedWhenClosed = false
+            win.delegate = self
+            win.collectionBehavior = [.moveToActiveSpace]
+            onboardingWindow = win
         }
 
-        // Hide any auto-created SwiftUI windows so onboarding is the only first-launch surface.
-        hidePrimaryAppWindows()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            self.hidePrimaryAppWindows()
+        if let win = onboardingWindow {
+            activateAndPresent(win)
+        }
+    }
+
+    func showDashboard(item: NavigationItem = .home) {
+        if dashboardWindow == nil {
+            let root = MainDashboardView()
+                .environmentObject(AppCoordinator.shared)
+                .environmentObject(AppSettings.shared)
+            let hosting = NSHostingController(rootView: root)
+            let win = NSWindow(contentViewController: hosting)
+            win.title = "EchoTune"
+            win.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+            win.minSize = dashboardMinimumSize
+            win.setContentSize(dashboardSize)
+            win.center()
+            win.isReleasedWhenClosed = false
+            win.delegate = self
+            dashboardWindow = win
         }
 
-        // Show onboarding as the primary first-launch experience.
-        NSApp.activate(ignoringOtherApps: true)
-        onboardingWindow?.makeKeyAndOrderFront(nil)
-        onboardingWindow?.orderFrontRegardless()
-        debugLog("🪟 Onboarding window shown")
+        if let win = dashboardWindow {
+            activateAndPresent(win)
+        }
+
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(
+                name: NSNotification.Name("NavigateDashboardToItem"),
+                object: nil,
+                userInfo: ["item": item.rawValue]
+            )
+        }
     }
 
     @objc func showSettings(_ sender: Any? = nil) {
@@ -190,17 +233,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 .environmentObject(AppSettings.shared)
             let hostingController = NSHostingController(rootView: settingsView)
 
-            settingsWindow = NSWindow(contentViewController: hostingController)
-            settingsWindow?.title = "EchoTune Settings"
-            settingsWindow?.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-            settingsWindow?.setContentSize(NSSize(width: 720, height: 480))
-            settingsWindow?.minSize = NSSize(width: 680, height: 420)
-            settingsWindow?.maxSize = NSSize(width: 1100, height: 800)
-            settingsWindow?.center()
-            settingsWindow?.isReleasedWhenClosed = false
-
-            // Handle window close
-            settingsWindow?.delegate = self
+            let win = NSWindow(contentViewController: hostingController)
+            win.title = "EchoTune Settings"
+            win.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+            win.setContentSize(NSSize(width: 720, height: 480))
+            win.minSize = NSSize(width: 680, height: 420)
+            win.maxSize = NSSize(width: 1100, height: 800)
+            win.center()
+            win.isReleasedWhenClosed = false
+            win.delegate = self
+            settingsWindow = win
         }
 
         if let tab {
@@ -211,25 +253,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             )
         }
 
-        settingsWindow?.setContentSize(NSSize(width: 720, height: 480))
-        settingsWindow?.minSize = NSSize(width: 680, height: 420)
-        settingsWindow?.maxSize = NSSize(width: 1100, height: 800)
-        settingsWindow?.center()
-
-        NSApp.activate(ignoringOtherApps: true)
-        settingsWindow?.makeKeyAndOrderFront(nil)
-        settingsWindow?.orderFrontRegardless()
-        debugLog("⚙️ Settings window shown")
-    }
-
-    func showDashboard(item: NavigationItem = .home) {
-        NSApp.activate(ignoringOtherApps: true)
-        showPrimaryAppWindows {
-            NotificationCenter.default.post(
-                name: NSNotification.Name("NavigateDashboardToItem"),
-                object: nil,
-                userInfo: ["item": item.rawValue]
-            )
+        if let win = settingsWindow {
+            if !win.isVisible {
+                win.setContentSize(NSSize(width: 720, height: 480))
+                win.center()
+            }
+            activateAndPresent(win)
         }
     }
 
@@ -238,10 +267,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             echoProfileWindowController = EchoProfileWindowController()
             echoProfileWindowController?.window?.delegate = self
         }
-        echoProfileWindowController?.window?.center()
-        echoProfileWindowController?.window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-        debugLog("🧠 Echo Profile window shown")
+        if let win = echoProfileWindowController?.window {
+            win.center()
+            activateAndPresent(win)
+        }
     }
 
     @objc func showCommitments() {
@@ -249,146 +278,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             commitmentsWindowController = CommitmentsWindowController()
             commitmentsWindowController?.window?.delegate = self
         }
-        commitmentsWindowController?.window?.center()
-        commitmentsWindowController?.window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-        debugLog("✅ Tasks window shown")
+        if let win = commitmentsWindowController?.window {
+            win.center()
+            activateAndPresent(win)
+        }
     }
 
     func showWelcomeNotification() {
-        // Hand off cleanly to the main dashboard instead of interrupting with another modal.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            NSApp.activate(ignoringOtherApps: true)
-
-            if let mainWindow = NSApp.windows.first(where: { window in
-                window != self.settingsWindow &&
-                window.isVisible &&
-                window.canBecomeKey
-            }) {
-                mainWindow.makeKeyAndOrderFront(nil)
-                mainWindow.orderFrontRegardless()
-                debugLog("🪟 Main dashboard brought to front after onboarding")
-            } else {
-                debugLog("ℹ️ Main dashboard window not yet visible after onboarding handoff")
-            }
-        }
-    }
-
-    // MARK: - Model Preloading
-
-    /// Preload the default Whisper model in background for instant first transcription
-    private func preloadDefaultModel() {
-        // Only preload if using Whisper (not Apple Speech)
-        guard let currentModel = ModelManager.shared.currentModel,
-              !currentModel.isBuiltIn,
-              currentModel.isInstalled else {
-            debugLog("ℹ️ Skipping model preload (using Apple Speech or no model installed)")
-            return
-        }
-
-        debugLog("🚀 Preloading Whisper model in background: \(currentModel.name)")
-        debugLog("   This eliminates 2-3s loading delay on first transcription")
-
-        // Preload model asynchronously in background
-        Task(priority: .utility) {
-            WhisperEngine.shared.loadModel(currentModel) { result in
-                switch result {
-                case .success:
-                    debugLog("✅ Model preloaded successfully: \(currentModel.name)")
-                    debugLog("🎯 First transcription will be instant!")
-                case .failure(let error):
-                    debugLog("⚠️ Model preload failed: \(error)")
-                    debugLog("   Model will load on first transcription instead")
-                }
-            }
-        }
-    }
-
-    private func updateActivationPolicy(hasCompletedOnboarding: Bool) {
-        let policy: NSApplication.ActivationPolicy = hasCompletedOnboarding ? .accessory : .regular
-        NSApp.setActivationPolicy(policy)
-        debugLog("✓ Using \(hasCompletedOnboarding ? ".accessory" : ".regular") activation policy")
-    }
-
-    private func hidePrimaryAppWindows() {
-        DispatchQueue.main.async {
-            for window in NSApp.windows where window !== self.onboardingWindow && window !== self.settingsWindow {
-                window.orderOut(nil)
-                debugLog("🙈 Hid primary app window during onboarding: \(window.title)")
-            }
-        }
-    }
-
-    private func isAuxiliaryWindow(_ window: NSWindow) -> Bool {
-        if window is NSPanel { return true }
-        if !window.styleMask.contains(.titled) { return true }
-        return window === onboardingWindow
-            || window === settingsWindow
-            || window === echoProfileWindowController?.window
-            || window === commitmentsWindowController?.window
-    }
-
-    private func showPrimaryAppWindows(completion: (() -> Void)? = nil) {
-        DispatchQueue.main.async {
-            if let existing = NSApp.windows.first(where: { !self.isAuxiliaryWindow($0) }) {
-                self.applyDashboardWindowSize(to: existing)
-                existing.makeKeyAndOrderFront(nil)
-                existing.orderFrontRegardless()
-                completion?()
-                return
-            }
-
-            if self.dashboardWindow == nil {
-                let root = MainDashboardView()
-                    .environmentObject(AppCoordinator.shared)
-                    .environmentObject(AppSettings.shared)
-                let hosting = NSHostingController(rootView: root)
-                let win = NSWindow(contentViewController: hosting)
-                win.title = "EchoTune"
-                win.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-                win.minSize = self.dashboardMinimumSize
-                win.setContentSize(self.dashboardSize)
-                win.center()
-                win.isReleasedWhenClosed = false
-                self.dashboardWindow = win
-            }
-
-            self.dashboardWindow?.makeKeyAndOrderFront(nil)
-            self.dashboardWindow?.orderFrontRegardless()
-            DispatchQueue.main.async {
-                completion?()
-            }
-        }
-    }
-
-    private func applyDashboardWindowSize(to window: NSWindow? = nil) {
-        guard let dashboard = window ?? NSApp.windows.first(where: {
-            $0 !== onboardingWindow && $0 !== settingsWindow && $0.contentViewController is NSHostingController<AnyView>
-        }) ?? NSApp.windows.first(where: {
-            $0 !== onboardingWindow && $0 !== settingsWindow && $0.title != "EchoTune Settings"
-        }) else {
-            return
-        }
-
-        dashboard.minSize = dashboardMinimumSize
-        dashboard.setContentSize(dashboardSize)
-        dashboard.center()
-        debugLog("🪟 Dashboard window sized to \(dashboardSize.width)x\(dashboardSize.height)")
+        showDashboard(item: .home)
     }
 
     func resetOnboardingAndRestart() {
         OnboardingStateStore.shared.resetProgress()
-        debugLog("🔄 Onboarding reset - restarting app...")
         AppRelauncher.relaunch()
-    }
-}
-
-// MARK: - NSWindowDelegate
-
-extension AppDelegate: NSWindowDelegate {
-    func windowWillClose(_ notification: Notification) {
-        if notification.object as? NSWindow == settingsWindow {
-            // Settings window is closing
-        }
     }
 }

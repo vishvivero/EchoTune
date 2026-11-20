@@ -831,6 +831,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func quitApp() {
-        NSApp.terminate(nil)
+        rootMenu.cancelTracking()
+        DispatchQueue.main.async {
+            NSApp.terminate(nil)
+        }
     }
 }
