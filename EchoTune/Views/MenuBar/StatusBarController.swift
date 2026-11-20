@@ -2,110 +2,28 @@
 //  StatusBarController.swift
 //  EchoTune
 //
-//  Created by Vishnu Raj on 25/10/2025.
+//  CodexBar-style native NSMenu status bar controller.
+//  Combines a rich hosted SwiftUI dashboard card (Overview / Controls / Recent)
+//  at the top of a native NSMenu with crisp AppKit submenus and action rows
+//  (Model switcher, Microphone picker, Language picker, Recent dictations,
+//  Dashboard/Profile/Tasks/Notes/Dictionary launchers, Sparkle updater,
+//  Settings ⌘, and Quit ⌘Q), plus a 1:1 Retina animated status-bar glyph.
 //
 
 import AppKit
-import SwiftUI
 import Combine
+import SwiftUI
 
-class StatusBarController: NSObject {
-    private var statusItem: NSStatusItem
-    private var popover: NSPopover
-    private var eventMonitor: Any?
-    private var cancellables = Set<AnyCancellable>()
-    
-    override init() {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        popover = NSPopover()
-        popover.contentSize = NSSize(width: 280, height: 430)
-        popover.behavior = .transient
-        
-        let contentView = MenuBarPopoverView()
-            .environmentObject(AppState.shared)
-            .environmentObject(AppSettings.shared)
-            .environmentObject(AppCoordinator.shared)
-        
-        popover.contentViewController = NSHostingController(rootView: contentView)
-        
-        super.init()
-        
-        if let button = statusItem.button {
-            button.image = Self.logoImage()
-            button.action = #selector(togglePopover(_:))
-            button.target = self
-        }
-        
-        // Observe AppState.recordingState to update icon/badge
-        AppState.shared.$recordingState
-            .receive(on: RunLoop.main)
-            .sink { [weak self] state in
-                self?.updateIcon(for: state)
-            }
-            .store(in: &cancellables)
-    }
-    
-    @objc func togglePopover(_ sender: AnyObject?) {
-        if popover.isShown {
-            closePopover(sender)
-        } else {
-            showPopover(sender)
-        }
-    }
-    
-    private func showPopover(_ sender: AnyObject?) {
-        if let button = statusItem.button {
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
-                self?.closePopover(event)
-            }
-        }
-    }
-    
-    private func closePopover(_ sender: AnyObject?) {
-        popover.performClose(sender)
-        if let monitor = eventMonitor {
-            NSEvent.removeMonitor(monitor)
-            eventMonitor = nil
-        }
-    }
-    
-    /// The menu bar keeps the same lean logo glyph at all times and only tints it to
-    /// reflect state — swapping between different filled SF Symbols per state read as
-    /// heavy/inconsistent, whereas a single template icon that recolors is the native,
-    /// minimalistic pattern most polished menu bar apps use.
-    private static func logoImage() -> NSImage? {
-        guard let image = NSImage(named: "MenuBarIcon") else { return nil }
-        image.isTemplate = true
-        image.accessibilityDescription = "EchoTune"
-        return image
-    }
-
-    func updateIcon(for state: RecordingState) {
-        guard let button = statusItem.button else { return }
-
-        button.image = Self.logoImage()
-        button.toolTip = state.description
-
-        switch state {
-        case .idle:
-            button.contentTintColor = nil
-        case .loadingModel:
-            button.contentTintColor = .systemOrange
-        case .recording:
-            button.contentTintColor = .systemRed
-        case .processing:
-            button.contentTintColor = .systemBlue
-        case .error:
-            button.contentTintColor = .systemOrange
-        }
-    }
+/// Custom NSMenuItem that suppresses AppKit's full-row selection fill behind
+/// our hosted SwiftUI card (matching CodexBar's `MenuCardMenuItem`).
+final class EchoMenuCardItem: NSMenuItem {
+    override var isHighlighted: Bool { false }
 }
 
 struct VisualEffectView: NSViewRepresentable {
     let material: NSVisualEffectView.Material
     let blendingMode: NSVisualEffectView.BlendingMode
-    
+
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
         view.material = material
@@ -113,354 +31,678 @@ struct VisualEffectView: NSViewRepresentable {
         view.state = .active
         return view
     }
-    
+
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
         nsView.material = material
         nsView.blendingMode = blendingMode
     }
 }
 
-struct MenuBarPopoverView: View {
-    @EnvironmentObject var appState: AppState
-    @EnvironmentObject var settings: AppSettings
-    @EnvironmentObject var coordinator: AppCoordinator
-    @ObservedObject private var history = TranscriptionHistoryManager.shared
-    @ObservedObject private var learner = CorrectionLearner.shared
-    @ObservedObject private var commitmentMemory = CommitmentMemoryManager.shared
-    @State private var copyToast: String? = nil
-    
-    var body: some View {
-        VStack(spacing: 0) {
-            // Header
-            HStack(spacing: 10) {
-                appIcon
-                Text("EchoTune")
-                    .font(.system(size: 14, weight: .semibold))
-                Spacer()
-                statusBadge
-            }
-            .padding(.horizontal, 18)
-            .padding(.top, 16)
-            .padding(.bottom, 14)
+final class StatusBarController: NSObject, NSMenuDelegate {
+    static let menuWidth: CGFloat = 320
 
-            // Self-learning suggestions — the “Echo remembers” moments
-            if !learner.suggestions.isEmpty {
-                VStack(spacing: 8) {
-                    HStack {
-                        Label("Echo can learn", systemImage: "brain.head.profile")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(.accentColor)
-                        Spacer()
-                    }
-                    ForEach(learner.suggestions.prefix(2)) { suggestion in
-                        suggestionRow(suggestion)
-                    }
-                    Divider().opacity(0.5)
-                        .padding(.vertical, 8)
-                }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 4)
-            }
+    private let statusItem: NSStatusItem
+    private let rootMenu: NSMenu
+    private let presentation = EchoMenuPresentationState()
+    private var cardHostingView: NSHostingView<AnyView>?
+    private var cardMenuItem: EchoMenuCardItem?
+    private var cancellables = Set<AnyCancellable>()
+    private var appearanceObservation: NSKeyValueObservation?
+    private var iconAnimationTimer: Timer?
+    private var animationPhase: Double = 0
 
-            if !commitmentMemory.pendingProposals.isEmpty {
-                HStack(spacing: 8) {
-                    Label("Review \(commitmentMemory.pendingProposals.count) commitment\(commitmentMemory.pendingProposals.count == 1 ? "" : "s")", systemImage: "checklist")
-                        .font(.caption)
-                    Spacer()
-                    Button("Open Tasks") { openCommitments() }
-                        .buttonStyle(.bordered)
-                }
-                .padding(.horizontal, 18)
-                .padding(.bottom, 8)
-            }
+    override init() {
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        rootMenu = NSMenu(title: "EchoTune")
+        rootMenu.autoenablesItems = false
+        rootMenu.minimumWidth = Self.menuWidth
 
-            // Settings
-            VStack(spacing: 0) {
-                modeRow
-                    .padding(.bottom, 14)
-                Divider().opacity(0.5)
-                    .padding(.vertical, 12)
-                toggleRow(icon: "sparkles", title: "AI Enhancement", isOn: Binding(
-                    get: { settings.aiEnhancementEnabled },
-                    set: { settings.aiEnhancementEnabled = $0 }
-                ))
-                    .padding(.bottom, 12)
-                toggleRow(icon: "paperplane.fill", title: "Auto-Paste", isOn: Binding(
-                    get: { settings.autoSendEnabled },
-                    set: { settings.autoSendEnabled = $0 }
-                ))
-            }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 16)
+        super.init()
 
-            Divider()
+        statusItem.autosaveName = "EchoTuneStatusItem"
+        rootMenu.delegate = self
+        statusItem.menu = rootMenu
 
-            // Stats
-            HStack(spacing: 0) {
-                stat(
-                    icon: "flame.fill",
-                    value: "\(appState.currentStreak)",
-                    label: "Day streak",
-                    tint: .orange
-                )
-                statDivider
-                stat(
-                    icon: "textformat",
-                    value: appState.totalWordsTranscribed.formatted(),
-                    label: "Words",
-                    tint: .secondary
-                )
-            }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 14)
-            Divider()
-
-            // Actions
-            HStack(spacing: 8) {
-                actionButton(icon: "mic.fill", title: appState.recordingState == .recording ? "Stop" : "Dictate") {
-                    coordinator.toggleDictation()
-                }
-                actionButton(icon: "doc.on.doc", title: "Copy Last") {
-                    copyLast()
-                }
-                .disabled(lastTranscription == nil)
-                .opacity(lastTranscription == nil ? 0.45 : 1)
-                Spacer(minLength: 4)
-                Button(action: openEchoProfile) {
-                    Image(systemName: "brain.head.profile")
-                        .font(.system(size: 13, weight: .medium))
-                        .frame(width: 30, height: 30)
-                        .background(Capsule().fill(Color.primary.opacity(0.06)))
-                        .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .help("Echo Profile — your personal operating model")
-                Button(action: openCommitments) {
-                    Image(systemName: "checklist")
-                        .font(.system(size: 13, weight: .medium))
-                        .frame(width: 30, height: 30)
-                        .background(Capsule().fill(Color.primary.opacity(0.06)))
-                        .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .help("Tasks — things you said you'd do")
-                Button(action: quitApp) {
-                    Image(systemName: "power")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.red)
-                        .frame(width: 30, height: 30)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help("Quit EchoTune")
-            }
-            .padding(.horizontal, 18)
-            .padding(.top, 14)
-            .padding(.bottom, 16)
+        if let button = statusItem.button {
+            button.imageScaling = .scaleNone
+            button.imagePosition = .imageLeading
+            button.font = NSFont.monospacedDigitSystemFont(ofSize: 11.5, weight: .medium)
+            button.setAccessibilityTitle("EchoTune")
         }
-        .frame(width: 280)
-        .background(
-            VisualEffectView(material: .popover, blendingMode: .behindWindow)
-                .ignoresSafeArea()
-        )
+
+        presentation.onLayoutInvalidated = { [weak self] in
+            self?.syncCardHeight()
+        }
+        presentation.onDismissMenu = { [weak self] in
+            self?.rootMenu.cancelTracking()
+        }
+
+        buildMenuSkeleton()
+        setupObservations()
+        updateIcon(for: AppState.shared.recordingState)
     }
 
-    // MARK: - Subviews
+    deinit {
+        iconAnimationTimer?.invalidate()
+        appearanceObservation?.invalidate()
+    }
 
-    private var appIcon: some View {
-        Group {
-            if let appIcon = NSImage(named: "AppIcon") {
-                Image(nsImage: appIcon)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
+    // MARK: - Observations & Icon Animation
+
+    private func setupObservations() {
+        AppState.shared.$recordingState
+            .receive(on: RunLoop.main)
+            .sink { [weak self] state in
+                self?.updateIcon(for: state)
+            }
+            .store(in: &cancellables)
+
+        ModelManager.shared.$isDownloading
+            .combineLatest(ModelManager.shared.$downloadProgress)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _, _ in
+                guard let self else { return }
+                self.updateIcon(for: AppState.shared.recordingState)
+            }
+            .store(in: &cancellables)
+
+        appearanceObservation = NSApp.observe(\.effectiveAppearance, options: [.new]) { [weak self] _, _ in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.pinMenuAppearance(self.rootMenu)
+                self.updateIcon(for: AppState.shared.recordingState)
+            }
+        }
+    }
+
+    func updateIcon(for state: RecordingState) {
+        guard let button = statusItem.button else { return }
+        button.toolTip = "EchoTune — \(state.description)"
+
+        let modelManager = ModelManager.shared
+        let needsTimer: Bool
+
+        switch state {
+        case .recording:
+            needsTimer = true
+            let durationText = AudioManager.formatDuration(AudioManager.shared.recordingDuration)
+            button.image = MenuBarIconRenderer.render(state: .recording(level: AudioManager.shared.audioLevel))
+            button.title = " \(durationText)"
+            button.contentTintColor = nil
+
+        case .processing:
+            needsTimer = true
+            button.image = MenuBarIconRenderer.render(state: .processing(phase: animationPhase))
+            button.title = ""
+            button.contentTintColor = nil
+
+        case .loadingModel:
+            needsTimer = true
+            let progress = max(WhisperEngine.shared.loadingProgress, ParakeetEngine.shared.loadingProgress, 0.15)
+            button.image = MenuBarIconRenderer.render(state: .loading(progress: progress))
+            button.title = ""
+            button.contentTintColor = nil
+
+        case .error:
+            needsTimer = false
+            button.image = MenuBarIconRenderer.render(state: .error)
+            button.title = ""
+            button.contentTintColor = nil
+
+        case .idle:
+            if modelManager.isDownloading {
+                needsTimer = false
+                button.image = MenuBarIconRenderer.render(state: .loading(progress: modelManager.downloadProgress))
             } else {
-                Image(systemName: "waveform")
-                    .foregroundColor(.accentColor)
+                needsTimer = false
+                button.image = MenuBarIconRenderer.render(state: .idle)
             }
+            button.title = ""
+            button.contentTintColor = nil
         }
-        .frame(width: 24, height: 24)
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-    }
 
-    private var statusBadge: some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(appState.recordingState.color)
-                .frame(width: 7, height: 7)
-            Text(appState.recordingState.description)
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .lineLimit(1)
-        }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 4)
-        .background(Capsule().fill(Color.primary.opacity(0.05)))
-    }
-
-    private var modeRow: some View {
-        HStack {
-            icon("mic.fill")
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Recording Mode")
-                    .font(.system(size: 13, weight: .medium))
-                Text(settings.recordingMode.description)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-            }
-            Spacer()
-            Picker("", selection: Binding(
-                get: { settings.recordingMode },
-                set: { settings.recordingMode = $0 }
-            )) {
-                Text("Hold").tag(RecordingMode.pushToTalk)
-                Text("Toggle").tag(RecordingMode.toggle)
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 104)
-        }
-    }
-
-    private func toggleRow(icon: String, title: String, isOn: Binding<Bool>) -> some View {
-        Toggle(isOn: isOn) {
-            HStack(spacing: 8) {
-                self.icon(icon)
-                Text(title)
-                    .font(.system(size: 13, weight: .medium))
-            }
-        }
-        .toggleStyle(.switch)
-        .controlSize(.small)
-    }
-
-    private func stat(icon: String, value: String, label: String, tint: Color) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(tint)
-                .frame(width: 20)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(value)
-                    .font(.system(size: 13, weight: .semibold))
-                    .lineLimit(1)
-                Text(label)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var statDivider: some View {
-        Divider().frame(height: 30)
-            .padding(.horizontal, 10)
-    }
-
-    private func icon(_ name: String) -> some View {
-        Image(systemName: name)
-            .font(.system(size: 13))
-            .foregroundColor(.secondary)
-            .frame(width: 22)
-    }
-
-    private func actionButton(icon: String, title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.system(size: 12))
-                Text(title)
-                    .font(.system(size: 12, weight: .medium))
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background(Capsule().fill(Color.primary.opacity(0.06)))
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .foregroundColor(.primary)
-    }
-
-    private func suggestionRow(_ suggestion: CorrectionCandidate) -> some View {
-        HStack(spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("“\(suggestion.spoken)” → “\(suggestion.written)”")
-                    .font(.system(size: 12, weight: .medium))
-                Text("Corrected \(suggestion.count) times · teach Echo?")
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
-            }
-            Spacer()
-            Button {
-                learner.teach(suggestion)
-            } label: {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundColor(.green)
-            }
-            .buttonStyle(.plain)
-            .help("Teach EchoTune this fix")
-            Button {
-                learner.dismiss(suggestion)
-            } label: {
-                Image(systemName: "xmark.circle")
-                    .foregroundColor(.secondary)
-            }
-            .buttonStyle(.plain)
-            .help("Dismiss suggestion")
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(Color.primary.opacity(0.05))
-        .cornerRadius(8)
-    }
-
-    private func showMainWindow() {
-        NSApp.activate(ignoringOtherApps: true)
-        if let window = NSApp.windows.first(where: { $0.title.contains("EchoTune") && $0.canBecomeKey }) {
-            window.makeKeyAndOrderFront(nil)
-            window.orderFrontRegardless()
+        if needsTimer {
+            startIconAnimationTimerIfNeeded()
         } else {
-            if let delegate = NSApp.delegate as? AppDelegate {
-                delegate.showWelcomeNotification()
+            stopIconAnimationTimer()
+        }
+    }
+
+    private func startIconAnimationTimerIfNeeded() {
+        guard iconAnimationTimer == nil else { return }
+        let timer = Timer(timeInterval: 1.0 / 12.0, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            self.animationPhase += 0.45
+            self.updateIcon(for: AppState.shared.recordingState)
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        iconAnimationTimer = timer
+    }
+
+    private func stopIconAnimationTimer() {
+        iconAnimationTimer?.invalidate()
+        iconAnimationTimer = nil
+        animationPhase = 0
+    }
+
+    // MARK: - NSMenuDelegate & Appearance Pinning (CodexBar pattern)
+
+    func menuWillOpen(_ menu: NSMenu) {
+        guard menu === rootMenu else { return }
+        pinMenuAppearance(rootMenu)
+        _ = AudioManager.shared.getAvailableInputDevices()
+        PermissionsManager.shared.checkAllPermissions()
+        TranscriptionStats.shared.loadStats()
+        rebuildDynamicMenuItems()
+        syncCardHeight()
+    }
+
+    private func pinMenuAppearance(_ menu: NSMenu) {
+        menu.appearance = NSApp.effectiveAppearance
+        for item in menu.items {
+            item.submenu?.appearance = nil
+        }
+    }
+
+    // MARK: - Menu Construction
+
+    private func buildMenuSkeleton() {
+        let rootCard = AnyView(
+            EchoTuneMenuCardView(presentation: presentation)
+                .environmentObject(AppState.shared)
+                .environmentObject(AppSettings.shared)
+                .environmentObject(AppCoordinator.shared)
+        )
+        let hosting = NSHostingView(rootView: rootCard)
+        hosting.translatesAutoresizingMaskIntoConstraints = true
+
+        let item = EchoMenuCardItem()
+        item.title = ""
+        item.view = hosting
+        item.isEnabled = true
+
+        self.cardHostingView = hosting
+        self.cardMenuItem = item
+
+        rootMenu.addItem(item)
+        rootMenu.addItem(.separator())
+
+        rebuildDynamicMenuItems()
+        syncCardHeight()
+    }
+
+    private func syncCardHeight() {
+        guard let hosting = cardHostingView else { return }
+        hosting.frame.size.width = Self.menuWidth
+        hosting.layoutSubtreeIfNeeded()
+        let fitted = hosting.fittingSize
+        let measuredHeight = max(220, ceil(fitted.height + 2))
+        if abs(hosting.frame.height - measuredHeight) > 0.5 || abs(hosting.frame.width - Self.menuWidth) > 0.5 {
+            hosting.frame = NSRect(x: 0, y: 0, width: Self.menuWidth, height: measuredHeight)
+        }
+    }
+
+    private func rebuildDynamicMenuItems() {
+        // Keep cardMenuItem (index 0) and its separator (index 1) permanently
+        // attached so NSHostingView never detaches during menuWillOpen on macOS 26.
+        while rootMenu.numberOfItems > 2 {
+            rootMenu.removeItem(at: 2)
+        }
+
+        // Section 1: Live Pipeline Pickers (Submenus)
+        rootMenu.addItem(makeModelSubmenuItem())
+        rootMenu.addItem(makeMicrophoneSubmenuItem())
+        rootMenu.addItem(makeLanguageSubmenuItem())
+        rootMenu.addItem(makeEnhancementSubmenuItem())
+        rootMenu.addItem(makeRecentDictationsSubmenuItem())
+
+        rootMenu.addItem(.separator())
+
+        // Section 2: Workspace & Memory Windows
+        rootMenu.addItem(makeActionItem(
+            title: "Open EchoTune Dashboard",
+            symbol: "rectangle.grid.1x2",
+            action: #selector(openDashboardHome)
+        ))
+        rootMenu.addItem(makeActionItem(
+            title: "Echo Profile",
+            symbol: "brain.head.profile",
+            action: #selector(openEchoProfile)
+        ))
+
+        let openTaskCount = CommitmentMemoryManager.shared.commitments.filter { $0.status == .open }.count
+        let tasksTitle = openTaskCount > 0 ? "Tasks & Commitments (\(openTaskCount))" : "Tasks & Commitments"
+        rootMenu.addItem(makeActionItem(
+            title: tasksTitle,
+            symbol: "checklist",
+            action: #selector(openTasks)
+        ))
+
+        rootMenu.addItem(makeActionItem(
+            title: "Voice Notes",
+            symbol: "note.text",
+            action: #selector(openNotes)
+        ))
+        rootMenu.addItem(makeActionItem(
+            title: "Custom Dictionary",
+            symbol: "character.book.closed",
+            action: #selector(openDictionary)
+        ))
+        rootMenu.addItem(makeActionItem(
+            title: "Share Progress Card…",
+            symbol: "square.and.arrow.up",
+            action: #selector(openShareCard)
+        ))
+
+        rootMenu.addItem(.separator())
+
+        // Section 3: Meta / App Lifecycle (CodexBar metaSection)
+        rootMenu.addItem(makeActionItem(
+            title: "Check for Updates…",
+            symbol: "arrow.triangle.2.circlepath.circle",
+            action: #selector(checkForUpdates)
+        ))
+        rootMenu.addItem(makeActionItem(
+            title: "Settings…",
+            symbol: "gearshape",
+            keyEquivalent: ",",
+            action: #selector(openSettingsGeneral)
+        ))
+        rootMenu.addItem(makeActionItem(
+            title: "About EchoTune (v\(Bundle.main.appVersionString))",
+            symbol: "info.circle",
+            action: #selector(openAboutLicense)
+        ))
+        rootMenu.addItem(makeActionItem(
+            title: "Quit EchoTune",
+            symbol: "xmark.rectangle",
+            keyEquivalent: "q",
+            action: #selector(quitApp)
+        ))
+    }
+
+    // MARK: - Submenu Builders
+
+    private func makeModelSubmenuItem() -> NSMenuItem {
+        let submenu = NSMenu(title: "Transcription Model")
+        submenu.autoenablesItems = false
+
+        let modelManager = ModelManager.shared
+        let activeID = modelManager.currentModel?.id ?? AppSettings.shared.defaultTranscriptionModel
+
+        let locals = modelManager.availableModels.filter { $0.category == .local }
+        let clouds = modelManager.availableModels.filter { $0.category == .cloud }
+
+        let localHeader = NSMenuItem(title: "On-Device Models", action: nil, keyEquivalent: "")
+        localHeader.isEnabled = false
+        submenu.addItem(localHeader)
+
+        for model in locals {
+            let isSelected = model.id == activeID
+            let statusTag: String
+            if model.isBuiltIn {
+                statusTag = "Built-in"
+            } else if modelManager.isInstalledAndUsable(model) {
+                statusTag = "Ready"
+            } else {
+                statusTag = "Download"
+            }
+
+            let item = NSMenuItem(
+                title: "\(model.name) — \(statusTag)",
+                action: #selector(selectModelFromMenu(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = model.id
+            item.state = isSelected ? .on : .off
+            item.image = symbolImage(model.isBuiltIn ? "apple.logo" : "cpu")
+            submenu.addItem(item)
+        }
+
+        if !clouds.isEmpty {
+            submenu.addItem(.separator())
+            let cloudHeader = NSMenuItem(title: "Cloud Models (BYO API Key)", action: nil, keyEquivalent: "")
+            cloudHeader.isEnabled = false
+            submenu.addItem(cloudHeader)
+
+            for model in clouds {
+                let isSelected = model.id == activeID
+                let item = NSMenuItem(
+                    title: model.name,
+                    action: #selector(selectModelFromMenu(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = self
+                item.representedObject = model.id
+                item.state = isSelected ? .on : .off
+                item.image = symbolImage("cloud")
+                submenu.addItem(item)
             }
         }
+
+        submenu.addItem(.separator())
+        submenu.addItem(makeActionItem(
+            title: "Manage AI Models & Keys…",
+            symbol: "slider.horizontal.below.rectangle",
+            action: #selector(openSettingsModels)
+        ))
+
+        let parent = NSMenuItem(title: "Transcription Model", action: nil, keyEquivalent: "")
+        parent.image = symbolImage("cpu")
+        parent.submenu = submenu
+        return parent
     }
-    
-    private func openEchoProfile() {
-        if let delegate = NSApp.delegate as? AppDelegate {
-            delegate.showEchoProfile()
+
+    private func makeMicrophoneSubmenuItem() -> NSMenuItem {
+        let submenu = NSMenu(title: "Microphone Input")
+        submenu.autoenablesItems = false
+
+        let devices = AudioManager.shared.getAvailableInputDevices()
+        let currentID = AudioManager.shared.currentInputDevice?.id
+
+        if devices.isEmpty {
+            let empty = NSMenuItem(title: "System Default Microphone", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            submenu.addItem(empty)
+        } else {
+            for device in devices {
+                let title = device.isDefault ? "\(device.name) (System Default)" : device.name
+                let item = NSMenuItem(
+                    title: title,
+                    action: #selector(selectMicrophoneFromMenu(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = self
+                item.representedObject = device.id
+                item.state = (device.id == currentID || (currentID == nil && device.isDefault)) ? .on : .off
+                item.image = symbolImage(device.icon)
+                submenu.addItem(item)
+            }
+        }
+
+        let parent = NSMenuItem(title: "Microphone Input", action: nil, keyEquivalent: "")
+        parent.image = symbolImage("mic")
+        parent.submenu = submenu
+        return parent
+    }
+
+    private func makeLanguageSubmenuItem() -> NSMenuItem {
+        let submenu = NSMenu(title: "Dictation Language")
+        submenu.autoenablesItems = false
+        let settings = AppSettings.shared
+
+        let autoItem = NSMenuItem(
+            title: "Auto-Detect Language (Multilingual)",
+            action: #selector(toggleAutoDetectLanguage),
+            keyEquivalent: ""
+        )
+        autoItem.target = self
+        autoItem.state = settings.autoDetectLanguage ? .on : .off
+        autoItem.image = symbolImage("sparkles")
+        submenu.addItem(autoItem)
+
+        submenu.addItem(.separator())
+
+        let languages: [(code: String, label: String)] = [
+            ("en-US", "English (US)"),
+            ("en-GB", "English (UK)"),
+            ("es-ES", "Spanish"),
+            ("fr-FR", "French"),
+            ("de-DE", "German"),
+            ("ja-JP", "Japanese"),
+            ("zh-CN", "Chinese (Mandarin)"),
+            ("hi-IN", "Hindi"),
+            ("pt-BR", "Portuguese"),
+            ("it-IT", "Italian"),
+            ("ar-SA", "Arabic")
+        ]
+
+        for lang in languages {
+            let item = NSMenuItem(
+                title: lang.label,
+                action: #selector(selectLanguageFromMenu(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = lang.code
+            item.state = (!settings.autoDetectLanguage && settings.preferredLanguage == lang.code) ? .on : .off
+            submenu.addItem(item)
+        }
+
+        submenu.addItem(.separator())
+        submenu.addItem(makeActionItem(
+            title: "Speech & Translation Settings…",
+            symbol: "globe",
+            action: #selector(openSettingsSpeech)
+        ))
+
+        let parent = NSMenuItem(title: "Dictation Language", action: nil, keyEquivalent: "")
+        parent.image = symbolImage("globe")
+        parent.submenu = submenu
+        return parent
+    }
+
+    private func makeEnhancementSubmenuItem() -> NSMenuItem {
+        let submenu = NSMenu(title: "AI Enhancement")
+        submenu.autoenablesItems = false
+        let settings = AppSettings.shared
+
+        let enabledItem = NSMenuItem(
+            title: "Enable AI Cleanup & Formatting",
+            action: #selector(toggleAIEnhancement),
+            keyEquivalent: ""
+        )
+        enabledItem.target = self
+        enabledItem.state = settings.aiEnhancementEnabled ? .on : .off
+        enabledItem.image = symbolImage("sparkles")
+        submenu.addItem(enabledItem)
+
+        let translateItem = NSMenuItem(
+            title: "Translate Dictation to English",
+            action: #selector(toggleTranslateToEnglish),
+            keyEquivalent: ""
+        )
+        translateItem.target = self
+        translateItem.state = settings.translateToEnglish ? .on : .off
+        translateItem.image = symbolImage("character.bubble")
+        submenu.addItem(translateItem)
+
+        submenu.addItem(.separator())
+        submenu.addItem(makeActionItem(
+            title: "Configure Prompts & Automation…",
+            symbol: "bolt.fill",
+            action: #selector(openSettingsAutomation)
+        ))
+        submenu.addItem(makeActionItem(
+            title: "Configure Keyboard Shortcuts…",
+            symbol: "keyboard",
+            action: #selector(openSettingsHotkeys)
+        ))
+
+        let parent = NSMenuItem(title: "AI Cleanup & Shortcuts", action: nil, keyEquivalent: "")
+        parent.image = symbolImage("wand.and.stars")
+        parent.submenu = submenu
+        return parent
+    }
+
+    private func makeRecentDictationsSubmenuItem() -> NSMenuItem {
+        let submenu = NSMenu(title: "Recent Dictations")
+        submenu.autoenablesItems = false
+        let items = Array(TranscriptionHistoryManager.shared.transcriptions.prefix(8))
+
+        if items.isEmpty {
+            let empty = NSMenuItem(title: "No dictations recorded yet", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            submenu.addItem(empty)
+        } else {
+            let hint = NSMenuItem(title: "Click any transcript to copy", action: nil, keyEquivalent: "")
+            hint.isEnabled = false
+            submenu.addItem(hint)
+
+            for entry in items {
+                let singleLine = entry.text
+                    .replacingOccurrences(of: "\n", with: " ")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let clipped = singleLine.count > 48 ? String(singleLine.prefix(48)) + "…" : singleLine
+                let row = NSMenuItem(
+                    title: clipped.isEmpty ? "(Empty)" : clipped,
+                    action: #selector(copyHistoryItemFromMenu(_:)),
+                    keyEquivalent: ""
+                )
+                row.target = self
+                row.representedObject = entry.text
+                row.toolTip = entry.text
+                row.image = symbolImage("doc.on.doc")
+                submenu.addItem(row)
+            }
+
+            submenu.addItem(.separator())
+            submenu.addItem(makeActionItem(
+                title: "Open Full History…",
+                symbol: "clock.arrow.circlepath",
+                action: #selector(openHistory)
+            ))
+        }
+
+        let parent = NSMenuItem(title: "Recent Dictations", action: nil, keyEquivalent: "")
+        parent.image = symbolImage("clock.arrow.circlepath")
+        parent.submenu = submenu
+        return parent
+    }
+
+    // MARK: - NSMenuItem Factory
+
+    private func makeActionItem(
+        title: String,
+        symbol: String,
+        keyEquivalent: String = "",
+        modifiers: NSEvent.ModifierFlags = [.command],
+        action: Selector
+    ) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent)
+        if !keyEquivalent.isEmpty {
+            item.keyEquivalentModifierMask = modifiers
+        }
+        item.target = self
+        item.isEnabled = true
+        item.image = symbolImage(symbol)
+        return item
+    }
+
+    private func symbolImage(_ name: String) -> NSImage? {
+        let config = NSImage.SymbolConfiguration(pointSize: 13.5, weight: .regular)
+        let img = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            .withSymbolConfiguration(config)
+        img?.isTemplate = true
+        return img
+    }
+
+    // MARK: - Actions
+
+    @objc private func selectModelFromMenu(_ sender: NSMenuItem) {
+        guard let modelID = sender.representedObject as? String else { return }
+        let mm = ModelManager.shared
+        guard let target = mm.availableModels.first(where: { $0.id == modelID }) else { return }
+
+        if target.category == .local && !target.isBuiltIn && !mm.isInstalledAndUsable(target) {
+            mm.downloadModel(target) { result in
+                if case .success(let installed) = result {
+                    _ = mm.setCurrentModel(installed)
+                }
+            }
+        } else {
+            _ = mm.setCurrentModel(target)
         }
     }
 
-    private func openCommitments() {
-        if let delegate = NSApp.delegate as? AppDelegate {
-            delegate.showCommitments()
-        }
+    @objc private func selectMicrophoneFromMenu(_ sender: NSMenuItem) {
+        guard let deviceID = sender.representedObject as? String else { return }
+        AudioManager.shared.selectAudioDevice(id: deviceID)
     }
 
-    private func showSettingsWindow() {
-        if let delegate = NSApp.delegate as? AppDelegate {
-            delegate.showSettings()
-        }
+    @objc private func toggleAutoDetectLanguage() {
+        AppSettings.shared.autoDetectLanguage.toggle()
     }
 
-    // MARK: - Copy Last Transcription
-
-    private var lastTranscription: TranscriptionHistoryItem? {
-        history.transcriptions.first
+    @objc private func selectLanguageFromMenu(_ sender: NSMenuItem) {
+        guard let code = sender.representedObject as? String else { return }
+        AppSettings.shared.autoDetectLanguage = false
+        AppSettings.shared.preferredLanguage = code
     }
 
-    private func copyLast() {
-        guard let t = lastTranscription else { return }
+    @objc private func toggleAIEnhancement() {
+        AppSettings.shared.aiEnhancementEnabled.toggle()
+    }
+
+    @objc private func toggleTranslateToEnglish() {
+        AppSettings.shared.translateToEnglish.toggle()
+    }
+
+    @objc private func copyHistoryItemFromMenu(_ sender: NSMenuItem) {
+        guard let text = sender.representedObject as? String else { return }
         let pb = NSPasteboard.general
-        pb.declareTypes([.string], owner: nil)
-        pb.setString(t.text, forType: .string)
-        withAnimation(.easeOut(duration: 0.15)) { copyToast = "last" }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-            if copyToast == "last" { withAnimation { copyToast = nil } }
-        }
+        pb.clearContents()
+        pb.setString(text, forType: .string)
     }
 
-    private func quitApp() {
+    @objc private func openDashboardHome() {
+        (NSApp.delegate as? AppDelegate)?.showDashboard(item: .home)
+    }
+
+    @objc private func openHistory() {
+        (NSApp.delegate as? AppDelegate)?.showDashboard(item: .history)
+    }
+
+    @objc private func openNotes() {
+        (NSApp.delegate as? AppDelegate)?.showDashboard(item: .notes)
+    }
+
+    @objc private func openDictionary() {
+        (NSApp.delegate as? AppDelegate)?.showDashboard(item: .dictionary)
+    }
+
+    @objc private func openShareCard() {
+        (NSApp.delegate as? AppDelegate)?.showDashboard(item: .share)
+    }
+
+    @objc private func openEchoProfile() {
+        (NSApp.delegate as? AppDelegate)?.showEchoProfile()
+    }
+
+    @objc private func openTasks() {
+        (NSApp.delegate as? AppDelegate)?.showCommitments()
+    }
+
+    @objc private func openSettingsGeneral() {
+        (NSApp.delegate as? AppDelegate)?.showSettings(tab: .general)
+    }
+
+    @objc private func openSettingsModels() {
+        (NSApp.delegate as? AppDelegate)?.showSettings(tab: .aiModels)
+    }
+
+    @objc private func openSettingsSpeech() {
+        (NSApp.delegate as? AppDelegate)?.showSettings(tab: .speech)
+    }
+
+    @objc private func openSettingsAutomation() {
+        (NSApp.delegate as? AppDelegate)?.showSettings(tab: .automation)
+    }
+
+    @objc private func openSettingsHotkeys() {
+        (NSApp.delegate as? AppDelegate)?.showSettings(tab: .hotkeys)
+    }
+
+    @objc private func openAboutLicense() {
+        (NSApp.delegate as? AppDelegate)?.showSettings(tab: .license)
+    }
+
+    @objc private func checkForUpdates() {
+        UpdateManager.shared.checkForUpdates()
+    }
+
+    @objc private func quitApp() {
         NSApp.terminate(nil)
     }
 }

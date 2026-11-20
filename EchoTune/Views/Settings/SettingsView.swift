@@ -130,6 +130,12 @@ struct SettingsView: View {
             .background(Color(NSColor.textBackgroundColor))
         }
         .frame(minWidth: 680, idealWidth: 720, maxWidth: .infinity, minHeight: 420, idealHeight: 480, maxHeight: .infinity)
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("NavigateSettingsToTab"))) { note in
+            if let raw = note.userInfo?["tab"] as? String,
+               let target = SettingsTab(rawValue: raw) {
+                selectedTab = target
+            }
+        }
     }
 
     @ViewBuilder

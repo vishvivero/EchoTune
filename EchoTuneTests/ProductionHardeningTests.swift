@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Testing
 @testable import EchoTune
@@ -91,5 +92,36 @@ struct ProductionHardeningTests {
         let fileURL = repoRoot.appendingPathComponent("EchoTune/Managers/TextInsertionManager.swift")
         let contents = try String(contentsOf: fileURL, encoding: .utf8)
         #expect(!contents.contains("as! AXUIElement"))
+    }
+
+    @Test func menuBarIconRendererProducesCrispIconsForAllStates() {
+        let idle = MenuBarIconRenderer.render(state: .idle)
+        #expect(idle.size == NSSize(width: 18, height: 18))
+        #expect(idle.isTemplate == true)
+
+        let loading = MenuBarIconRenderer.render(state: .loading(progress: 0.45))
+        #expect(loading.size == NSSize(width: 18, height: 18))
+        #expect(loading.isTemplate == true)
+
+        let recording = MenuBarIconRenderer.render(state: .recording(level: 0.6))
+        #expect(recording.size == NSSize(width: 18, height: 18))
+        #expect(recording.isTemplate == false)
+
+        let processing = MenuBarIconRenderer.render(state: .processing(phase: 1.2))
+        #expect(processing.size == NSSize(width: 18, height: 18))
+        #expect(processing.isTemplate == false)
+
+        let error = MenuBarIconRenderer.render(state: .error)
+        #expect(error.size == NSSize(width: 18, height: 18))
+        #expect(error.isTemplate == false)
+    }
+
+    @Test func menuPresentationSwitchesTabsCleanly() {
+        let state = EchoMenuPresentationState()
+        #expect(state.selectedTab == .overview)
+        state.selectTab(.controls)
+        #expect(state.selectedTab == .controls)
+        state.selectTab(.recent)
+        #expect(state.selectedTab == .recent)
     }
 }

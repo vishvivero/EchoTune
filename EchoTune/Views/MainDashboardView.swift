@@ -50,6 +50,12 @@ struct MainDashboardView: View {
                 .animation(.easeInOut(duration: 0.3), value: whisperEngine.isLoading)
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("NavigateDashboardToItem"))) { note in
+            if let raw = note.userInfo?["item"] as? String,
+               let target = NavigationItem(rawValue: raw) {
+                selectedView = target
+            }
+        }
     }
 }
 

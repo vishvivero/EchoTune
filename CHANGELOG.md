@@ -3,6 +3,16 @@
 All notable changes to EchoTune are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [7.5.5] — 2026-11-20
+
+Complete menu bar redesign inspired by CodexBar.
+
+### Changed — menu bar experience
+- Replaced the legacy `NSPopover` panel with a native `NSMenu` hosting a rich CodexBar-style card at the top (`Overview`, `Controls`, `Recent` pill tabs) paired with full native AppKit submenus and keyboard shortcuts below.
+- Added single-Canvas daily progress bar, 7-day dictation activity sparkline strip with per-day hover readouts, inset pipeline summary card, tactile `Dictate` / `Copy Last` bar, and inline vocabulary-learning and commitment-review cards.
+- Added live native submenus for **Transcription Model**, **Microphone Input**, **Dictation Language**, **AI Cleanup & Shortcuts**, and **Recent Dictations**, plus direct openers for **Dashboard**, **Echo Profile**, **Tasks & Commitments**, **Voice Notes**, **Custom Dictionary**, **Share Progress Card**, **Check for Updates…**, **Settings (`⌘,`)**, **About EchoTune**, and **Quit (`⌘Q`)**.
+- Added a crisp 1:1 Retina CoreGraphics status-bar waveform renderer (`MenuBarIconRenderer`) with live audio-level bars and monospaced recording timer while dictating, smooth wave animation while transcribing, and a 2pt bottom progress track while downloading/loading models.
+
 ## [7.5.4] — 2026-11-19
 
 Production hardening, privacy protection, and commercial rollout fixes.

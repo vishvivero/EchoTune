@@ -12,6 +12,7 @@ import UserNotifications
 class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     var statusBarController: StatusBarController?
     var settingsWindow: NSWindow?
+    var dashboardWindow: NSWindow?
     var onboardingWindow: NSWindow?
     var echoProfileWindowController: EchoProfileWindowController?
     var commitmentsWindowController: CommitmentsWindowController?
@@ -170,6 +171,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     @objc func showSettings(_ sender: Any? = nil) {
+        showSettings(tab: nil)
+    }
+
+    func showSettings(tab: SettingsTab?) {
         if settingsWindow == nil {
             let settingsView = SettingsView()
                 .environmentObject(AppCoordinator.shared)
@@ -189,18 +194,34 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             settingsWindow?.delegate = self
         }
 
-        // Apply the default size on every show — the window is reused
-        // across shows (isReleasedWhenClosed=false), so a one-time setContentSize
-        // at creation doesn't survive size changes elsewhere.
+        if let tab {
+            NotificationCenter.default.post(
+                name: NSNotification.Name("NavigateSettingsToTab"),
+                object: nil,
+                userInfo: ["tab": tab.rawValue]
+            )
+        }
+
         settingsWindow?.setContentSize(NSSize(width: 720, height: 480))
         settingsWindow?.minSize = NSSize(width: 680, height: 420)
         settingsWindow?.maxSize = NSSize(width: 1100, height: 800)
         settingsWindow?.center()
 
-        // Show settings window without stealing focus
+        NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.makeKeyAndOrderFront(nil)
-        // REMOVED: NSApp.activate(ignoringOtherApps: true) - this steals focus!
-        debugLog("⚙️ Settings window shown (without stealing focus)")
+        settingsWindow?.orderFrontRegardless()
+        debugLog("⚙️ Settings window shown")
+    }
+
+    func showDashboard(item: NavigationItem = .home) {
+        NSApp.activate(ignoringOtherApps: true)
+        showPrimaryAppWindows {
+            NotificationCenter.default.post(
+                name: NSNotification.Name("NavigateDashboardToItem"),
+                object: nil,
+                userInfo: ["item": item.rawValue]
+            )
+        }
     }
 
     @objc func showEchoProfile() {
@@ -289,14 +310,44 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
     }
 
-    private func showPrimaryAppWindows() {
+    private func isAuxiliaryWindow(_ window: NSWindow) -> Bool {
+        if window is NSPanel { return true }
+        if !window.styleMask.contains(.titled) { return true }
+        return window === onboardingWindow
+            || window === settingsWindow
+            || window === echoProfileWindowController?.window
+            || window === commitmentsWindowController?.window
+    }
+
+    private func showPrimaryAppWindows(completion: (() -> Void)? = nil) {
         DispatchQueue.main.async {
-            for window in NSApp.windows where window !== self.onboardingWindow && window !== self.settingsWindow {
-                self.applyDashboardWindowSize(to: window)
-                window.makeKeyAndOrderFront(nil)
-                window.orderFrontRegardless()
-                debugLog("🪟 Revealed primary app window after onboarding: \(window.title)")
-                break
+            if let existing = NSApp.windows.first(where: { !self.isAuxiliaryWindow($0) }) {
+                self.applyDashboardWindowSize(to: existing)
+                existing.makeKeyAndOrderFront(nil)
+                existing.orderFrontRegardless()
+                completion?()
+                return
+            }
+
+            if self.dashboardWindow == nil {
+                let root = MainDashboardView()
+                    .environmentObject(AppCoordinator.shared)
+                    .environmentObject(AppSettings.shared)
+                let hosting = NSHostingController(rootView: root)
+                let win = NSWindow(contentViewController: hosting)
+                win.title = "EchoTune"
+                win.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+                win.minSize = self.dashboardMinimumSize
+                win.setContentSize(self.dashboardSize)
+                win.center()
+                win.isReleasedWhenClosed = false
+                self.dashboardWindow = win
+            }
+
+            self.dashboardWindow?.makeKeyAndOrderFront(nil)
+            self.dashboardWindow?.orderFrontRegardless()
+            DispatchQueue.main.async {
+                completion?()
             }
         }
     }
