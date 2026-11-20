@@ -3,6 +3,15 @@
 All notable changes to EchoTune are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [7.6.1] — 2026-11-20
+
+Fixed first-click interactivity inside the menu bar card and floating recorder panels.
+
+### Fixed — menu bar & recorder button clicks
+- Added AppKit `.eventTracking` first-mouse tap overlays (`FirstMouseMenuTapNSView` + `FirstMouseMenuHostingView`) across all buttons, tabs, segmented pills, and switches inside the `NSMenu` card so every control responds on the very first click even while EchoTune is an inactive background menu-bar app on macOS 26.
+- Clicking **Dictate** inside the menu card now dismisses the menu before starting capture so focus stays in your active editor, and added native top-level **Start / Stop Dictation** and **Copy Last Dictation** rows right below the card.
+- Enabled `acceptsFirstMouse` on `MiniRecorderWindow`, `RecordingIndicatorWindow`, and `NotchRecorderWindow` so clicking the floating mic/stop button always triggers on the first click.
+
 ## [7.6.0] — 2026-11-20
 
 Major feature release adding 18 workflow, reliability, local-intelligence, and UI capabilities.

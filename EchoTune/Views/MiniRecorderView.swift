@@ -19,6 +19,10 @@ import Combine
 final class TransparentHostingView: NSHostingView<AnyView> {
     override var isOpaque: Bool { false }
 
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         // Kill any default background the hosting view adds

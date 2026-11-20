@@ -38,7 +38,7 @@ class RecordingIndicatorWindow: NSPanel {
         self.ignoresMouseEvents = false
         self.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
 
-        let hostingView = NSHostingView(rootView: RecordingIndicatorContentView())
+        let hostingView = TransparentHostingView(rootView: AnyView(RecordingIndicatorContentView()))
         self.contentView = hostingView
     }
 

@@ -20,6 +20,12 @@ final class EchoMenuCardItem: NSMenuItem {
     override var isHighlighted: Bool { false }
 }
 
+final class FirstMouseMenuHostingView: NSHostingView<AnyView> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+}
+
 struct VisualEffectView: NSViewRepresentable {
     let material: NSVisualEffectView.Material
     let blendingMode: NSVisualEffectView.BlendingMode
@@ -44,7 +50,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private let statusItem: NSStatusItem
     private let rootMenu: NSMenu
     private let presentation = EchoMenuPresentationState()
-    private var cardHostingView: NSHostingView<AnyView>?
+    private var cardHostingView: FirstMouseMenuHostingView?
     private var cardMenuItem: EchoMenuCardItem?
     private var cancellables = Set<AnyCancellable>()
     private var appearanceObservation: NSKeyValueObservation?
@@ -52,6 +58,15 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private var animationPhase: Double = 0
 
     override init() {
+        // Repair any corrupt/offscreen saved preferred position before registering
+        let posKey = "NSStatusItem Preferred Position EchoTuneStatusItem"
+        if let savedPos = UserDefaults.standard.object(forKey: posKey) as? NSNumber {
+            let maxWidth = NSScreen.screens.map { Double($0.frame.width) }.max() ?? 2560
+            if !savedPos.doubleValue.isFinite || savedPos.doubleValue < 0 || savedPos.doubleValue > maxWidth + 512 {
+                UserDefaults.standard.removeObject(forKey: posKey)
+            }
+        }
+
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         rootMenu = NSMenu(title: "EchoTune")
         rootMenu.autoenablesItems = false
@@ -213,7 +228,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
                 .environmentObject(AppSettings.shared)
                 .environmentObject(AppCoordinator.shared)
         )
-        let hosting = NSHostingView(rootView: rootCard)
+        let hosting = FirstMouseMenuHostingView(rootView: rootCard)
         hosting.translatesAutoresizingMaskIntoConstraints = true
 
         let item = EchoMenuCardItem()
@@ -248,6 +263,26 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         while rootMenu.numberOfItems > 2 {
             rootMenu.removeItem(at: 2)
         }
+
+        // Section 0: Native 1-Click Dictate & Copy Last Actions
+        let isRecording = AppState.shared.recordingState == .recording
+        let shortcutLabel = ShortcutManager.shared.getCurrentShortcutString()
+        let dictateItem = makeActionItem(
+            title: isRecording ? "Stop Dictation" : "Start Dictation (\(shortcutLabel))",
+            symbol: isRecording ? "stop.circle.fill" : "mic.fill",
+            action: #selector(toggleDictationFromMenu)
+        )
+        rootMenu.addItem(dictateItem)
+
+        let copyItem = makeActionItem(
+            title: "Copy Last Dictation",
+            symbol: "doc.on.doc",
+            action: #selector(copyLatestFromMenu)
+        )
+        copyItem.isEnabled = !TranscriptionHistoryManager.shared.transcriptions.isEmpty
+        rootMenu.addItem(copyItem)
+
+        rootMenu.addItem(.separator())
 
         // Section 1: Live Pipeline Pickers (Submenus)
         rootMenu.addItem(makeModelSubmenuItem())
@@ -641,6 +676,18 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     // MARK: - Actions
+
+    @objc private func toggleDictationFromMenu() {
+        DispatchQueue.main.async {
+            AppCoordinator.shared.toggleDictation()
+        }
+    }
+
+    @objc private func copyLatestFromMenu() {
+        guard let latest = TranscriptionHistoryManager.shared.transcriptions.first else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(latest.text, forType: .string)
+    }
 
     @objc private func selectModelFromMenu(_ sender: NSMenuItem) {
         guard let modelID = sender.representedObject as? String else { return }

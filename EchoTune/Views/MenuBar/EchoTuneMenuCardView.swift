@@ -3,14 +3,92 @@
 //  EchoTune
 //
 //  CodexBar-inspired rich menu card hosted inside NSMenu.
-//  Features a top pill tab switcher (Overview / Controls / Recent),
-//  crisp header & plan status, single-Canvas CoreGraphics progress and
-//  7-day activity sparkline bars, live quick controls, and inline history.
+//  Uses AppKit `.eventTracking` first-mouse tap overlays (`MenuTrackingTapView`)
+//  so every tab, button, segmented pill, and switch fires on the very first
+//  click inside macOS 26's NSMenu tracking loop even while EchoTune is inactive.
 //
 
 import AppKit
 import Combine
 import SwiftUI
+
+// MARK: - AppKit Event-Tracking First-Mouse Click Overlay (CodexBar pattern)
+
+final class FirstMouseMenuTapNSView: NSView {
+    var isTapEnabled: Bool = true
+    var onTap: (() -> Void)?
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard isTapEnabled, bounds.contains(point) else { return nil }
+        return self
+    }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        if isTapEnabled {
+            addCursorRect(bounds, cursor: .pointingHand)
+        }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard isTapEnabled, let window = self.window else { return }
+        var releasedInside = false
+
+        // Track mouse release explicitly in `.eventTracking` mode because NSMenu's
+        // Carbon/Cocoa tracking loop swallows standard mouseUp delivery to SwiftUI controls.
+        window.trackEvents(
+            matching: [.leftMouseDragged, .leftMouseUp],
+            timeout: NSEvent.foreverDuration,
+            mode: .eventTracking
+        ) { [weak self] tracked, stop in
+            guard let self, let tracked else {
+                stop.pointee = true
+                return
+            }
+            let pt = self.convert(tracked.locationInWindow, from: nil)
+            if tracked.type == .leftMouseUp {
+                releasedInside = self.bounds.contains(pt)
+                stop.pointee = true
+            }
+        }
+
+        if releasedInside {
+            onTap?()
+        }
+    }
+}
+
+struct MenuTrackingTapOverlay: NSViewRepresentable {
+    var isEnabled: Bool = true
+    let action: () -> Void
+
+    func makeNSView(context: Context) -> FirstMouseMenuTapNSView {
+        let v = FirstMouseMenuTapNSView()
+        v.isTapEnabled = isEnabled
+        v.onTap = action
+        return v
+    }
+
+    func updateNSView(_ nsView: FirstMouseMenuTapNSView, context: Context) {
+        nsView.isTapEnabled = isEnabled
+        nsView.onTap = action
+    }
+}
+
+extension View {
+    /// Makes any SwiftUI view reliably clickable inside an open `NSMenu` on macOS 14–26.
+    func menuTrackingButton(enabled: Bool = true, action: @escaping () -> Void) -> some View {
+        self.overlay {
+            MenuTrackingTapOverlay(isEnabled: enabled, action: action)
+        }
+    }
+}
+
+// MARK: - Tabs & Presentation State
 
 enum EchoMenuCardTab: String, CaseIterable, Identifiable {
     case overview = "Overview"
@@ -60,7 +138,7 @@ private enum EchoMenuCardLayout {
     static let dailyWordTarget: Double = 1000
 }
 
-// MARK: - Single-Canvas Progress Bar (CodexBar UsageProgressBar pattern)
+// MARK: - Single-Canvas Progress Bar
 
 struct EchoMenuProgressBar: View {
     let percent: Double
@@ -100,7 +178,7 @@ struct EchoMenuProgressBar: View {
     }
 }
 
-// MARK: - 7-Day Activity Sparkline Strip (CodexBar MenuUsageBarStrip pattern)
+// MARK: - 7-Day Activity Sparkline Strip
 
 struct EchoDayBucket: Identifiable, Equatable {
     let id: String
@@ -244,37 +322,34 @@ struct EchoTuneMenuCardView: View {
         }
     }
 
-    // MARK: - Top Tab Switcher (CodexBar ProviderSwitcherView style)
+    // MARK: - Top Tab Switcher
 
     private var switcherStrip: some View {
         HStack(spacing: 4) {
             ForEach(EchoMenuCardTab.allCases) { tab in
                 let isSelected = presentation.selectedTab == tab
-                Button {
-                    presentation.selectTab(tab)
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: tab.symbol)
-                            .font(.system(size: 11, weight: .semibold))
-                        Text(tab.rawValue)
-                            .font(.system(size: 11.5, weight: isSelected ? .semibold : .medium))
-                            .lineLimit(1)
-                    }
-                    .foregroundStyle(isSelected ? Color.white : Color(nsColor: .secondaryLabelColor))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 25)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(isSelected ? Color(nsColor: .controlAccentColor) : Color.primary.opacity(0.04))
-                    )
-                    .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                HStack(spacing: 5) {
+                    Image(systemName: tab.symbol)
+                        .font(.system(size: 11, weight: .semibold))
+                    Text(tab.rawValue)
+                        .font(.system(size: 11.5, weight: isSelected ? .semibold : .medium))
+                        .lineLimit(1)
                 }
-                .buttonStyle(.plain)
+                .foregroundStyle(isSelected ? Color.white : Color(nsColor: .secondaryLabelColor))
+                .frame(maxWidth: .infinity)
+                .frame(height: 26)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(isSelected ? Color(nsColor: .controlAccentColor) : Color.primary.opacity(0.05))
+                )
+                .menuTrackingButton {
+                    presentation.selectTab(tab)
+                }
             }
         }
     }
 
-    // MARK: - Header Section (CodexBar UsageMenuCardHeaderView style)
+    // MARK: - Header Section
 
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -305,20 +380,18 @@ struct EchoTuneMenuCardView: View {
 
                 Spacer(minLength: 6)
 
-                Button {
-                    presentation.onDismissMenu?()
-                    if let delegate = NSApp.delegate as? AppDelegate {
-                        delegate.showSettings(tab: .license)
+                Text(planBadgeText)
+                    .font(.footnote)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(planBadgeColor)
+                    .lineLimit(1)
+                    .padding(.vertical, 2)
+                    .menuTrackingButton {
+                        presentation.onDismissMenu?()
+                        DispatchQueue.main.async {
+                            (NSApp.delegate as? AppDelegate)?.showSettings(tab: .license)
+                        }
                     }
-                } label: {
-                    Text(planBadgeText)
-                        .font(.footnote)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(planBadgeColor)
-                        .lineLimit(1)
-                }
-                .buttonStyle(.plain)
-                .help("Open license and plan settings")
             }
         }
     }
@@ -336,17 +409,22 @@ struct EchoTuneMenuCardView: View {
                     .font(.footnote)
                     .lineLimit(1)
                 Spacer(minLength: 4)
-                Button("Grant") {
-                    presentation.onDismissMenu?()
-                    if !permissions.hasMicrophonePermission {
-                        permissions.requestMicrophonePermission { _ in permissions.checkAllPermissions() }
-                    } else {
-                        permissions.requestAccessibilityPermission()
+                Text("Grant")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(Color.orange))
+                    .menuTrackingButton {
+                        presentation.onDismissMenu?()
+                        DispatchQueue.main.async {
+                            if !permissions.hasMicrophonePermission {
+                                permissions.requestMicrophonePermission { _ in permissions.checkAllPermissions() }
+                            } else {
+                                permissions.requestAccessibilityPermission()
+                            }
+                        }
                     }
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.orange)
-                .controlSize(.mini)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
@@ -368,25 +446,21 @@ struct EchoTuneMenuCardView: View {
                         .foregroundStyle(Color(nsColor: .secondaryLabelColor))
                 }
                 Spacer(minLength: 4)
-                Button {
-                    learner.teach(suggestion)
-                } label: {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                        .font(.system(size: 14))
-                }
-                .buttonStyle(.plain)
-                .help("Teach EchoTune")
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                    .font(.system(size: 15))
+                    .frame(width: 22, height: 22)
+                    .menuTrackingButton {
+                        learner.teach(suggestion)
+                    }
 
-                Button {
-                    learner.dismiss(suggestion)
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
-                        .font(.system(size: 14))
-                }
-                .buttonStyle(.plain)
-                .help("Dismiss")
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
+                    .font(.system(size: 15))
+                    .frame(width: 22, height: 22)
+                    .menuTrackingButton {
+                        learner.dismiss(suggestion)
+                    }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
@@ -404,12 +478,17 @@ struct EchoTuneMenuCardView: View {
                     .font(.footnote)
                     .lineLimit(1)
                 Spacer(minLength: 4)
-                Button("Review") {
-                    presentation.onDismissMenu?()
-                    (NSApp.delegate as? AppDelegate)?.showCommitments()
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.mini)
+                Text("Review")
+                    .font(.system(size: 11, weight: .semibold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(Color.secondary.opacity(0.16)))
+                    .menuTrackingButton {
+                        presentation.onDismissMenu?()
+                        DispatchQueue.main.async {
+                            (NSApp.delegate as? AppDelegate)?.showCommitments()
+                        }
+                    }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
@@ -424,7 +503,6 @@ struct EchoTuneMenuCardView: View {
         VStack(alignment: .leading, spacing: 12) {
             primaryActionStrip
 
-            // Daily Metric + Progress Bar (CodexBar MetricRow style)
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text("Today · \(todayWordCount.formatted()) words")
@@ -451,14 +529,12 @@ struct EchoTuneMenuCardView: View {
 
             Divider()
 
-            // 7-Day Activity Bar Strip
             EchoActivityBarStrip(
                 buckets: sevenDayBuckets,
                 tint: Color(nsColor: .controlAccentColor),
                 hoveredID: $presentation.hoveredDayID
             )
 
-            // Inset Pipeline & Lifetime Summary Card (CodexBar cardStyle: true)
             VStack(alignment: .leading, spacing: 5) {
                 pipelineDetailRow(
                     label: "Engine",
@@ -487,60 +563,59 @@ struct EchoTuneMenuCardView: View {
     private var primaryActionStrip: some View {
         let isRecording = appState.recordingState == .recording
         let copiedLast = presentation.copiedID == "last"
+        let hasHistory = !history.transcriptions.isEmpty
 
         return HStack(spacing: 8) {
-            Button {
-                coordinator.toggleDictation()
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: isRecording ? "stop.fill" : "mic.fill")
-                        .font(.system(size: 11.5, weight: .semibold))
-                    Text(isRecording ? "Stop (\(AudioManager.formatDuration(audioManager.recordingDuration)))" : "Dictate")
-                        .font(.system(size: 12, weight: .semibold))
-                        .lineLimit(1)
-                    Spacer(minLength: 2)
-                    Text(shortcutDisplay)
-                        .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1.5)
-                        .background(Color.white.opacity(0.22))
-                        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-                }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 11)
-                .frame(height: 30)
-                .frame(maxWidth: .infinity)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(isRecording ? Color.red : Color(nsColor: .controlAccentColor))
-                )
-                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            HStack(spacing: 6) {
+                Image(systemName: isRecording ? "stop.fill" : "mic.fill")
+                    .font(.system(size: 11.5, weight: .semibold))
+                Text(isRecording ? "Stop (\(AudioManager.formatDuration(audioManager.recordingDuration)))" : "Dictate")
+                    .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
+                Spacer(minLength: 2)
+                Text(shortcutDisplay)
+                    .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1.5)
+                    .background(Color.white.opacity(0.22))
+                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
             }
-            .buttonStyle(.plain)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 11)
+            .frame(height: 30)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(isRecording ? Color.red : Color(nsColor: .controlAccentColor))
+            )
+            .menuTrackingButton {
+                // Dismiss menu first so focus returns cleanly to the user's active text field!
+                presentation.onDismissMenu?()
+                DispatchQueue.main.async {
+                    coordinator.toggleDictation()
+                }
+            }
 
-            Button {
-                guard let latest = history.transcriptions.first else { return }
-                copyToPasteboard(latest.text, id: "last")
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: copiedLast ? "checkmark" : "doc.on.doc")
-                        .font(.system(size: 11, weight: .semibold))
-                    Text(copiedLast ? "Copied" : "Copy Last")
-                        .font(.system(size: 11.5, weight: .medium))
-                        .lineLimit(1)
-                }
-                .foregroundStyle(copiedLast ? Color.green : Color.primary)
-                .padding(.horizontal, 11)
-                .frame(height: 30)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color.secondary.opacity(0.12))
-                )
-                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            HStack(spacing: 5) {
+                Image(systemName: copiedLast ? "checkmark" : "doc.on.doc")
+                    .font(.system(size: 11, weight: .semibold))
+                Text(copiedLast ? "Copied" : "Copy Last")
+                    .font(.system(size: 11.5, weight: .medium))
+                    .lineLimit(1)
             }
-            .buttonStyle(.plain)
-            .disabled(history.transcriptions.isEmpty)
-            .opacity(history.transcriptions.isEmpty ? 0.45 : 1.0)
+            .foregroundStyle(copiedLast ? Color.green : Color.primary)
+            .padding(.horizontal, 11)
+            .frame(height: 30)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.secondary.opacity(0.12))
+            )
+            .opacity(hasHistory ? 1.0 : 0.45)
+            .menuTrackingButton(enabled: hasHistory) {
+                if let latest = history.transcriptions.first {
+                    copyToPasteboard(latest.text, id: "last")
+                }
+            }
         }
     }
 
@@ -560,44 +635,41 @@ struct EchoTuneMenuCardView: View {
         }
     }
 
-    // MARK: - Tab 2: Controls (Live Inline Settings)
+    // MARK: - Tab 2: Controls (Custom First-Mouse Pills & Switches)
 
     private var controlsContent: some View {
         VStack(alignment: .leading, spacing: 10) {
-            segmentedControlRow(label: "Trigger", icon: "keyboard") {
-                Picker("", selection: $settings.recordingMode) {
-                    Text("Hold").tag(RecordingMode.pushToTalk)
-                    Text("Toggle").tag(RecordingMode.toggle)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .controlSize(.small)
-                .frame(width: 128)
-            }
+            pillSelectorRow(
+                label: "Trigger",
+                icon: "keyboard",
+                options: [
+                    ("Hold", RecordingMode.pushToTalk),
+                    ("Toggle", RecordingMode.toggle)
+                ],
+                selection: $settings.recordingMode
+            )
 
-            segmentedControlRow(label: "Recorder UI", icon: "pip") {
-                Picker("", selection: $settings.recorderStyle) {
-                    Text("Slim").tag(RecorderStyle.slim)
-                    Text("Mini").tag(RecorderStyle.mini)
-                    Text("Notch").tag(RecorderStyle.notch)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .controlSize(.small)
-                .frame(width: 156)
-            }
+            pillSelectorRow(
+                label: "Recorder UI",
+                icon: "pip",
+                options: [
+                    ("Slim", RecorderStyle.slim),
+                    ("Mini", RecorderStyle.mini),
+                    ("Notch", RecorderStyle.notch)
+                ],
+                selection: $settings.recorderStyle
+            )
 
-            segmentedControlRow(label: "Live Preview", icon: "bolt.horizontal") {
-                Picker("", selection: $settings.previewTier) {
-                    Text("4s").tag(PreviewTier.classic)
-                    Text("2s").tag(PreviewTier.balanced)
-                    Text("1s").tag(PreviewTier.reactive)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .controlSize(.small)
-                .frame(width: 128)
-            }
+            pillSelectorRow(
+                label: "Live Preview",
+                icon: "bolt.horizontal",
+                options: [
+                    ("4s", PreviewTier.classic),
+                    ("2s", PreviewTier.balanced),
+                    ("1s", PreviewTier.reactive)
+                ],
+                selection: $settings.previewTier
+            )
 
             Divider()
 
@@ -628,7 +700,7 @@ struct EchoTuneMenuCardView: View {
             compactSwitchRow(
                 icon: "character.book.closed.fill",
                 title: "Apply Custom Vocabulary",
-                subtitle: "Use your personal dictionary terms",
+                subtitle: "Use your personal dictionary & phonetics",
                 isOn: $settings.vocabularyBiasingEnabled
             )
             compactSwitchRow(
@@ -646,10 +718,11 @@ struct EchoTuneMenuCardView: View {
         }
     }
 
-    private func segmentedControlRow<Control: View>(
+    private func pillSelectorRow<T: Equatable>(
         label: String,
         icon: String,
-        @ViewBuilder control: () -> Control
+        options: [(String, T)],
+        selection: Binding<T>
     ) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon)
@@ -660,7 +733,29 @@ struct EchoTuneMenuCardView: View {
                 .font(.system(size: 12.5, weight: .medium))
                 .lineLimit(1)
             Spacer(minLength: 6)
-            control()
+            HStack(spacing: 2) {
+                ForEach(0..<options.count, id: \.self) { idx in
+                    let (title, val) = options[idx]
+                    let active = selection.wrappedValue == val
+                    Text(title)
+                        .font(.system(size: 11, weight: active ? .semibold : .medium))
+                        .foregroundStyle(active ? Color.white : Color.primary)
+                        .padding(.horizontal, 9)
+                        .frame(height: 21)
+                        .background(
+                            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                .fill(active ? Color(nsColor: .controlAccentColor) : Color.clear)
+                        )
+                        .menuTrackingButton {
+                            selection.wrappedValue = val
+                        }
+                }
+            }
+            .padding(2)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(Color.secondary.opacity(0.12))
+            )
         }
     }
 
@@ -685,10 +780,23 @@ struct EchoTuneMenuCardView: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 6)
-            Toggle("", isOn: isOn)
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.mini)
+
+            // Custom tactile capsule switch driven by MenuTrackingTapOverlay
+            ZStack(alignment: isOn.wrappedValue ? .trailing : .leading) {
+                Capsule()
+                    .fill(isOn.wrappedValue ? Color(nsColor: .controlAccentColor) : Color.secondary.opacity(0.28))
+                    .frame(width: 30, height: 17)
+                Circle()
+                    .fill(Color.white)
+                    .frame(width: 13, height: 13)
+                    .padding(.horizontal, 2)
+                    .shadow(color: .black.opacity(0.18), radius: 1, x: 0, y: 0.5)
+            }
+            .animation(.easeInOut(duration: 0.14), value: isOn.wrappedValue)
+        }
+        .padding(.vertical, 1)
+        .menuTrackingButton {
+            isOn.wrappedValue.toggle()
         }
     }
 
@@ -721,13 +829,16 @@ struct EchoTuneMenuCardView: View {
                         .font(.footnote)
                         .foregroundStyle(Color(nsColor: .secondaryLabelColor))
                     Spacer()
-                    Button("Open Full History →") {
-                        presentation.onDismissMenu?()
-                        (NSApp.delegate as? AppDelegate)?.showDashboard(item: .history)
-                    }
-                    .buttonStyle(.plain)
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(Color(nsColor: .controlAccentColor))
+                    Text("Open Full History →")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(Color(nsColor: .controlAccentColor))
+                        .padding(.vertical, 2)
+                        .menuTrackingButton {
+                            presentation.onDismissMenu?()
+                            DispatchQueue.main.async {
+                                (NSApp.delegate as? AppDelegate)?.showDashboard(item: .history)
+                            }
+                        }
                 }
                 .padding(.top, 2)
             }
@@ -753,18 +864,15 @@ struct EchoTuneMenuCardView: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 4)
-            Button {
-                copyToPasteboard(item.text, id: itemID)
-            } label: {
-                Image(systemName: isCopied ? "checkmark.circle.fill" : "doc.on.doc")
-                    .font(.system(size: 12.5, weight: .semibold))
-                    .foregroundStyle(isCopied ? Color.green : Color(nsColor: .secondaryLabelColor))
-                    .frame(width: 24, height: 24)
-                    .background(Color.secondary.opacity(0.10))
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .help("Copy transcript")
+            Image(systemName: isCopied ? "checkmark.circle.fill" : "doc.on.doc")
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundStyle(isCopied ? Color.green : Color(nsColor: .secondaryLabelColor))
+                .frame(width: 26, height: 26)
+                .background(Color.secondary.opacity(0.10))
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .menuTrackingButton {
+                    copyToPasteboard(item.text, id: itemID)
+                }
         }
         .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -856,6 +964,9 @@ struct EchoTuneMenuCardView: View {
     }
 
     private var enhancementModeShort: String {
+        if settings.selectedEnhancementModel == AIEnhancementEngine.EnhancementModel.appleOnDevice.rawValue {
+            return "Apple On-Device"
+        }
         if !settings.groqAPIKey.isEmpty || !settings.geminiAPIKey.isEmpty || !settings.openaiAPIKey.isEmpty {
             return "BYO Key"
         }
