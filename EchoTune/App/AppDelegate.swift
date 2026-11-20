@@ -9,6 +9,10 @@ import AppKit
 import SwiftUI
 import UserNotifications
 
+/// `kAELaunchedAsLogInItem` lives in Carbon; keep the raw four-char code local so this
+/// file does not need a Carbon import just for one comparison.
+private let launchedAsLogInItemCode: OSType = 0x6C67_6E20 // 'lgn '
+
 /// Standard window subclass that guarantees foreground app activation whenever
 /// clicked, ensuring Red (✕), Yellow (−), and Green (+) traffic-light buttons
 /// are always colored and responsive on the very first click.
@@ -38,6 +42,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private let onboardingState = OnboardingStateStore.shared
     private let dashboardSize = NSSize(width: 960, height: 720)
     private let dashboardMinimumSize = NSSize(width: 900, height: 600)
+
+    /// True when macOS started us at login rather than the user opening the app.
+    /// Captured in `applicationWillFinishLaunching`, which is when AppKit still exposes
+    /// the triggering Apple event.
+    private var launchedAsLoginItem = false
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        if let event = NSAppleEventManager.shared().currentAppleEvent,
+           event.eventID == AEEventID(kAEOpenApplication),
+           let prop = event.paramDescriptor(forKeyword: AEKeyword(keyAEPropData))
+        {
+            launchedAsLoginItem = prop.enumCodeValue == launchedAsLogInItemCode
+        }
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         debugLog("🚀 EchoTune launching...")
@@ -88,11 +106,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         if !isTestHost {
             if onboardingState.hasCompletedOnboarding {
-                // Start cleanly in menu-bar (.accessory) mode without opening an
-                // unsolicited background window; reopening from Finder/Spotlight
-                // or clicking "Open Dashboard" promotes to .regular with full
-                // Red/Yellow/Green window controls.
+                // Stay a menu bar app so a login launch stays quiet, but when the user
+                // deliberately opens EchoTune, show the Dashboard instead of booting to
+                // an invisible background process that looks broken.
                 NSApp.setActivationPolicy(.accessory)
+                if !launchedAsLoginItem {
+                    DispatchQueue.main.async { [weak self] in
+                        self?.showDashboard(item: .home)
+                    }
+                }
             } else {
                 showOnboarding()
             }
@@ -143,6 +165,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     // MARK: - Window Activation & Policy Lifecycle
 
     private func activateAndPresent(_ window: NSWindow) {
+        // A window that was dragged (or restored) off-screen has no reachable title bar,
+        // so its traffic lights look absent and every click lands on whatever is behind it.
+        // Put it back on screen before showing it.
+        keepWindowReachable(window)
         if NSApp.activationPolicy() != .regular {
             NSApp.setActivationPolicy(.regular)
         }
@@ -176,12 +202,71 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             if !anyStillVisibleOrMiniaturized && self.onboardingState.hasCompletedOnboarding {
                 if NSApp.activationPolicy() != .accessory {
                     NSApp.setActivationPolicy(.accessory)
-                    // Re-vend NSStatusItem after returning to .accessory so macOS 26
-                    // Tahoe's Control Center scene keeps click forwarding alive!
-                    self.statusBarController?.rebuildStatusItemAfterPolicyChange()
+                    // NOTE: deliberately no status-item re-vend here. Replacing the
+                    // NSStatusItem tears down Control Center's tracked status-item scene
+                    // (appStatusItems host removal) on macOS 26, and the re-registered item
+                    // could keep drawing but stop forwarding clicks. A single long-lived
+                    // status item with `statusItem.menu` set is the configuration macOS
+                    // handles natively — that is how the other working menu bar apps behave.
                 }
             }
         }
+    }
+
+    // MARK: - On-Screen Frame Safety
+
+    /// Guarantees a managed window is actually reachable. Returns true when the frame was repaired.
+    @discardableResult
+    func keepWindowReachable(_ window: NSWindow, recenterIfUnreachable: Bool = true) -> Bool {
+        guard let screen = window.screen ?? NSScreen.main ?? NSScreen.screens.first else { return false }
+        let visible = screen.visibleFrame
+        var frame = window.frame
+
+        // Minimum sliver of the window that must be inside visibleFrame: the full title
+        // bar height plus a wide grab area, so traffic lights and title bar drag stay usable.
+        let titleBarHeight = max(28, frame.height - window.contentLayoutRect.height)
+        let requiredWidth = min(frame.width, 260)
+        let requiredHeight = titleBarHeight + 40
+
+        let hasUsableTitleBar = frame.maxY <= visible.maxY + 0.5
+            && frame.maxY >= visible.minY + requiredHeight
+            && frame.maxX >= visible.minX + requiredWidth
+            && frame.minX <= visible.maxX - requiredWidth
+
+        if hasUsableTitleBar {
+            return false
+        }
+
+        if recenterIfUnreachable {
+            let size = NSSize(
+                width: min(frame.width, visible.width),
+                height: min(frame.height, visible.height)
+            )
+            frame.size = size
+            frame.origin = NSPoint(
+                x: visible.minX + (visible.width - size.width) / 2,
+                y: visible.minY + (visible.height - size.height) / 2
+            )
+            debugLog("🪟 Recentred off-screen window '\(window.title)' into visibleFrame \(visible)")
+        } else {
+            frame.origin.x = min(max(frame.origin.x, visible.minX), max(visible.minX, visible.maxX - requiredWidth))
+            frame.origin.y = min(max(frame.origin.y, visible.minY + requiredHeight - frame.height), visible.maxY - titleBarHeight)
+            debugLog("🪟 Clamped off-screen window '\(window.title)' back on screen")
+        }
+
+        window.setFrame(frame, display: true)
+        return true
+    }
+
+    func windowDidMove(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, window.isVisible else { return }
+        // Only rescue a window that has drifted so far it can no longer be grabbed.
+        _ = keepWindowReachable(window, recenterIfUnreachable: false)
+    }
+
+    func windowDidChangeScreen(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, window.isVisible else { return }
+        keepWindowReachable(window)
     }
 
     // MARK: - Primary Windows

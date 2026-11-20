@@ -3,6 +3,18 @@
 All notable changes to EchoTune are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [7.6.7] — 2026-11-20
+
+Restores full interactivity: the Dashboard window can no longer be stranded off-screen, and the menu bar icon responds to the first click again.
+
+### Fixed — window unreachable / "no close button, can't click anything"
+- The Dashboard window could end up **fully below the bottom of the display** (observed live at `y = 939` on a 956 pt screen, i.e. only a ~17 pt sliver visible). With its title bar off-screen the traffic lights were invisible and every click landed on whatever app was behind EchoTune. Added `keepWindowReachable(_:)`: any managed window is re-centred inside `NSScreen.visibleFrame` before it is presented, clamped back when it is dragged past the edge (`windowDidMove`), repaired on display changes (`windowDidChangeScreen`), and sanitised at launch.
+- Removed the `NSStatusItem` re-vend that ran on every `.regular` → `.accessory` transition. Re-registering the status item tore down Control Center's tracked status-item scene on macOS 26; the replacement could keep drawing while no longer forwarding clicks. The app now owns **one long-lived status item** for its whole lifetime.
+
+### Fixed — menu bar icon needed a click that never arrived
+- Restored the native `statusItem.menu` + `NSMenu` transport (the mechanism macOS handles itself, and what every other healthy menu bar app on this Mac uses) in place of the `button.action` + `NSPopover` path, which Control Center kept highlighting without forwarding the click into EchoTune.
+- The recording timer no longer writes a tenths-of-a-second string into `button.title` 12×/second. On macOS 26 that resized the status item on every animation frame and forced Control Center to re-lay-out the status-item scene ~12×/sec — measured directly in Control Center's unified log as a continuous `NSSceneFenceAction` storm. The readout is now whole seconds (stable width) and the waveform animates at 10 Hz, with the button only touched when its image, title, or position actually changed.
+
 ## [7.6.1] — 2026-11-20
 
 Fixed first-click interactivity inside the menu bar card and floating recorder panels.
