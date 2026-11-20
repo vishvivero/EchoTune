@@ -12,7 +12,19 @@ class DictionaryManager: ObservableObject {
     static let shared = DictionaryManager()
 
     @Published var wordReplacements: [WordReplacement] = []
-    @Published var correctSpellings: [CorrectSpelling] = []
+    @Published var correctSpellings: [CorrectSpelling] = [] {
+        didSet { rebuildPhoneticMatcher() }
+    }
+    @Published var phoneticMatchingEnabled: Bool = {
+        if UserDefaults.standard.object(forKey: "phoneticMatchingEnabled") != nil {
+            return UserDefaults.standard.bool(forKey: "phoneticMatchingEnabled")
+        }
+        return true
+    }() {
+        didSet { UserDefaults.standard.set(phoneticMatchingEnabled, forKey: "phoneticMatchingEnabled") }
+    }
+
+    private var phoneticMatcher = PhoneticVocabularyMatcher(terms: [])
 
     private let replacementsKey = "wordReplacements"
     private let spellingsKey = "correctSpellings"
@@ -121,8 +133,16 @@ class DictionaryManager: ObservableObject {
     func process(text: String) -> String {
         var result = text
         result = applySpellings(to: result)
+        if phoneticMatchingEnabled {
+            result = phoneticMatcher.apply(to: result)
+        }
         result = applyReplacements(to: result)
         return result
+    }
+
+    private func rebuildPhoneticMatcher() {
+        let activeWords = correctSpellings.filter(\.isEnabled).map(\.word)
+        phoneticMatcher = PhoneticVocabularyMatcher(terms: activeWords)
     }
 
     // MARK: - Persistence
@@ -158,7 +178,15 @@ class DictionaryManager: ObservableObject {
         if let data = UserDefaults.standard.data(forKey: spellingsKey),
            let decoded = try? JSONDecoder().decode([CorrectSpelling].self, from: data) {
             correctSpellings = decoded
+        } else {
+            correctSpellings = [
+                CorrectSpelling(word: "EchoTune", variations: ["echo tune", "ekotune", "katoon"]),
+                CorrectSpelling(word: "WhisperKit", variations: ["whisper kit"]),
+                CorrectSpelling(word: "Parakeet", variations: ["para keet"])
+            ]
+            saveSpellings()
         }
+        rebuildPhoneticMatcher()
     }
 
     // MARK: - Import/Export (Phase 6C)

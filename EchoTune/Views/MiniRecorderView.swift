@@ -110,7 +110,10 @@ class MiniRecorderWindow: NSPanel {
     }
 
     func show() {
-        let screen = NSScreen.screens.first(where: { $0.frame.origin == .zero }) ?? NSScreen.screens.first ?? NSScreen.main
+        let screen = RecorderScreenResolver.resolveForShow()
+            ?? NSScreen.screens.first(where: { $0.frame.origin == .zero })
+            ?? NSScreen.screens.first
+            ?? NSScreen.main
         let screenFrame = screen?.visibleFrame ?? NSRect(x: 0, y: 24, width: 1920, height: 1056)
         let xPos = screenFrame.minX + (screenFrame.width - panelWidth) / 2
         let yPos = screenFrame.minY + dockPadding
@@ -134,6 +137,7 @@ class MiniRecorderWindow: NSPanel {
             self.animator().alphaValue = 0
         } completionHandler: {
             self.orderOut(nil)
+            RecorderScreenResolver.releaseLock()
         }
     }
 }

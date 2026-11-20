@@ -22,6 +22,8 @@ class MultiHotkeyManager: ObservableObject {
     enum HotkeyAction: String, CaseIterable, Codable, Identifiable {
         case pasteLastTranscript = "Paste Last Transcript"
         case pasteLastEnhanced = "Paste Last Enhanced"
+        case openQuickHistory = "Quick History Search"
+        case quickAddDictionary = "Quick-Add to Dictionary"
         case showMainWindow = "Show Main Window"
         case togglePowerModes = "Toggle Power Modes"
 
@@ -30,11 +32,15 @@ class MultiHotkeyManager: ObservableObject {
         var defaultShortcut: String? {
             switch self {
             case .pasteLastTranscript:
-                return "⌘⇧T"  // Command+Shift+T
+                return "⌘⇧T"
             case .pasteLastEnhanced:
                 return nil
+            case .openQuickHistory:
+                return "⌘⇧H"
+            case .quickAddDictionary:
+                return "⌘⇧D"
             case .showMainWindow:
-                return "⌘⇧E"  // Command+Shift+E
+                return "⌘⇧E"
             case .togglePowerModes:
                 return nil
             }
@@ -122,6 +128,8 @@ class MultiHotkeyManager: ObservableObject {
     private var modifierEventTap: CFMachPort?
     private var modifierRunLoopSource: CFRunLoopSource?
     private var modifierKeyPressed: [ModifierKeyTrigger: Bool] = [:]
+    private var globalKeyComboMonitor: Any?
+    private var localKeyComboMonitor: Any?
 
     private let storageKey = "multiHotkeyBindings"
 
@@ -133,6 +141,7 @@ class MultiHotkeyManager: ObservableObject {
     }
 
     deinit {
+        unregisterAllHotkeys()
         teardownModifierKeyMonitoring()
     }
 
@@ -320,11 +329,59 @@ class MultiHotkeyManager: ObservableObject {
     // Modifier-only bindings still work via the CGEvent tap above.
 
     private func registerAllHotkeys() {
-        // Intentionally empty — see note above.
+        unregisterAllHotkeys()
+        guard OnboardingStateStore.shared.hasCompletedOnboarding else { return }
+
+        globalKeyComboMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            self?.matchKeyCombo(event)
+        }
+        localKeyComboMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if self?.matchKeyCombo(event) == true {
+                return nil
+            }
+            return event
+        }
     }
 
     private func unregisterAllHotkeys() {
-        // Intentionally empty — see note above.
+        if let g = globalKeyComboMonitor {
+            NSEvent.removeMonitor(g)
+            globalKeyComboMonitor = nil
+        }
+        if let l = localKeyComboMonitor {
+            NSEvent.removeMonitor(l)
+            localKeyComboMonitor = nil
+        }
+    }
+
+    @discardableResult
+    private func matchKeyCombo(_ event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        guard !flags.isEmpty else { return false }
+        let chars = (event.charactersIgnoringModifiers ?? "").uppercased()
+
+        for binding in hotkeyBindings where binding.isEnabled && !binding.isModifierOnlyBinding {
+            if let code = binding.keyCode, let mods = binding.modifiers {
+                let eventMods = UInt32(flags.rawValue)
+                if UInt32(event.keyCode) == code && eventMods == mods {
+                    DispatchQueue.main.async { [weak self] in self?.handleHotkeyAction(binding.action) }
+                    return true
+                }
+            } else if let display = binding.displayString {
+                // Default symbolic combos (e.g. "⌘⇧H", "⌘⇧D", "⌘⇧T", "⌘⇧E")
+                var expected: NSEvent.ModifierFlags = []
+                if display.contains("⌘") { expected.insert(.command) }
+                if display.contains("⇧") { expected.insert(.shift) }
+                if display.contains("⌥") { expected.insert(.option) }
+                if display.contains("⌃") { expected.insert(.control) }
+                let keyChar = String(display.filter { !"⌘⇧⌥⌃".contains($0) }).uppercased()
+                if !keyChar.isEmpty && flags == expected && chars == keyChar {
+                    DispatchQueue.main.async { [weak self] in self?.handleHotkeyAction(binding.action) }
+                    return true
+                }
+            }
+        }
+        return false
     }
 
     // MARK: - Action Handlers
@@ -338,6 +395,12 @@ class MultiHotkeyManager: ObservableObject {
 
         case .pasteLastEnhanced:
             pasteLastTranscript(enhanced: true)
+
+        case .openQuickHistory:
+            Task { @MainActor in QuickHistoryPanelController.shared.toggle() }
+
+        case .quickAddDictionary:
+            Task { @MainActor in DictionaryQuickAddPanelController.shared.show() }
 
         case .showMainWindow:
             showMainWindow()

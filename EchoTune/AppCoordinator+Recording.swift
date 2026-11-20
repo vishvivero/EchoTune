@@ -517,6 +517,17 @@ extension AppCoordinator {
                         apiKey: apiKey
                     )
 
+                } else if currentModel.backend == .openAI {
+                    beginTranscriptionAudit(provider: "Custom OpenAI", model: settings.customOpenAISTTModelID, detail: "Transcribing via custom endpoint...")
+                    PerformanceMonitor.shared.startTranscription(engine: "Custom OpenAI", model: settings.customOpenAISTTModelID)
+                    transcribedText = try await CustomOpenAICompatibleService.shared.transcribeAudio(
+                        audioData: audioData,
+                        baseURL: settings.customOpenAIBaseURL,
+                        modelID: settings.customOpenAISTTModelID,
+                        language: AppSettings.shared.autoDetectLanguage ? nil : settings.preferredLanguage.components(separatedBy: "-").first,
+                        apiKey: settings.customOpenAIAPIKey
+                    )
+
                 } else {
                     await MainActor.run {
                         handleTranscriptionError("Unknown cloud model: \(currentModel.name)")

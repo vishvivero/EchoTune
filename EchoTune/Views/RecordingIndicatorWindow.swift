@@ -43,7 +43,7 @@ class RecordingIndicatorWindow: NSPanel {
     }
 
     func show() {
-        if let screen = NSScreen.main {
+        if let screen = RecorderScreenResolver.resolveForShow() {
             let xPos = screen.frame.midX - self.frame.width / 2
             let yPos = screen.frame.minY + 60
             setFrame(NSRect(x: xPos, y: yPos, width: self.frame.width, height: self.frame.height), display: true)
@@ -55,6 +55,7 @@ class RecordingIndicatorWindow: NSPanel {
 
     func hide() {
         self.orderOut(nil)
+        RecorderScreenResolver.releaseLock()
     }
 }
 

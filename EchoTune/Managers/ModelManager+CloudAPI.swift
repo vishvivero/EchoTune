@@ -56,6 +56,8 @@ extension ModelManager {
             return !AppSettings.shared.groqAPIKey.isEmpty
         case "deepgram-nova":
             return !AppSettings.shared.deepgramAPIKey.isEmpty
+        case "custom-openai-stt":
+            return !AppSettings.shared.customOpenAIBaseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         default:
             return false
         }

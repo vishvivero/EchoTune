@@ -579,11 +579,12 @@ struct EchoTuneMenuCardView: View {
                 Picker("", selection: $settings.recorderStyle) {
                     Text("Slim").tag(RecorderStyle.slim)
                     Text("Mini").tag(RecorderStyle.mini)
+                    Text("Notch").tag(RecorderStyle.notch)
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .controlSize(.small)
-                .frame(width: 128)
+                .frame(width: 156)
             }
 
             segmentedControlRow(label: "Live Preview", icon: "bolt.horizontal") {
@@ -611,6 +612,12 @@ struct EchoTuneMenuCardView: View {
                 title: "Auto-Paste into Active App",
                 subtitle: "Insert immediately when dictation finishes",
                 isOn: $settings.autoSendEnabled
+            )
+            compactSwitchRow(
+                icon: "text.cursor",
+                title: "Smart Punctuation",
+                subtitle: "Adjust spacing & case around cursor",
+                isOn: $settings.smartPunctuationEnabled
             )
             compactSwitchRow(
                 icon: "globe",

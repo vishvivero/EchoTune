@@ -36,8 +36,13 @@ class TextInsertionManager {
     func insertText(_ text: String, completion: @escaping (Result<Void, Error>) -> Void) {
         debugLog("📝 TEXT INSERTION START, original='\(text.prefix(100))'")
 
-        // Process text through dictionary replacements FIRST
-        let processedText = processTextReplacements(text)
+        // Process text through dictionary replacements FIRST, then optional
+        // cursor-aware Smart Punctuation adjustment.
+        var processedText = processTextReplacements(text)
+        if AppSettings.shared.smartPunctuationEnabled,
+           let cursorCtx = SmartPunctuation.readFocusedContext() {
+            processedText = SmartPunctuation.adjust(processedText, context: cursorCtx)
+        }
         debugLog("   Processed text: \(processedText.prefix(100))")
 
         // Check permission
@@ -48,6 +53,34 @@ class TextInsertionManager {
             return
         }
         debugLog("✅ Accessibility permission: OK")
+
+        // Honor explicit non-clipboard / specialized Paste Methods first
+        let selectedPasteMethod = AppSettings.shared.pasteMethod
+        switch selectedPasteMethod {
+        case .directTyping:
+            typeTextAsync(processedText) {
+                completion(.success(()))
+            }
+            return
+        case .remoteDesktop:
+            let snapshot = processedText
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                self?.typingQueue.async {
+                    RemoteDesktopKeyTyper.type(snapshot)
+                    DispatchQueue.main.async {
+                        completion(.success(()))
+                    }
+                }
+            }
+            return
+        case .appleScript:
+            if insertViaPaste(processedText, useAppleScriptKeystroke: true) {
+                completion(.success(()))
+                return
+            }
+        case .standard:
+            break
+        }
 
         // Check if we're in a browser or web app
         if let appName = getFrontmostApplication() {
@@ -318,7 +351,7 @@ class TextInsertionManager {
 
     // MARK: - Direct Insertion via Paste
 
-    private func insertViaPaste(_ text: String) -> Bool {
+    private func insertViaPaste(_ text: String, useAppleScriptKeystroke: Bool = false) -> Bool {
         let pasteboard = NSPasteboard.general
 
         // Save ALL pasteboard items with their data for each type so a
@@ -360,8 +393,16 @@ class TextInsertionManager {
         // Small delay to ensure clipboard is set
         Thread.sleep(forTimeInterval: 0.05)
 
-        // Simulate Cmd+V
-        let success = simulateKeyPress(keyCode: 0x09, modifiers: .maskCommand) // V key
+        // Simulate Cmd+V (either CGEvent or AppleScript System Events)
+        let success: Bool
+        if useAppleScriptKeystroke {
+            var scriptErr: NSDictionary?
+            let script = NSAppleScript(source: "tell application \"System Events\" to keystroke \"v\" using command down")
+            _ = script?.executeAndReturnError(&scriptErr)
+            success = (scriptErr == nil)
+        } else {
+            success = simulateKeyPress(keyCode: 0x09, modifiers: .maskCommand) // V key
+        }
 
         // Restore clipboard after a delay, only if we still own the clipboard.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {

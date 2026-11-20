@@ -253,8 +253,27 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         rootMenu.addItem(makeModelSubmenuItem())
         rootMenu.addItem(makeMicrophoneSubmenuItem())
         rootMenu.addItem(makeLanguageSubmenuItem())
+        rootMenu.addItem(makePasteMethodSubmenuItem())
         rootMenu.addItem(makeEnhancementSubmenuItem())
         rootMenu.addItem(makeRecentDictationsSubmenuItem())
+
+        rootMenu.addItem(.separator())
+
+        // Section 1b: Instant Floating HUDs (#12)
+        rootMenu.addItem(makeActionItem(
+            title: "Quick History Search…",
+            symbol: "magnifyingglass",
+            keyEquivalent: "H",
+            modifiers: [.command, .shift],
+            action: #selector(openQuickHistoryHUD)
+        ))
+        rootMenu.addItem(makeActionItem(
+            title: "Quick-Add to Dictionary…",
+            symbol: "plus.bubble",
+            keyEquivalent: "D",
+            modifiers: [.command, .shift],
+            action: #selector(openQuickAddDictionaryHUD)
+        ))
 
         rootMenu.addItem(.separator())
 
@@ -483,6 +502,29 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         return parent
     }
 
+    private func makePasteMethodSubmenuItem() -> NSMenuItem {
+        let submenu = NSMenu(title: "Paste Method")
+        submenu.autoenablesItems = false
+        let current = AppSettings.shared.pasteMethod
+
+        for method in PasteMethod.allCases {
+            let item = NSMenuItem(
+                title: method.displayName,
+                action: #selector(selectPasteMethodFromMenu(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = method.rawValue
+            item.state = (method == current) ? .on : .off
+            submenu.addItem(item)
+        }
+
+        let parent = NSMenuItem(title: "Paste Method (\(current.shortName))", action: nil, keyEquivalent: "")
+        parent.image = symbolImage("keyboard.badge.ellipsis")
+        parent.submenu = submenu
+        return parent
+    }
+
     private func makeEnhancementSubmenuItem() -> NSMenuItem {
         let submenu = NSMenu(title: "AI Enhancement")
         submenu.autoenablesItems = false
@@ -629,6 +671,20 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         guard let code = sender.representedObject as? String else { return }
         AppSettings.shared.autoDetectLanguage = false
         AppSettings.shared.preferredLanguage = code
+    }
+
+    @objc private func selectPasteMethodFromMenu(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let method = PasteMethod(rawValue: raw) else { return }
+        AppSettings.shared.pasteMethod = method
+    }
+
+    @objc private func openQuickHistoryHUD() {
+        QuickHistoryPanelController.shared.toggle()
+    }
+
+    @objc private func openQuickAddDictionaryHUD() {
+        DictionaryQuickAddPanelController.shared.show()
     }
 
     @objc private func toggleAIEnhancement() {

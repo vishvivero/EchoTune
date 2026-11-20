@@ -506,8 +506,19 @@ class LicenseManager {
 
     // MARK: - Keychain Helpers
 
+    private var testKeychainStore: [String: String] = [:]
+
+    private var isTestHost: Bool {
+        let env = ProcessInfo.processInfo.environment
+        return env["XCTestConfigurationFilePath"] != nil || env["XCTestSessionIdentifier"] != nil
+    }
+
     @discardableResult
     private func saveToKeychain(_ key: String, value: String) -> Bool {
+        if isTestHost {
+            testKeychainStore[key] = value
+            return true
+        }
         guard let data = value.data(using: .utf8) else { return false }
 
         let deleteQuery: [String: Any] = [
@@ -534,6 +545,9 @@ class LicenseManager {
     }
 
     private func getFromKeychain(_ key: String) -> String? {
+        if isTestHost {
+            return testKeychainStore[key]
+        }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
@@ -554,6 +568,10 @@ class LicenseManager {
     }
 
     private func deleteFromKeychain(_ key: String) {
+        if isTestHost {
+            testKeychainStore.removeValue(forKey: key)
+            return
+        }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,

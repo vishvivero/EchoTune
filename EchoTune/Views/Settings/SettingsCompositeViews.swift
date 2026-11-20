@@ -15,6 +15,7 @@ struct GeneralSettingsView: View {
     @EnvironmentObject var settings: AppSettings
     @EnvironmentObject var coordinator: AppCoordinator
     @StateObject private var launchAtLogin = LaunchAtLoginManager.shared
+    @State private var backupStatusMessage: String? = nil
 
     var body: some View {
         Form {
@@ -49,9 +50,17 @@ struct GeneralSettingsView: View {
             }
             .padding(.bottom, 8)
 
-            Section("Transcription Output") {
-                // Auto-Punctuation toggle removed for 4.0.0 — it never did
-                // anything (punctuation is whatever the model emits).
+            Section("Transcription Output & Paste Method") {
+                Picker("Paste Method", selection: $settings.pasteMethod) {
+                    ForEach(PasteMethod.allCases) { method in
+                        Text(method.displayName).tag(method)
+                    }
+                }
+                .help("Choose Remote Desktop / VM Typing for Citrix, RDP, RustDesk, Parsec, or VMs.")
+
+                Toggle("Cursor-Aware Smart Punctuation", isOn: $settings.smartPunctuationEnabled)
+                    .help("Automatically adjusts leading capitalization, spacing, and trailing periods based on surrounding cursor text.")
+
                 Toggle("Smart Capitalization", isOn: $settings.smartCapitalization)
                     .help("Capitalize the start of sentences and proper nouns automatically.")
                 
@@ -80,12 +89,69 @@ struct GeneralSettingsView: View {
             Section("Vocabulary") {
                 Toggle("Apply my vocabulary to transcribed text", isOn: $settings.vocabularyBiasingEnabled)
                     .help("Replace dictionary entries and learned corrections in the finished transcript.")
-                Text("Corrections are applied after transcription. Decoder-side biasing was removed because passing vocabulary to the local Whisper decoder made it return empty results.")
+                Toggle("Phonetic Proper-Noun Matching", isOn: Binding(
+                    get: { DictionaryManager.shared.phoneticMatchingEnabled },
+                    set: { DictionaryManager.shared.phoneticMatchingEnabled = $0 }
+                ))
+                .help("Automatically corrects phonetically misheard names and technical terms from your Custom Dictionary.")
+                Text("Corrections are applied offline after transcription without conditioning the Whisper decoder.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
+
+            Section("Setup Backup & Sync (Multi-Mac)") {
+                HStack(spacing: 12) {
+                    Button("Export Setup Backup…") {
+                        exportConfigBackup()
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button("Import Setup Backup…") {
+                        importConfigBackup()
+                    }
+                    .buttonStyle(.bordered)
+                }
+                Text("Syncs Dictionary, Power Modes, Trigger Words, Filler Words, and Preferences across Macs (excludes API/license keys).")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                if let backupStatusMessage {
+                    Text(backupStatusMessage)
+                        .font(.caption)
+                        .foregroundColor(.accentColor)
+                }
+            }
         }
         .formStyle(.grouped)
+    }
+
+    private func exportConfigBackup() {
+        guard let data = try? ConfigurationBackupManager.exportBackupData() else { return }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = "EchoTune-Setup-Backup.json"
+        panel.begin { resp in
+            guard resp == .OK, let url = panel.url else { return }
+            do {
+                try data.write(to: url, options: .atomic)
+                backupStatusMessage = "Saved backup to \(url.lastPathComponent)."
+            } catch {
+                backupStatusMessage = "Export failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func importConfigBackup() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        panel.begin { resp in
+            guard resp == .OK, let url = panel.url, let data = try? Data(contentsOf: url) else { return }
+            do {
+                backupStatusMessage = try ConfigurationBackupManager.importBackupData(data)
+            } catch {
+                backupStatusMessage = "Import failed: \(error.localizedDescription)"
+            }
+        }
     }
 }
 
@@ -94,6 +160,8 @@ struct SpeechSettingsView: View {
     @State private var selectedMethod = VADManager.shared.config.method
     @State private var sileroReady = FluidVADEngine.shared.isReady
     @State private var isPreparing = false
+    @ObservedObject private var fillerManager = FillerWordManager.shared
+    @State private var newFillerWord = ""
 
     var body: some View {
         Form {
@@ -138,6 +206,32 @@ struct SpeechSettingsView: View {
 
             Section("Fallback") {
                 Text("If Silero cannot download or load, EchoTune automatically uses the energy detector. You can select Energy-based at any time.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Section("Spoken Filler Word Removal") {
+                Toggle("Remove filler words & repair punctuation", isOn: $fillerManager.isEnabled)
+
+                HStack(spacing: 8) {
+                    TextField("Add filler word or phrase (e.g. basically)", text: $newFillerWord)
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit {
+                            fillerManager.addFiller(newFillerWord)
+                            newFillerWord = ""
+                        }
+                    Button("Add") {
+                        fillerManager.addFiller(newFillerWord)
+                        newFillerWord = ""
+                    }
+                    .disabled(newFillerWord.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                    Button("Reset") {
+                        fillerManager.resetToDefaults()
+                    }
+                }
+
+                Text("Active fillers: \(fillerManager.fillerWords.joined(separator: ", "))")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }

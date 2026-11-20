@@ -160,6 +160,9 @@ class TranscriptionEngine: NSObject, ObservableObject {
         case .deepgram:
             routeToDeepgram(audioData, completion: completion)
             return
+        case .openAI:
+            routeToCustomOpenAI(audioData, completion: completion)
+            return
         case .parakeet:
             if #available(macOS 14.0, *) {
                 routeToParakeet(audioData, selectedModel: selectedModel, completion: completion)
@@ -170,7 +173,7 @@ class TranscriptionEngine: NSObject, ObservableObject {
         case .whisper:
             routeToWhisper(audioData, selectedModel: selectedModel, completion: completion)
             return
-        case .appleSpeech, .senseVoice, .paraformer, .openAI:
+        case .appleSpeech, .senseVoice, .paraformer:
             break
         }
 

@@ -19,30 +19,36 @@ class AIEnhancementEngine: ObservableObject {
 
     enum EnhancementModel: String, CaseIterable, Identifiable {
         case hosted = "echotune-hosted"
+        case appleOnDevice = "apple-on-device"
         case groqLlama = "llama-3.3-70b-versatile"
         case gemini25Flash = "gemini-2.5-flash"
         case gemini25FlashLite = "gemini-2.5-flash-lite"
         case localOllama = "ollama-local"
+        case customOpenAI = "custom-openai"
 
         var id: String { rawValue }
 
         var displayName: String {
             switch self {
             case .hosted: return "EchoTune Hosted · Free (Recommended)"
+            case .appleOnDevice: return "Apple Intelligence · 100% On-Device (macOS 26+)"
             case .groqLlama: return "Fast · Free (your key) — Groq Llama 70B"
             case .gemini25Flash: return "Balanced · Free (your key) — Gemini 2.5"
             case .gemini25FlashLite: return "Light · Free (your key) — Gemini 2.5 Lite"
             case .localOllama: return "Local · Ollama (no network)"
+            case .customOpenAI: return "Custom OpenAI-Compatible (LM Studio / OpenRouter / vLLM)"
             }
         }
 
         var shortName: String {
             switch self {
             case .hosted: return "EchoTune Hosted"
+            case .appleOnDevice: return "Apple On-Device"
             case .groqLlama: return "Groq Llama 70B"
             case .gemini25Flash: return "Gemini 2.5"
             case .gemini25FlashLite: return "Gemini 2.5 Lite"
             case .localOllama: return "Ollama Local"
+            case .customOpenAI: return "Custom OpenAI"
             }
         }
 
@@ -50,30 +56,38 @@ class AIEnhancementEngine: ObservableObject {
             switch self {
             case .hosted:
                 return .hosted
+            case .appleOnDevice:
+                return .appleOnDevice
             case .groqLlama:
                 return .groq
             case .gemini25Flash, .gemini25FlashLite:
                 return .google
             case .localOllama:
                 return .localCLI
+            case .customOpenAI:
+                return .customOpenAI
             }
         }
     }
 
     enum ProviderKind {
         case hosted
+        case appleOnDevice
         case groq
         case google
         case openai
         case localCLI
+        case customOpenAI
 
         var displayName: String {
             switch self {
             case .hosted: return "EchoTune Hosted"
+            case .appleOnDevice: return "Apple On-Device Intelligence"
             case .groq: return "Groq"
             case .google: return "Gemini"
             case .openai: return "OpenAI"
             case .localCLI: return "Ollama (local)"
+            case .customOpenAI: return "Custom OpenAI Endpoint"
             }
         }
     }
@@ -139,7 +153,10 @@ class AIEnhancementEngine: ObservableObject {
         await MainActor.run { [weak self] in
             guard let self else { return }
             self.availableEnhancementModels = EnhancementModel.allCases.filter {
-                $0 == .hosted || $0 == .localOllama || modelIDs.contains($0.rawValue)
+                if $0 == .appleOnDevice {
+                    return OnDeviceRefinementProvider.shared.isSupportedAndAvailable
+                }
+                return $0 == .hosted || $0 == .localOllama || $0 == .customOpenAI || modelIDs.contains($0.rawValue)
             }
         }
     }
@@ -249,8 +266,9 @@ class AIEnhancementEngine: ObservableObject {
             return transcript
         }
 
-        // BYO-key models require a key. Hosted and local paths do not.
-        if model.provider != .hosted && model.provider != .localCLI && apiKey.isEmpty {
+        // BYO-key models require a key. Hosted, on-device, custom-localhost, and local CLI paths do not.
+        let requiresKey = (model.provider == .groq || model.provider == .google || model.provider == .openai)
+        if requiresKey && apiKey.isEmpty {
             throw EnhancementError.noAPIKey
         }
 
@@ -276,6 +294,9 @@ class AIEnhancementEngine: ObservableObject {
             switch model.provider {
             case .hosted:
                 rawEnhanced = try await enhanceWithHosted(transcript, model: model, customPrompt: customPrompt, dictionaryContext: dictionaryContext, screenContext: screenContext)
+            case .appleOnDevice:
+                let instructions = buildEnhancementPrompt(customPrompt: customPrompt, dictionaryContext: dictionaryContext, screenContext: screenContext)
+                rawEnhanced = try await OnDeviceRefinementProvider.shared.polish(transcript, instructions: instructions)
             case .groq:
                 rawEnhanced = try await enhanceWithGroq(transcript, model: model, apiKey: apiKey, customPrompt: customPrompt, dictionaryContext: dictionaryContext, screenContext: screenContext)
             case .google:
@@ -285,6 +306,15 @@ class AIEnhancementEngine: ObservableObject {
             case .localCLI:
                 let prompt = buildEnhancementPrompt(customPrompt: customPrompt, dictionaryContext: dictionaryContext, screenContext: screenContext)
                 rawEnhanced = try await localProvider.polish(transcript, prompt: prompt)
+            case .customOpenAI:
+                let prompt = buildEnhancementPrompt(customPrompt: customPrompt, dictionaryContext: dictionaryContext, screenContext: screenContext)
+                rawEnhanced = try await CustomOpenAICompatibleService.shared.completeChat(
+                    systemPrompt: prompt,
+                    userMessage: "<DICTATION>\n\(transcript)\n</DICTATION>",
+                    baseURL: AppSettings.shared.customOpenAIBaseURL,
+                    modelID: AppSettings.shared.customOpenAIModelID,
+                    apiKey: apiKey
+                )
             }
 
             // One choke point for every provider response. The local CLI path
@@ -382,5 +412,32 @@ class AIEnhancementEngine: ObservableObject {
         }
 
         return prompt
+    }
+
+    /// Selected-Text Voice Transform (#2): applies a spoken voice command to highlighted text.
+    func transformSelectedText(_ selectedText: String, instruction: String) async throws -> String {
+        let settings = AppSettings.shared
+        let chosen = EnhancementModel(rawValue: settings.selectedEnhancementModel) ?? .hosted
+        let apiKey = settings.apiKey(for: chosen.provider)
+
+        // Fall back to hosted (or Apple on-device) if the user chose a BYO key model without setting a key
+        let effectiveModel: EnhancementModel
+        if (chosen.provider == .groq || chosen.provider == .google || chosen.provider == .openai) && apiKey.isEmpty {
+            effectiveModel = OnDeviceRefinementProvider.shared.isSupportedAndAvailable ? .appleOnDevice : .hosted
+        } else {
+            effectiveModel = chosen
+        }
+
+        let transformDirective = """
+        The user highlighted the text inside <SELECTED_TEXT> and spoke the voice instruction: "\(instruction)".
+        Apply that instruction directly to <SELECTED_TEXT> and output ONLY the resulting replacement text — no markdown fences, no commentary, no surrounding quotes.
+        """
+        let wrappedPayload = "<SELECTED_TEXT>\n\(selectedText)\n</SELECTED_TEXT>"
+        return try await enhance(
+            wrappedPayload,
+            using: effectiveModel,
+            apiKey: settings.apiKey(for: effectiveModel.provider),
+            customPrompt: transformDirective
+        )
     }
 }

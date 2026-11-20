@@ -93,6 +93,14 @@ class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(insertSpaceAfterText, forKey: "insertSpaceAfterText") }
     }
 
+    @Published var smartPunctuationEnabled: Bool {
+        didSet { UserDefaults.standard.set(smartPunctuationEnabled, forKey: "smartPunctuationEnabled") }
+    }
+
+    @Published var pasteMethod: PasteMethod {
+        didSet { UserDefaults.standard.set(pasteMethod.rawValue, forKey: "pasteMethod") }
+    }
+
     // Toggle for auto-correction of in-speech corrections (e.g. "Sorry, I meant ...")
     @Published var autoCorrection: Bool {
         didSet { UserDefaults.standard.set(autoCorrection, forKey: "autoCorrection") }
@@ -196,18 +204,41 @@ class AppSettings: ObservableObject {
         }
     }
 
+    // Custom OpenAI-Compatible Endpoint (LM Studio, OpenRouter, vLLM, faster-whisper, etc.)
+    @Published var customOpenAIBaseURL: String {
+        didSet {
+            UserDefaults.standard.set(customOpenAIBaseURL, forKey: "customOpenAIBaseURL")
+            NotificationCenter.default.post(name: NSNotification.Name("APIKeyChanged"), object: nil)
+        }
+    }
+
+    @Published var customOpenAIModelID: String {
+        didSet { UserDefaults.standard.set(customOpenAIModelID, forKey: "customOpenAIModelID") }
+    }
+
+    @Published var customOpenAISTTModelID: String {
+        didSet { UserDefaults.standard.set(customOpenAISTTModelID, forKey: "customOpenAISTTModelID") }
+    }
+
+    @Published var customOpenAIAPIKey: String {
+        didSet {
+            KeychainHelper.save(customOpenAIAPIKey, forKey: "customOpenAIAPIKey")
+            NotificationCenter.default.post(name: NSNotification.Name("APIKeyChanged"), object: nil)
+        }
+    }
+
     func apiKey(for provider: AIEnhancementEngine.ProviderKind) -> String {
         switch provider {
-        case .hosted:
-            return "" // Hosted path uses the proxy; no user key.
+        case .hosted, .localCLI, .appleOnDevice:
+            return ""
         case .groq:
             return groqAPIKey
         case .google:
             return geminiAPIKey
         case .openai:
             return openaiAPIKey
-        case .localCLI:
-            return ""
+        case .customOpenAI:
+            return customOpenAIAPIKey
         }
     }
 
@@ -285,6 +316,13 @@ class AppSettings: ObservableObject {
         self.keepAudioHistory = UserDefaults.standard.bool(forKey: "keepAudioHistory")
         self.smartCapitalization = UserDefaults.standard.bool(forKey: "smartCapitalization")
         self.insertSpaceAfterText = UserDefaults.standard.bool(forKey: "insertSpaceAfterText")
+        self.smartPunctuationEnabled = UserDefaults.standard.object(forKey: "smartPunctuationEnabled") as? Bool ?? true
+        if let rawPaste = UserDefaults.standard.string(forKey: "pasteMethod"),
+           let method = PasteMethod(rawValue: rawPaste) {
+            self.pasteMethod = method
+        } else {
+            self.pasteMethod = .standard
+        }
         // Initialize autoCorrection toggle
         if UserDefaults.standard.object(forKey: "autoCorrection") != nil {
             self.autoCorrection = UserDefaults.standard.bool(forKey: "autoCorrection")
@@ -334,6 +372,11 @@ class AppSettings: ObservableObject {
         self.deepgramLiveEnabled = UserDefaults.standard.object(forKey: "deepgramLiveEnabled") as? Bool ?? false
         self.deepgramAPIKey = KeychainHelper.load(forKey: "deepgramAPIKey")
         self.geminiAPIKey = KeychainHelper.load(forKey: "geminiAPIKey")
+
+        self.customOpenAIBaseURL = UserDefaults.standard.string(forKey: "customOpenAIBaseURL") ?? "http://localhost:1234/v1"
+        self.customOpenAIModelID = UserDefaults.standard.string(forKey: "customOpenAIModelID") ?? "local-model"
+        self.customOpenAISTTModelID = UserDefaults.standard.string(forKey: "customOpenAISTTModelID") ?? "whisper-1"
+        self.customOpenAIAPIKey = KeychainHelper.load(forKey: "customOpenAIAPIKey")
 
         // Phase 6A: Initialize Social Share Settings
         if UserDefaults.standard.object(forKey: "hasSharedForDiscount") != nil {
@@ -580,11 +623,12 @@ enum ModelSize: String, CaseIterable, Identifiable {
 enum RecorderStyle: String, CaseIterable, Identifiable {
     case slim = "Slim Bar"
     case mini = "Mini Panel"
+    case notch = "MacBook Notch"
 
     var id: String { self.rawValue }
 
     static var userFacingOptions: [RecorderStyle] {
-        [.slim, .mini]
+        [.slim, .mini, .notch]
     }
 
     var description: String {
@@ -593,6 +637,8 @@ enum RecorderStyle: String, CaseIterable, Identifiable {
             return "Compact text bar that stays out of the way"
         case .mini:
             return "Floating panel with waveform and timer (draggable)"
+        case .notch:
+            return "Dynamic Island-style expansion at the top center notch"
         }
     }
 }

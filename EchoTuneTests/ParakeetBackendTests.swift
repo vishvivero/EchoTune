@@ -29,7 +29,8 @@ final class ParakeetBackendTests: XCTestCase {
             "parakeet-ja-0.6b",
             "apple-speech",
             "groq-whisper-large-v3-turbo",
-            "deepgram-nova"
+            "deepgram-nova",
+            "custom-openai-stt"
         ])
         // The removed entries must not come back by accident.
         for gone in ["distil-whisper_distil-large-v3",

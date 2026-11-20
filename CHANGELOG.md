@@ -3,6 +3,28 @@
 All notable changes to EchoTune are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [7.6.0] — 2026-11-20
+
+Major feature release adding 18 workflow, reliability, local-intelligence, and UI capabilities.
+
+### Added — intelligence, vocabulary & voice editing
+- **Offline Phonetic Vocabulary Matcher**: automatically corrects phonetically misheard proper nouns and multi-word terms from your Custom Dictionary (e.g. `"echo tune"` / `"ekotune"` → `"EchoTune"`) with zero decoder conditioning.
+- **Selected-Text Voice Transform Mode**: highlight text in any Mac app and **double-tap `⌥`** to speak an editing command (*"make this shorter"*, *"fix grammar"*, *"translate to Spanish"*) and replace the selection in place.
+- **Apple On-Device Intelligence Refinement (macOS 26+)**: 100% offline, zero-download, zero-API-key grammar and filler cleanup via Apple's Neural Engine `FoundationModels`.
+- **Custom OpenAI-Compatible STT & Chat Endpoints**: connect LM Studio, OpenRouter, vLLM, Jan, Ollama HTTP, `faster-whisper-server`, or `whisper.cpp` server in **Settings → AI & Models**.
+- **Configurable Spoken Filler Removal**: customizable filler list (`uh`, `um`, `erm`, etc.) with automatic post-removal comma, spacing, and sentence-capitalization repair.
+
+### Added — recorder styles, quick HUDs, paste methods & automation
+- **MacBook Notch Recorder Style**: Dynamic-Island-style top-center notch expansion (`Slim` · `Mini` · `Notch`), plus cursor-display locking (`RecorderScreenResolver`) across multi-monitor setups.
+- **Quick History HUD (`⌘⇧H`) & Quick-Add Dictionary HUD (`⌘⇧D`)**: Spotlight-style floating panels to search/paste recent transcripts or save highlighted words in one keystroke.
+- **Multi-Strategy Paste Methods & Cursor-Aware Smart Punctuation**: choose Standard `⌘V`, AppleScript, Direct Typing (no clipboard), or **Remote Desktop / VM Hardware Typing** (Citrix, RDP, RustDesk, Parsec, UTM/VMware), plus cursor-aware spacing and mid-sentence case adjustment.
+- **macOS `AppIntents` & Shortcuts**: control EchoTune natively from Apple Shortcuts, Siri, Raycast, Stream Deck, and Action Button.
+- **Post-Transcription Shell Command Hook**: optional `/bin/zsh` pipeline (`stdin` + `ECHOTUNE_TRANSCRIPT`) with 15s timeout, plus expanded browser URL triggers for **Dia**, **Comet**, **Firefox**, and **Zen**.
+
+### Added — hardware reliability, backup & insights
+- **CoreAudio Hardware Mute, Clamshell Mic Fallback & Display-Sleep Guard**: `<1 ms` `kAudioDevicePropertyMute` output muting, automatic external-mic routing when MacBook lid is closed, and `IOPMAssertion` display-sleep prevention during active dictation.
+- **Multi-Mac Setup Backup (JSON) & History CSV Export**, plus **6-Month Consistency Heatmap & 24-Hour Peak Flow Hours** cards on the Dashboard.
+
 ## [7.5.5] — 2026-11-20
 
 Complete menu bar redesign inspired by CodexBar.

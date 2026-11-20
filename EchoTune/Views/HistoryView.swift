@@ -44,9 +44,18 @@ struct HistoryView: View {
                     Spacer()
 
                     if !historyManager.transcriptions.isEmpty {
-                        Button(role: .destructive, action: { clearAllHistory() }) {
-                            Text("Clear All")
-                                .font(.caption)
+                        HStack(spacing: 10) {
+                            Button(action: { ConfigurationBackupManager.presentHistoryCSVSavePanel() }) {
+                                Label("Export CSV", systemImage: "tablecells")
+                                    .font(.caption)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+
+                            Button(role: .destructive, action: { clearAllHistory() }) {
+                                Text("Clear All")
+                                    .font(.caption)
+                            }
                         }
                     }
                 }

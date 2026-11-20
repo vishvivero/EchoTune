@@ -74,6 +74,29 @@ extension TranscriptionEngine {
         }
     }
 
+    func routeToCustomOpenAI(_ audioData: Data, completion: @escaping (Result<String, TranscriptionError>) -> Void) {
+        let settings = AppSettings.shared
+        Task {
+            do {
+                let language = settings.autoDetectLanguage ? nil : settings.preferredLanguage.components(separatedBy: "-").first
+                let text = try await CustomOpenAICompatibleService.shared.transcribeAudio(
+                    audioData: audioData,
+                    baseURL: settings.customOpenAIBaseURL,
+                    modelID: settings.customOpenAISTTModelID,
+                    language: language,
+                    apiKey: settings.customOpenAIAPIKey
+                )
+                await MainActor.run {
+                    completion(.success(self.processText(text)))
+                }
+            } catch {
+                await MainActor.run {
+                    completion(.failure(.recognitionError(error)))
+                }
+            }
+        }
+    }
+
     @available(macOS 14.0, *)
     func routeToParakeet(_ audioData: Data, selectedModel: String, completion: @escaping (Result<String, TranscriptionError>) -> Void) {
         guard let model = ModelManager.shared.availableModels.first(where: { $0.id == selectedModel }) else {

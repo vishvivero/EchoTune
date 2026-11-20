@@ -200,6 +200,9 @@ struct HomeContentView: View {
                 // Usage Graph
                 UsageGraphView(stats: stats)
 
+                // 6-Month Consistency Heatmap & Peak Flow Hours (#18)
+                DashboardInsightsCardsView()
+
                 // Recent Transcriptions Section
                 if !historyManager.transcriptions.isEmpty {
                     VStack(alignment: .leading, spacing: 16) {

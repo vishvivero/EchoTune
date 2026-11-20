@@ -92,6 +92,7 @@ extension AppCoordinator {
         resetCurrentProcessingState()
         // The session is finished; the next recording freezes a fresh engine.
         activeRecordingSession = nil
+        activeVoiceTransformSelection = nil
     }
 
     private func transcriptionProviderName(for model: AIModel) -> String {
@@ -275,6 +276,44 @@ extension AppCoordinator {
         // Count trial usage only on non-empty, valid transcriptions
         if !licenseManager.isPro {
             licenseManager.incrementTrialUsage()
+        }
+
+        // Selected-Text Voice Transform Mode (#2): apply spoken command to highlighted selection
+        if let selectionToTransform = activeVoiceTransformSelection {
+            activeVoiceTransformSelection = nil
+            appState.recordingStatusDetail = "✨ Transforming selection…"
+            let spokenCommand = self.processTranscription(transcribedText).trimmingCharacters(in: .whitespacesAndNewlines)
+            Task {
+                do {
+                    let transformed = try await AIEnhancementEngine.shared.transformSelectedText(
+                        selectionToTransform,
+                        instruction: spokenCommand
+                    )
+                    await MainActor.run {
+                        self.insertTextWithAutoSend(
+                            transformed,
+                            recordingDuration: recordingDuration,
+                            originalText: transcription.originalText,
+                            translatedText: nil,
+                            detectedLanguage: transcription.detectedLanguage,
+                            rawTranscriptionText: spokenCommand,
+                            proposalSourceText: nil
+                        )
+                    }
+                } catch {
+                    await MainActor.run {
+                        self.notificationManager.showNotification(
+                            title: "Selection Transform Failed",
+                            body: error.localizedDescription,
+                            sound: false
+                        )
+                        self.appState.recordingState = .idle
+                        self.appState.recordingStatusDetail = nil
+                        self.clearCurrentProcessingState()
+                    }
+                }
+            }
+            return
         }
 
         appState.recordingStatusDetail = "Cleaning transcript..."
@@ -486,6 +525,15 @@ extension AppCoordinator {
             detectedLanguage: detectedLanguage,
             rawTranscriptionText: rawTranscriptionText ?? processedText,
             processingMetadata: processingMetadata
+        )
+
+        // Custom Shell Command Output Delivery (#14) — Power Mode command or global command
+        let modeShellCmd = PowerModeManager.shared.currentPowerMode?.customShellCommand
+        let globalShellCmd = UserDefaults.standard.string(forKey: CustomCommandRunner.globalCommandDefaultsKey)
+        CustomCommandRunner.runIfConfigured(
+            command: (modeShellCmd?.isEmpty == false) ? modeShellCmd : globalShellCmd,
+            transcript: processedText,
+            rawTranscript: rawTranscriptionText ?? processedText
         )
 
         // Local Personal Operating Model — record what was said, with which
@@ -751,11 +799,11 @@ extension AppCoordinator {
     // MARK: - Text Processing
 
     func processTranscription(_ text: String) -> String {
-        var processed = text
+        var processed = FillerWordManager.shared.clean(text)
 
         // Apply dictionary transformations (word replacements + correct
-        // spellings). With decoder-side biasing removed this is the vocabulary
-        // mechanism, so it honours the same user toggle.
+        // spellings + phonetic matching). With decoder-side biasing removed
+        // this is the vocabulary mechanism, so it honours the same user toggle.
         if settings.vocabularyBiasingEnabled {
             processed = DictionaryManager.shared.process(text: processed)
         }

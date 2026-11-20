@@ -34,6 +34,7 @@ struct PowerMode: Identifiable, Codable, Equatable {
     // Behavior settings
     var autoSendEnabled: Bool
     var useShiftReturn: Bool                 // If true, sends Shift+Return instead of Return
+    var customShellCommand: String? = nil    // Optional post-transcription shell command
 
     // Metadata
     var dateCreated: Date
@@ -55,7 +56,8 @@ struct PowerMode: Identifiable, Codable, Equatable {
          enhancementModel: String? = nil,
          customEnhancementPrompt: String? = nil,
          autoSendEnabled: Bool = false,
-         useShiftReturn: Bool = false) {
+         useShiftReturn: Bool = false,
+         customShellCommand: String? = nil) {
 
         self.id = id
         self.name = name
@@ -73,6 +75,7 @@ struct PowerMode: Identifiable, Codable, Equatable {
         self.customEnhancementPrompt = customEnhancementPrompt
         self.autoSendEnabled = autoSendEnabled
         self.useShiftReturn = useShiftReturn
+        self.customShellCommand = customShellCommand
         self.dateCreated = Date()
         self.dateModified = Date()
         self.useCount = 0

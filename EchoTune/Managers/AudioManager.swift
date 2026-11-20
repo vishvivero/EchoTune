@@ -186,6 +186,7 @@ class AudioManager: NSObject, ObservableObject {
     /// Removes the tap and stops the engine so a failed start cannot leave the
     /// microphone open or a stale tap installed.
     private func teardownAfterFailedStart() {
+        ScreenSleepPreventer.shared.endPreventingDisplaySleep()
         audioEngine?.inputNode.removeTap(onBus: 0)
         audioEngine?.stop()
         audioEngine = nil
@@ -200,6 +201,11 @@ class AudioManager: NSObject, ObservableObject {
             debugLog("⚠️ Already recording, ignoring start request")
             return .alreadyRecording
         }
+
+        // Prevent display sleep/screen saver while dictation is active, and
+        // route away from muffled built-in mics if MacBook lid is closed.
+        ScreenSleepPreventer.shared.beginPreventingDisplaySleep()
+        ensureClamshellSafeInputDevice()
 
         // Clean up any existing audio engine first
         if let existingEngine = audioEngine, existingEngine.isRunning {
@@ -442,10 +448,11 @@ class AudioManager: NSObject, ObservableObject {
             self.durationTimer = nil
         }
 
-        // Stop recording
+        // Stop recording & release display-sleep assertion
         audioEngine.inputNode.removeTap(onBus: 0)
         audioEngine.stop()
         isRecording = false
+        ScreenSleepPreventer.shared.endPreventingDisplaySleep()
 
         // Flush the dedicated Whisper conversion stream before the caller
         // starts finalisation, otherwise the final converted buffers could

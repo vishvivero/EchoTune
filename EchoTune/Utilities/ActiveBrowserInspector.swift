@@ -8,21 +8,16 @@
 //
 
 import AppKit
+import ApplicationServices
 
 enum ActiveBrowserInspector {
 
-    /// How to ask a given browser for its current tab URL over AppleScript.
     private enum TabQuery {
-        /// Chromium lineage: `active tab of front window`.
         case chromium(scriptName: String)
-        /// WebKit lineage (Safari and friends): `front document`.
         case webKit(scriptName: String)
-        /// Browser exposes no scripting interface for tabs.
-        case unsupported
+        case accessibilityAddressBar
     }
 
-    /// Bundle identifiers are plain platform facts; the mapping decides which
-    /// scripting dialect (if any) each browser speaks.
     private static let knownBrowsers: [String: TabQuery] = [
         "com.apple.Safari": .webKit(scriptName: "Safari"),
         "com.kagi.kagimacOS": .webKit(scriptName: "Orion"),
@@ -30,47 +25,104 @@ enum ActiveBrowserInspector {
         "com.brave.Browser": .chromium(scriptName: "Brave Browser"),
         "com.microsoft.edgemac": .chromium(scriptName: "Microsoft Edge"),
         "company.thebrowser.Browser": .chromium(scriptName: "Arc"),
+        "company.thebrowser.dia": .chromium(scriptName: "Dia"),
+        "ai.perplexity.comet": .chromium(scriptName: "Comet"),
         "com.operasoftware.Opera": .chromium(scriptName: "Opera"),
         "com.vivaldi.Vivaldi": .chromium(scriptName: "Vivaldi"),
         "ru.yandex.desktop.yandex-browser": .chromium(scriptName: "Yandex"),
-        "org.mozilla.firefox": .unsupported,
-        "io.github.zen-browser.app": .unsupported,
+        "org.mozilla.firefox": .accessibilityAddressBar,
+        "org.mozilla.firefoxdeveloperedition": .accessibilityAddressBar,
+        "app.zen-browser.zen": .accessibilityAddressBar,
+        "io.github.zen-browser.app": .accessibilityAddressBar,
     ]
 
-    /// Whether the given bundle identifier belongs to a known web browser.
     static func isBrowser(_ bundleIdentifier: String) -> Bool {
         knownBrowsers[bundleIdentifier] != nil
     }
 
-    /// The URL of the active tab in the frontmost app, when that app is a
-    /// scriptable browser. Returns nil for non-browsers, unscriptable
-    /// browsers, or when the user has denied Apple Events permission.
     static func frontmostTabURL() -> URL? {
-        guard let bundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+        guard let frontApp = NSWorkspace.shared.frontmostApplication,
+              let bundleID = frontApp.bundleIdentifier,
               let query = knownBrowsers[bundleID] else {
             return nil
         }
 
-        let source: String
         switch query {
         case .chromium(let name):
-            source = "tell application \"\(name)\" to return URL of active tab of front window"
+            return runTabAppleScript("tell application \"\(name)\" to return URL of active tab of front window")
         case .webKit(let name):
-            source = "tell application \"\(name)\" to return URL of front document"
-        case .unsupported:
-            return nil
+            return runTabAppleScript("tell application \"\(name)\" to return URL of front document")
+        case .accessibilityAddressBar:
+            return readURLViaAccessibility(pid: frontApp.processIdentifier)
         }
+    }
 
+    private static func runTabAppleScript(_ source: String) -> URL? {
         var scriptError: NSDictionary?
         guard let script = NSAppleScript(source: source) else { return nil }
         let output = script.executeAndReturnError(&scriptError)
+        if scriptError != nil { return nil }
+        guard let urlString = output.stringValue, !urlString.isEmpty else { return nil }
+        return normalizedURL(from: urlString)
+    }
 
-        if let scriptError {
-            debugLog("🌐 Tab URL query failed: \(scriptError)")
+    /// Best-effort AX URL bar reader for Gecko browsers (Firefox, Zen) that lack AppleScript dictionaries.
+    private static func readURLViaAccessibility(pid: pid_t) -> URL? {
+        guard AXIsProcessTrusted() else { return nil }
+        let appElement = AXUIElementCreateApplication(pid)
+        var windowRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(appElement, kAXFocusedWindowAttribute as CFString, &windowRef) == .success,
+              let win = windowRef,
+              CFGetTypeID(win) == AXUIElementGetTypeID() else {
             return nil
         }
+        let windowElement = unsafeBitCast(win, to: AXUIElement.self)
 
-        guard let urlString = output.stringValue, !urlString.isEmpty else { return nil }
-        return URL(string: urlString)
+        // Check AXDocument attribute first (exposed by several Gecko builds)
+        var docRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(windowElement, kAXDocumentAttribute as CFString, &docRef) == .success,
+           let docStr = docRef as? String,
+           let url = normalizedURL(from: docStr) {
+            return url
+        }
+
+        // Shallow BFS (max 60 nodes) looking for a toolbar text field holding a domain/URL
+        var queue: [AXUIElement] = [windowElement]
+        var visited = 0
+        while !queue.isEmpty && visited < 60 {
+            let current = queue.removeFirst()
+            visited += 1
+
+            var roleRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(current, kAXRoleAttribute as CFString, &roleRef) == .success,
+               let role = roleRef as? String,
+               (role == kAXTextFieldRole as String || role == "AXComboBox") {
+                var valRef: CFTypeRef?
+                if AXUIElementCopyAttributeValue(current, kAXValueAttribute as CFString, &valRef) == .success,
+                   let val = valRef as? String,
+                   let url = normalizedURL(from: val) {
+                    return url
+                }
+            }
+
+            var childrenRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(current, kAXChildrenAttribute as CFString, &childrenRef) == .success,
+               let children = childrenRef as? [AXUIElement] {
+                queue.append(contentsOf: children.prefix(12))
+            }
+        }
+        return nil
+    }
+
+    static func normalizedURL(from raw: String) -> URL? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.contains(" ") else { return nil }
+        if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") {
+            return URL(string: trimmed)
+        }
+        if trimmed.contains(".") && !trimmed.hasPrefix("about:") {
+            return URL(string: "https://\(trimmed)")
+        }
+        return nil
     }
 }

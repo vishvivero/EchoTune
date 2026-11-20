@@ -62,6 +62,14 @@ struct AIAutomationSettingsView: View {
                                     Label("Free — no key needed. Includes a daily fair-use allowance.", systemImage: "sparkles")
                                         .font(.caption)
                                         .foregroundColor(.secondary)
+                                case .appleOnDevice:
+                                    Label("100% on-device via Apple Intelligence Neural Engine — zero network, zero API key.", systemImage: "apple.intelligence")
+                                        .font(.caption)
+                                        .foregroundColor(.green)
+                                case .customOpenAI:
+                                    Label("Uses your Custom OpenAI-Compatible endpoint configured in Settings › AI & Models.", systemImage: "network")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
                                 case .groq, .google, .openai:
                                     VStack(alignment: .leading, spacing: 4) {
                                         Label("Uses your own \(model.provider.displayName) API key (Settings › AI Models).", systemImage: "key")
@@ -122,6 +130,25 @@ struct AIAutomationSettingsView: View {
                     Toggle("Auto-switch profile based on active application", isOn: $powerModeManager.isAutoSwitchEnabled)
                         .toggleStyle(.switch)
                         .disabled(!powerModeManager.isEnabled)
+
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Post-Transcription Shell Command (Optional)")
+                            .font(.subheadline.weight(.medium))
+                        TextField(
+                            "e.g. cat >> ~/Notes/dictation.md (receives stdin & $ECHOTUNE_TRANSCRIPT)",
+                            text: Binding(
+                                get: { UserDefaults.standard.string(forKey: CustomCommandRunner.globalCommandDefaultsKey) ?? "" },
+                                set: { UserDefaults.standard.set($0, forKey: CustomCommandRunner.globalCommandDefaultsKey) }
+                            )
+                        )
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12, design: .monospaced))
+                        Text("Runs `/bin/zsh -lc` asynchronously after transcription (15s timeout). Leave blank to disable.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
                 .padding()
                 .background(Color.primary.opacity(0.02))

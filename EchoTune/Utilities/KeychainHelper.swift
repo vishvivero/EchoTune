@@ -10,8 +10,18 @@ import Security
 
 struct KeychainHelper {
     private static let service = "com.echotune.EchoTune"
-    
+    private static var testMemoryStore: [String: String] = [:]
+
+    private static var isTestHost: Bool {
+        let env = ProcessInfo.processInfo.environment
+        return env["XCTestConfigurationFilePath"] != nil || env["XCTestSessionIdentifier"] != nil
+    }
+
     static func save(_ value: String, forKey key: String) {
+        if isTestHost {
+            testMemoryStore[key] = value
+            return
+        }
         guard let data = value.data(using: .utf8) else { return }
         
         // Delete existing item first
@@ -34,6 +44,9 @@ struct KeychainHelper {
     }
     
     static func load(forKey key: String) -> String {
+        if isTestHost {
+            return testMemoryStore[key] ?? ""
+        }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -55,6 +68,10 @@ struct KeychainHelper {
     }
     
     static func delete(forKey key: String) {
+        if isTestHost {
+            testMemoryStore.removeValue(forKey: key)
+            return
+        }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

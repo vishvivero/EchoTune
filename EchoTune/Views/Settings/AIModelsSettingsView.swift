@@ -116,6 +116,37 @@ struct AIModelsSettingsView: View {
                 .background(Color.primary.opacity(0.02))
                 .cornerRadius(14)
                 .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.06), lineWidth: 1))
+
+                // Section 4: Custom OpenAI-Compatible Endpoint (#19)
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Custom OpenAI-Compatible Endpoint")
+                        .font(.title3)
+                        .fontWeight(.semibold)
+
+                    Text("Connect LM Studio, OpenRouter, vLLM, Jan, Ollama HTTP, or a self-hosted faster-whisper / whisper.cpp server.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    TextField("Base URL (e.g. http://localhost:1234/v1 or https://openrouter.ai/api/v1)", text: $settings.customOpenAIBaseURL)
+                        .textFieldStyle(.roundedBorder)
+
+                    HStack(spacing: 12) {
+                        TextField("Chat Model ID (e.g. qwen2.5:7b)", text: $settings.customOpenAIModelID)
+                            .textFieldStyle(.roundedBorder)
+                        TextField("STT Model ID (e.g. whisper-1)", text: $settings.customOpenAISTTModelID)
+                            .textFieldStyle(.roundedBorder)
+                    }
+
+                    APIKeyField(
+                        title: "API Key (optional for localhost)",
+                        placeholder: "sk-… (leave empty for local LM Studio / Ollama)",
+                        text: $settings.customOpenAIAPIKey
+                    )
+                }
+                .padding()
+                .background(Color.primary.opacity(0.02))
+                .cornerRadius(14)
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.06), lineWidth: 1))
             }
             .padding(.bottom, 20)
         }

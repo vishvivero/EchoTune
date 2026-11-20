@@ -189,6 +189,10 @@ class AppCoordinator: ObservableObject {
     // Audio retention: store last recorded audio data for saving alongside transcription
     var lastRecordedAudioData: Data?
 
+    /// Non-nil when the user double-tapped the shortcut with highlighted text in
+    /// the active app to run Selected-Text Voice Transform / Command Mode (#2).
+    var activeVoiceTransformSelection: String? = nil
+
     // Pipeline audit state for the current transcription run
     var currentProcessingMetadata = TranscriptionProcessingMetadata()
     var recordingStartedAt: Date?
@@ -273,6 +277,12 @@ class AppCoordinator: ObservableObject {
             }
 
             if AppSettings.shared.recordingMode == .pushToTalk {
+                // If latched in Voice Transform mode, pressing the shortcut stops and transforms
+                if self.activeVoiceTransformSelection != nil && self.appState.recordingState == .recording {
+                    self.gestureConsumedRelease = true
+                    self.toggleDictation()
+                    return
+                }
                 // A second press inside the double-press window consumes the
                 // gesture: no new dictation starts, the short recording from
                 // the first press is discarded, and the double-press action runs.
@@ -297,12 +307,15 @@ class AppCoordinator: ObservableObject {
 
         shortcutManager.onShortcutReleased = { [weak self] in
             guard let self = self else { return }
-            // Push-to-talk: key up stops recording
+            // Push-to-talk: key up stops recording (unless in latch-style Voice Transform mode)
             if AppSettings.shared.recordingMode == .pushToTalk {
-                // The release after a double-press belongs to that gesture.
                 if self.gestureConsumedRelease {
                     self.gestureConsumedRelease = false
                     self.gestureLastPressAt = nil
+                    return
+                }
+                if self.activeVoiceTransformSelection != nil {
+                    // Voice Transform mode stays latched until the next single press stops it
                     return
                 }
                 if self.appState.recordingState == .recording {
@@ -338,24 +351,29 @@ class AppCoordinator: ObservableObject {
         debugLog("   Current shortcut: \(shortcutManager.getCurrentShortcutString())")
     }
 
-    /// Double-press action. Long-term this routes to an agent/command mode
-    /// (Speakly-style double-tap); for now it discards the blip recording
-    /// quietly and brings the EchoTune dashboard to the front.
+    /// Double-press action (#2 + #12):
+    /// - If text is highlighted in the active app, latches into **Voice Transform / Edit Mode**
+    ///   so the user can speak instructions ("make this shorter", "translate to French")
+    ///   and replace the selection in place.
+    /// - Otherwise discards the blip recording quietly and opens the Quick History HUD.
     private func handleDoublePressGesture() {
+        gestureLastPressAt = nil
+        if let selected = SelectedTextService.shared.readSelectedTextViaAX(), !selected.isEmpty {
+            debugLog("✨ Double-press with selected text (\(selected.count) chars) — entering Voice Transform mode")
+            activeVoiceTransformSelection = selected
+            appState.recordingStatusDetail = "✨ Speak edit command for selection (press shortcut to finish)…"
+            if appState.recordingState == .idle {
+                startDictation()
+            }
+            return
+        }
+
         if appState.recordingState == .recording {
             debugLog("⌨️✌️ Discarding double-press blip recording quietly")
             suppressNextNoSpeechNotice = true
             toggleDictation()
         }
-        gestureLastPressAt = nil
-        NSApp.activate(ignoringOtherApps: true)
-        if let mainWindow = NSApp.windows.first(where: { window in
-            window.isVisible && window.canBecomeKey
-        }) {
-            mainWindow.makeKeyAndOrderFront(nil)
-            mainWindow.orderFrontRegardless()
-        }
-        debugLog("⌨️✌️ Double-press action complete (dashboard focused)")
+        QuickHistoryPanelController.shared.toggle()
     }
 
     /// Called after onboarding completes (or on launch if already done).
@@ -603,6 +621,8 @@ class AppCoordinator: ObservableObject {
                 RecordingIndicatorWindow.shared.show()
             case .mini:
                 MiniRecorderWindow.shared.show()
+            case .notch:
+                NotchRecorderWindow.shared.show()
             }
         }
     }
@@ -612,6 +632,7 @@ class AppCoordinator: ObservableObject {
         DispatchQueue.main.async {
             RecordingIndicatorWindow.shared.hide()
             MiniRecorderWindow.shared.hide()
+            NotchRecorderWindow.shared.hide()
         }
     }
 

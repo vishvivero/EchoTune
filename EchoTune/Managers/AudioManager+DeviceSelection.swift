@@ -170,4 +170,19 @@ extension AudioManager {
             debugLog("❌ Failed to set audio input device: \(status)")
         }
     }
+
+    /// When a MacBook lid is closed (clamshell mode) and the active default mic is
+    /// the muffled built-in MacBook microphone, automatically route to a connected
+    /// external/Bluetooth/USB/Display microphone if one is available.
+    func ensureClamshellSafeInputDevice() {
+        guard ClamshellStateMonitor.shared.isLidClosed else { return }
+        let devices = getAvailableInputDevices()
+        guard let active = devices.first(where: { $0.isDefault }),
+              active.type == "Internal",
+              let external = devices.first(where: { $0.type != "Internal" }) else {
+            return
+        }
+        debugLog("💻 Clamshell closed with internal mic active — auto-routing to \(external.name)")
+        selectAudioDevice(id: external.id)
+    }
 }

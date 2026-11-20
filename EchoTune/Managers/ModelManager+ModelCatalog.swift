@@ -149,6 +149,21 @@ extension ModelManager {
                 isBuiltIn: false,
                 backend: .deepgram
             ),
+
+            AIModel(
+                id: "custom-openai-stt",
+                name: "Custom OpenAI-Compatible STT",
+                size: 0,
+                description: "Transcribe via any OpenAI-compatible /v1/audio/transcriptions endpoint (faster-whisper, whisper.cpp server, OpenRouter, etc.).",
+                language: "Multilingual",
+                url: URL(string: "https://platform.openai.com/docs/api-reference/audio")!,
+                type: .fast,
+                category: .cloud,
+                speedRating: 5,
+                accuracyRating: 5,
+                isBuiltIn: false,
+                backend: .openAI
+            ),
         ]
     }
 }
