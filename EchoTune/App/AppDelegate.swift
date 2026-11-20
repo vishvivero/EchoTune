@@ -94,7 +94,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // where macOS restores a previous larger frame.
         if onboardingState.hasCompletedOnboarding {
             DispatchQueue.main.async { [weak self] in
-                self?.applyDashboardWindowSize()
+                self?.showDashboard(item: .home)
             }
         }
 
@@ -128,6 +128,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         // Don't quit when windows close (menu bar app)
         return false
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if onboardingState.hasCompletedOnboarding {
+            showDashboard(item: .home)
+        } else {
+            showOnboarding()
+        }
+        return true
     }
 
     func showOnboarding() {
