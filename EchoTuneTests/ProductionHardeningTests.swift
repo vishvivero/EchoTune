@@ -95,9 +95,10 @@ struct ProductionHardeningTests {
     }
 
     @Test func menuBarIconRendererProducesCrispIconsForAllStates() {
-        let expected = NSSize(width: 22, height: 22)
+        let expected = NSSize(width: 20, height: 20)
         let idle = MenuBarIconRenderer.render(state: .idle)
         #expect(idle.size == expected)
+        #expect(idle.isTemplate == true)
         #expect(!idle.representations.isEmpty)
 
         let loading = MenuBarIconRenderer.render(state: .loading(progress: 0.45))

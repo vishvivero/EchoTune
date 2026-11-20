@@ -2,12 +2,30 @@
 //  AppDelegate.swift
 //  EchoTune
 //
-//  Application Delegate, Single-Instance Window Lifecycle & Menu Bar Setup
+//  Application Delegate, Foreground Window Activation & Menu Bar Lifecycle
 //
 
 import AppKit
 import SwiftUI
 import UserNotifications
+
+/// Standard window subclass that guarantees foreground app activation whenever
+/// clicked, ensuring Red (✕), Yellow (−), and Green (+) traffic-light buttons
+/// are always colored and responsive on the very first click.
+final class ActivatingStandardWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown && !NSApp.isActive {
+            if NSApp.activationPolicy() != .regular {
+                NSApp.setActivationPolicy(.regular)
+            }
+            NSApp.activate()
+        }
+        super.sendEvent(event)
+    }
+}
 
 class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate, NSWindowDelegate {
     var statusBarController: StatusBarController?
@@ -69,7 +87,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         NotificationManager.shared.setupNotificationCategories()
 
         if !isTestHost {
-            if !onboardingState.hasCompletedOnboarding {
+            if onboardingState.hasCompletedOnboarding {
+                // Start cleanly in menu-bar (.accessory) mode without opening an
+                // unsolicited background window; reopening from Finder/Spotlight
+                // or clicking "Open Dashboard" promotes to .regular with full
+                // Red/Yellow/Green window controls.
+                NSApp.setActivationPolicy(.accessory)
+            } else {
                 showOnboarding()
             }
         } else if args.contains("--ui-test-force-onboarding") {
@@ -116,22 +140,48 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {}
 
-    // MARK: - Window Activation Policy Sync
+    // MARK: - Window Activation & Policy Lifecycle
 
-    /// Activates EchoTune and fronts a standard window WITHOUT toggling
-    /// `NSApp.setActivationPolicy(.regular)` ↔ `.accessory` at runtime —
-    /// toggling activationPolicy on macOS 26 Tahoe detaches ControlCenter's
-    /// `NSSceneStatusItem` click forwarding! Using `NSApp.activate()` directly
-    /// keeps the menu bar icon 100% clickable AND makes the window active so
-    /// its red Close (✕) button works on the very first click.
     private func activateAndPresent(_ window: NSWindow) {
+        if NSApp.activationPolicy() != .regular {
+            NSApp.setActivationPolicy(.regular)
+        }
         NSApp.activate()
         window.makeKeyAndOrderFront(nil)
     }
 
+    func windowDidBecomeKey(_ notification: Notification) {
+        if NSApp.activationPolicy() != .regular {
+            NSApp.setActivationPolicy(.regular)
+        }
+        if !NSApp.isActive {
+            NSApp.activate()
+        }
+    }
+
     func windowWillClose(_ notification: Notification) {
-        // Intentionally keep activationPolicy untouched so ControlCenter's
-        // NSSceneStatusItem scene never detaches on macOS 26 Tahoe.
+        let closing = notification.object as? NSWindow
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let managed: [NSWindow?] = [
+                self.dashboardWindow,
+                self.settingsWindow,
+                self.onboardingWindow,
+                self.echoProfileWindowController?.window,
+                self.commitmentsWindowController?.window
+            ]
+            let anyStillVisibleOrMiniaturized = managed.compactMap { $0 }.contains { win in
+                win !== closing && (win.isVisible || win.isMiniaturized)
+            }
+            if !anyStillVisibleOrMiniaturized && self.onboardingState.hasCompletedOnboarding {
+                if NSApp.activationPolicy() != .accessory {
+                    NSApp.setActivationPolicy(.accessory)
+                    // Re-vend NSStatusItem after returning to .accessory so macOS 26
+                    // Tahoe's Control Center scene keeps click forwarding alive!
+                    self.statusBarController?.rebuildStatusItemAfterPolicyChange()
+                }
+            }
+        }
     }
 
     // MARK: - Primary Windows
@@ -148,9 +198,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             }
 
             let hostingController = NSHostingController(rootView: onboardingView)
-            let win = NSWindow(contentViewController: hostingController)
+            let win = ActivatingStandardWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 700, height: 650),
+                styleMask: [.titled, .closable, .miniaturizable],
+                backing: .buffered,
+                defer: false
+            )
+            win.contentViewController = hostingController
             win.title = "Welcome to EchoTune"
-            win.styleMask = [.titled, .closable, .miniaturizable]
             win.titlebarAppearsTransparent = false
             win.setContentSize(NSSize(width: 700, height: 650))
             win.minSize = NSSize(width: 700, height: 650)
@@ -173,9 +228,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 .environmentObject(AppCoordinator.shared)
                 .environmentObject(AppSettings.shared)
             let hosting = NSHostingController(rootView: root)
-            let win = NSWindow(contentViewController: hosting)
+            let win = ActivatingStandardWindow(
+                contentRect: NSRect(origin: .zero, size: dashboardSize),
+                styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                backing: .buffered,
+                defer: false
+            )
+            win.contentViewController = hosting
             win.title = "EchoTune"
-            win.styleMask = [.titled, .closable, .miniaturizable, .resizable]
             win.minSize = dashboardMinimumSize
             win.setContentSize(dashboardSize)
             win.center()
@@ -185,6 +245,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
 
         if let win = dashboardWindow {
+            if win.isMiniaturized {
+                win.deminiaturize(nil)
+            }
             activateAndPresent(win)
         }
 
@@ -208,9 +271,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 .environmentObject(AppSettings.shared)
             let hostingController = NSHostingController(rootView: settingsView)
 
-            let win = NSWindow(contentViewController: hostingController)
+            let win = ActivatingStandardWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 720, height: 480),
+                styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                backing: .buffered,
+                defer: false
+            )
+            win.contentViewController = hostingController
             win.title = "EchoTune Settings"
-            win.styleMask = [.titled, .closable, .miniaturizable, .resizable]
             win.setContentSize(NSSize(width: 720, height: 480))
             win.minSize = NSSize(width: 680, height: 420)
             win.maxSize = NSSize(width: 1100, height: 800)
@@ -229,6 +297,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
 
         if let win = settingsWindow {
+            if win.isMiniaturized {
+                win.deminiaturize(nil)
+            }
             if !win.isVisible {
                 win.setContentSize(NSSize(width: 720, height: 480))
                 win.center()
