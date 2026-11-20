@@ -67,9 +67,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             }
         }
 
-        // CodexBar vending sequence: create at 0 width, attach stable identity,
-        // then set full squareLength so ControlCenter sizes the slot cleanly.
-        statusItem = NSStatusBar.system.statusItem(withLength: 0)
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         rootMenu = NSMenu(title: "EchoTune")
         rootMenu.autoenablesItems = false
         rootMenu.minimumWidth = Self.menuWidth
@@ -77,12 +75,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         super.init()
 
         statusItem.autosaveName = "EchoTuneStatusItem"
-        statusItem.length = NSStatusItem.squareLength
         rootMenu.delegate = self
         statusItem.menu = rootMenu
 
         if let button = statusItem.button {
-            button.imageScaling = .scaleProportionallyDown
+            button.imageScaling = .scaleNone
             button.imagePosition = .imageOnly
             button.font = NSFont.monospacedDigitSystemFont(ofSize: 11.5, weight: .medium)
             button.setAccessibilityTitle("EchoTune")
@@ -144,7 +141,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         case .recording:
             needsTimer = true
             let durationText = AudioManager.formatDuration(AudioManager.shared.recordingDuration)
-            statusItem.length = NSStatusItem.variableLength
             button.imagePosition = .imageLeading
             button.image = MenuBarIconRenderer.render(state: .recording(level: AudioManager.shared.audioLevel))
             button.title = " \(durationText)"
@@ -152,7 +148,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
         case .processing:
             needsTimer = true
-            statusItem.length = NSStatusItem.squareLength
             button.imagePosition = .imageOnly
             button.image = MenuBarIconRenderer.render(state: .processing(phase: animationPhase))
             button.title = ""
@@ -161,7 +156,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         case .loadingModel:
             needsTimer = true
             let progress = max(WhisperEngine.shared.loadingProgress, ParakeetEngine.shared.loadingProgress, 0.15)
-            statusItem.length = NSStatusItem.squareLength
             button.imagePosition = .imageOnly
             button.image = MenuBarIconRenderer.render(state: .loading(progress: progress))
             button.title = ""
@@ -169,14 +163,12 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
         case .error:
             needsTimer = false
-            statusItem.length = NSStatusItem.squareLength
             button.imagePosition = .imageOnly
             button.image = MenuBarIconRenderer.render(state: .error)
             button.title = ""
             button.contentTintColor = nil
 
         case .idle:
-            statusItem.length = NSStatusItem.squareLength
             button.imagePosition = .imageOnly
             if modelManager.isDownloading {
                 needsTimer = false

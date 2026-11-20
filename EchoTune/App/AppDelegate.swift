@@ -69,11 +69,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         NotificationManager.shared.setupNotificationCategories()
 
         if !isTestHost {
-            if onboardingState.hasCompletedOnboarding {
-                // Start in menu-bar (.accessory) mode; only open Dashboard when
-                // user clicks the app in Finder/Spotlight or chooses Open Dashboard.
-                NSApp.setActivationPolicy(.accessory)
-            } else {
+            if !onboardingState.hasCompletedOnboarding {
                 showOnboarding()
             }
         } else if args.contains("--ui-test-force-onboarding") {
@@ -122,41 +118,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     // MARK: - Window Activation Policy Sync
 
-    /// Promotes EchoTune to `.regular` before presenting any standard window so
-    /// macOS makes the window genuinely active and its red Close (✕) button works
-    /// on the very first click.
+    /// Activates EchoTune and fronts a standard window WITHOUT toggling
+    /// `NSApp.setActivationPolicy(.regular)` ↔ `.accessory` at runtime —
+    /// toggling activationPolicy on macOS 26 Tahoe detaches ControlCenter's
+    /// `NSSceneStatusItem` click forwarding! Using `NSApp.activate()` directly
+    /// keeps the menu bar icon 100% clickable AND makes the window active so
+    /// its red Close (✕) button works on the very first click.
     private func activateAndPresent(_ window: NSWindow) {
-        if NSApp.activationPolicy() != .regular {
-            NSApp.setActivationPolicy(.regular)
-        }
         NSApp.activate()
         window.makeKeyAndOrderFront(nil)
     }
 
-    /// Demotes back to `.accessory` (menu-bar only) once all standard windows close.
-    private func syncAccessoryPolicyAfterWindowClose(closing closingWindow: NSWindow?) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            let managed: [NSWindow?] = [
-                self.dashboardWindow,
-                self.settingsWindow,
-                self.onboardingWindow,
-                self.echoProfileWindowController?.window,
-                self.commitmentsWindowController?.window
-            ]
-            let anyStillOpen = managed.compactMap { $0 }.contains { win in
-                win !== closingWindow && win.isVisible && !win.isMiniaturized
-            }
-            if !anyStillOpen && self.onboardingState.hasCompletedOnboarding {
-                NSApp.setActivationPolicy(.accessory)
-                debugLog("✓ All primary windows closed — returned to .accessory menu-bar mode")
-            }
-        }
-    }
-
     func windowWillClose(_ notification: Notification) {
-        let closing = notification.object as? NSWindow
-        syncAccessoryPolicyAfterWindowClose(closing: closing)
+        // Intentionally keep activationPolicy untouched so ControlCenter's
+        // NSSceneStatusItem scene never detaches on macOS 26 Tahoe.
     }
 
     // MARK: - Primary Windows

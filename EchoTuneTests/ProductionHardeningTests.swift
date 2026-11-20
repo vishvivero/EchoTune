@@ -98,24 +98,19 @@ struct ProductionHardeningTests {
         let expected = NSSize(width: 22, height: 22)
         let idle = MenuBarIconRenderer.render(state: .idle)
         #expect(idle.size == expected)
-        #expect(idle.isTemplate == true)
         #expect(!idle.representations.isEmpty)
 
         let loading = MenuBarIconRenderer.render(state: .loading(progress: 0.45))
         #expect(loading.size == expected)
-        #expect(loading.isTemplate == true)
 
         let recording = MenuBarIconRenderer.render(state: .recording(level: 0.6))
         #expect(recording.size == expected)
-        #expect(recording.isTemplate == true)
 
         let processing = MenuBarIconRenderer.render(state: .processing(phase: 1.2))
         #expect(processing.size == expected)
-        #expect(processing.isTemplate == true)
 
         let error = MenuBarIconRenderer.render(state: .error)
         #expect(error.size == expected)
-        #expect(error.isTemplate == true)
     }
 
     @Test func menuPresentationSwitchesTabsCleanly() {

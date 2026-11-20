@@ -2,12 +2,11 @@
 //  MenuBarIconRenderer.swift
 //  EchoTune
 //
-//  Renders a monochrome template (`isTemplate = true`) 22x22pt (@2x 44x44px
-//  concrete NSBitmapImageRep) rounded-square outline badge with a nearly
-//  transparent interior fill (`alpha = 0.06` so macOS 26 ControlCenter still
-//  hit-tests every pixel inside the square!) and the crisp EchoTune waveform
-//  logo centered inside. Renders pure white in dark/vibrant menu bars with
-//  zero color fill.
+//  Renders a pure-white, zero-color 22x22pt (@2x 44x44px concrete NSBitmapImageRep)
+//  rounded-square menu bar badge with the EchoTune waveform centered inside.
+//  Uses pure white RGB (1, 1, 1) with a subtle frosted-white interior (alpha = 0.24)
+//  so there is zero color tint while every pixel inside the square stays well
+//  above macOS 26 ControlCenter's hit-test alpha threshold.
 //
 
 import AppKit
@@ -50,49 +49,48 @@ enum MenuBarIconRenderer {
             NSGraphicsContext.current = gfx
             let ctx = gfx.cgContext
             ctx.setShouldAntialias(true)
-            drawMonochromeBadge(in: CGRect(origin: .zero, size: canvasSize), state: state, ctx: ctx)
+            drawWhiteSquareBadge(in: CGRect(origin: .zero, size: canvasSize), state: state, ctx: ctx)
         }
         NSGraphicsContext.restoreGraphicsState()
 
         let image = NSImage(size: canvasSize)
         image.addRepresentation(rep)
-        // Template mode: macOS renders black RGB pixels as pure white in the
-        // menu bar (and adapts automatically on light menu bars) — zero color!
-        image.isTemplate = true
+        image.isTemplate = false
         image.accessibilityDescription = "EchoTune"
         return image
     }
 
-    private static func drawMonochromeBadge(in rect: CGRect, state: VisualState, ctx: CGContext) {
+    private static func drawWhiteSquareBadge(in rect: CGRect, state: VisualState, ctx: CGContext) {
         let badgeRect = rect.insetBy(dx: 1.5, dy: 1.5)
         let radius: CGFloat = 4.8
 
-        // 1. Nearly invisible interior hit-test fill (alpha = 0.05): visually transparent,
-        //    yet non-zero alpha guarantees 100% click hit-testing across the whole square.
+        // 1. Subtle frosted-white interior (RGB 1,1,1 @ 0.22 alpha):
+        //    No color at all — looks like a clean translucent white glass pill
+        //    in the menu bar while giving ControlCenter a 100% solid hit-test box.
         let fillPath = CGPath(
             roundedRect: badgeRect,
             cornerWidth: radius,
             cornerHeight: radius,
             transform: nil
         )
-        ctx.setFillColor(NSColor.black.withAlphaComponent(0.05).cgColor)
+        ctx.setFillColor(CGColor(srgbRed: 1.0, green: 1.0, blue: 1.0, alpha: 0.22))
         ctx.addPath(fillPath)
         ctx.fillPath()
 
-        // 2. Crisp plain white rounded-square border
-        let strokeRect = badgeRect.insetBy(dx: 0.65, dy: 0.65)
+        // 2. Crisp pure-white rounded-square outline
+        let strokeRect = badgeRect.insetBy(dx: 0.7, dy: 0.7)
         let strokePath = CGPath(
             roundedRect: strokeRect,
             cornerWidth: radius - 0.4,
             cornerHeight: radius - 0.4,
             transform: nil
         )
-        ctx.setStrokeColor(NSColor.black.withAlphaComponent(0.92).cgColor)
-        ctx.setLineWidth(1.35)
+        ctx.setStrokeColor(CGColor(srgbRed: 1.0, green: 1.0, blue: 1.0, alpha: 0.94))
+        ctx.setLineWidth(1.4)
         ctx.addPath(strokePath)
         ctx.strokePath()
 
-        // 3. EchoTune waveform logo bars inside the rounded square
+        // 3. Pure-white EchoTune waveform logo bars centered inside
         let heights = barHeights(for: state)
         let hasBottomBar: Bool
         let bottomProgress: CGFloat
@@ -104,17 +102,17 @@ enum MenuBarIconRenderer {
             bottomProgress = 0
         }
 
-        let barWidth: CGFloat = 1.75
-        let gap: CGFloat = 1.25
+        let barWidth: CGFloat = 1.85
+        let gap: CGFloat = 1.2
         let count = heights.count
         let totalWidth = CGFloat(count) * barWidth + CGFloat(count - 1) * gap
         let startX = badgeRect.midX - totalWidth / 2.0
         let centerY = hasBottomBar ? badgeRect.midY + 1.0 : badgeRect.midY
 
-        ctx.setFillColor(NSColor.black.cgColor)
+        ctx.setFillColor(CGColor(srgbRed: 1.0, green: 1.0, blue: 1.0, alpha: 1.0))
         for (idx, rawH) in heights.enumerated() {
             let maxH: CGFloat = hasBottomBar ? 8.8 : 11.0
-            let h = max(2.6, min(maxH, rawH))
+            let h = max(2.8, min(maxH, rawH))
             let x = startX + CGFloat(idx) * (barWidth + gap)
             let y = centerY - h / 2.0
             let barRect = CGRect(x: x, y: y, width: barWidth, height: h)
@@ -128,7 +126,7 @@ enum MenuBarIconRenderer {
             ctx.fillPath()
         }
 
-        // 4. Subtle monochrome progress line inside bottom of square when loading
+        // 4. White bottom progress line when loading a model
         if hasBottomBar {
             let trackRect = CGRect(
                 x: badgeRect.minX + 3.0,
@@ -137,7 +135,7 @@ enum MenuBarIconRenderer {
                 height: 1.5
             )
             let trackPath = CGPath(roundedRect: trackRect, cornerWidth: 0.75, cornerHeight: 0.75, transform: nil)
-            ctx.setFillColor(NSColor.black.withAlphaComponent(0.28).cgColor)
+            ctx.setFillColor(CGColor(srgbRed: 1.0, green: 1.0, blue: 1.0, alpha: 0.35))
             ctx.addPath(trackPath)
             ctx.fillPath()
 
@@ -148,7 +146,7 @@ enum MenuBarIconRenderer {
                 height: trackRect.height
             )
             let fillBarPath = CGPath(roundedRect: fillRect, cornerWidth: 0.75, cornerHeight: 0.75, transform: nil)
-            ctx.setFillColor(NSColor.black.cgColor)
+            ctx.setFillColor(CGColor(srgbRed: 1.0, green: 1.0, blue: 1.0, alpha: 1.0))
             ctx.addPath(fillBarPath)
             ctx.fillPath()
         }
