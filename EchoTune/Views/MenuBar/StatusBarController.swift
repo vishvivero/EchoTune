@@ -67,7 +67,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             }
         }
 
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        // CodexBar vending sequence: create at 0 width, attach stable identity,
+        // then set full squareLength so ControlCenter sizes the slot cleanly.
+        statusItem = NSStatusBar.system.statusItem(withLength: 0)
         rootMenu = NSMenu(title: "EchoTune")
         rootMenu.autoenablesItems = false
         rootMenu.minimumWidth = Self.menuWidth
@@ -75,12 +77,13 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         super.init()
 
         statusItem.autosaveName = "EchoTuneStatusItem"
+        statusItem.length = NSStatusItem.squareLength
         rootMenu.delegate = self
         statusItem.menu = rootMenu
 
         if let button = statusItem.button {
-            button.imageScaling = .scaleNone
-            button.imagePosition = .imageLeading
+            button.imageScaling = .scaleProportionallyDown
+            button.imagePosition = .imageOnly
             button.font = NSFont.monospacedDigitSystemFont(ofSize: 11.5, weight: .medium)
             button.setAccessibilityTitle("EchoTune")
         }
@@ -141,12 +144,16 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         case .recording:
             needsTimer = true
             let durationText = AudioManager.formatDuration(AudioManager.shared.recordingDuration)
+            statusItem.length = NSStatusItem.variableLength
+            button.imagePosition = .imageLeading
             button.image = MenuBarIconRenderer.render(state: .recording(level: AudioManager.shared.audioLevel))
             button.title = " \(durationText)"
             button.contentTintColor = nil
 
         case .processing:
             needsTimer = true
+            statusItem.length = NSStatusItem.squareLength
+            button.imagePosition = .imageOnly
             button.image = MenuBarIconRenderer.render(state: .processing(phase: animationPhase))
             button.title = ""
             button.contentTintColor = nil
@@ -154,17 +161,23 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         case .loadingModel:
             needsTimer = true
             let progress = max(WhisperEngine.shared.loadingProgress, ParakeetEngine.shared.loadingProgress, 0.15)
+            statusItem.length = NSStatusItem.squareLength
+            button.imagePosition = .imageOnly
             button.image = MenuBarIconRenderer.render(state: .loading(progress: progress))
             button.title = ""
             button.contentTintColor = nil
 
         case .error:
             needsTimer = false
+            statusItem.length = NSStatusItem.squareLength
+            button.imagePosition = .imageOnly
             button.image = MenuBarIconRenderer.render(state: .error)
             button.title = ""
             button.contentTintColor = nil
 
         case .idle:
+            statusItem.length = NSStatusItem.squareLength
+            button.imagePosition = .imageOnly
             if modelManager.isDownloading {
                 needsTimer = false
                 button.image = MenuBarIconRenderer.render(state: .loading(progress: modelManager.downloadProgress))
@@ -312,41 +325,13 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
         rootMenu.addItem(.separator())
 
-        // Section 2: Workspace & Memory Windows
+        // Section 2: Dashboard + Workspace Submenu (keeps root menu compact on 13" screens)
         rootMenu.addItem(makeActionItem(
             title: "Open EchoTune Dashboard",
             symbol: "rectangle.grid.1x2",
             action: #selector(openDashboardHome)
         ))
-        rootMenu.addItem(makeActionItem(
-            title: "Echo Profile",
-            symbol: "brain.head.profile",
-            action: #selector(openEchoProfile)
-        ))
-
-        let openTaskCount = CommitmentMemoryManager.shared.commitments.filter { $0.status == .open }.count
-        let tasksTitle = openTaskCount > 0 ? "Tasks & Commitments (\(openTaskCount))" : "Tasks & Commitments"
-        rootMenu.addItem(makeActionItem(
-            title: tasksTitle,
-            symbol: "checklist",
-            action: #selector(openTasks)
-        ))
-
-        rootMenu.addItem(makeActionItem(
-            title: "Voice Notes",
-            symbol: "note.text",
-            action: #selector(openNotes)
-        ))
-        rootMenu.addItem(makeActionItem(
-            title: "Custom Dictionary",
-            symbol: "character.book.closed",
-            action: #selector(openDictionary)
-        ))
-        rootMenu.addItem(makeActionItem(
-            title: "Share Progress Card…",
-            symbol: "square.and.arrow.up",
-            action: #selector(openShareCard)
-        ))
+        rootMenu.addItem(makeWorkspaceSubmenuItem())
 
         rootMenu.addItem(.separator())
 
@@ -644,6 +629,46 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
         let parent = NSMenuItem(title: "Recent Dictations", action: nil, keyEquivalent: "")
         parent.image = symbolImage("clock.arrow.circlepath")
+        parent.submenu = submenu
+        return parent
+    }
+
+    private func makeWorkspaceSubmenuItem() -> NSMenuItem {
+        let submenu = NSMenu(title: "Workspace & Memory")
+        submenu.autoenablesItems = false
+
+        submenu.addItem(makeActionItem(
+            title: "Echo Profile",
+            symbol: "brain.head.profile",
+            action: #selector(openEchoProfile)
+        ))
+
+        let openTaskCount = CommitmentMemoryManager.shared.commitments.filter { $0.status == .open }.count
+        let tasksTitle = openTaskCount > 0 ? "Tasks & Commitments (\(openTaskCount))" : "Tasks & Commitments"
+        submenu.addItem(makeActionItem(
+            title: tasksTitle,
+            symbol: "checklist",
+            action: #selector(openTasks)
+        ))
+
+        submenu.addItem(makeActionItem(
+            title: "Voice Notes",
+            symbol: "note.text",
+            action: #selector(openNotes)
+        ))
+        submenu.addItem(makeActionItem(
+            title: "Custom Dictionary",
+            symbol: "character.book.closed",
+            action: #selector(openDictionary)
+        ))
+        submenu.addItem(makeActionItem(
+            title: "Share Progress Card…",
+            symbol: "square.and.arrow.up",
+            action: #selector(openShareCard)
+        ))
+
+        let parent = NSMenuItem(title: "Workspace & Memory", action: nil, keyEquivalent: "")
+        parent.image = symbolImage("brain.head.profile")
         parent.submenu = submenu
         return parent
     }

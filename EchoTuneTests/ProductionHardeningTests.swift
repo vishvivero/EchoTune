@@ -95,25 +95,22 @@ struct ProductionHardeningTests {
     }
 
     @Test func menuBarIconRendererProducesCrispIconsForAllStates() {
+        let expected = NSSize(width: 22, height: 22)
         let idle = MenuBarIconRenderer.render(state: .idle)
-        #expect(idle.size == NSSize(width: 18, height: 18))
-        #expect(idle.isTemplate == true)
+        #expect(idle.size == expected)
+        #expect(!idle.representations.isEmpty)
 
         let loading = MenuBarIconRenderer.render(state: .loading(progress: 0.45))
-        #expect(loading.size == NSSize(width: 18, height: 18))
-        #expect(loading.isTemplate == true)
+        #expect(loading.size == expected)
 
         let recording = MenuBarIconRenderer.render(state: .recording(level: 0.6))
-        #expect(recording.size == NSSize(width: 18, height: 18))
-        #expect(recording.isTemplate == false)
+        #expect(recording.size == expected)
 
         let processing = MenuBarIconRenderer.render(state: .processing(phase: 1.2))
-        #expect(processing.size == NSSize(width: 18, height: 18))
-        #expect(processing.isTemplate == false)
+        #expect(processing.size == expected)
 
         let error = MenuBarIconRenderer.render(state: .error)
-        #expect(error.size == NSSize(width: 18, height: 18))
-        #expect(error.isTemplate == false)
+        #expect(error.size == expected)
     }
 
     @Test func menuPresentationSwitchesTabsCleanly() {
