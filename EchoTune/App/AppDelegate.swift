@@ -115,6 +115,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         _ = EchoMemoryManager.shared
 
+        startObservingSpaceAndDisplayChanges()
+
         UNUserNotificationCenter.current().delegate = self
         NotificationManager.shared.setupNotificationCategories()
 
@@ -250,53 +252,106 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     // MARK: - On-Screen Frame Safety
 
-    /// Guarantees a managed window is actually reachable. Returns true when the frame was repaired.
+    /// Cancels a pending reachability re-check so a stale one cannot win a race.
+    private var reachabilityWorkItem: DispatchWorkItem?
+
+    /// The standard windows this delegate owns and keeps reachable.
+    private var managedWindows: [NSWindow] {
+        [dashboardWindow, settingsWindow, onboardingWindow,
+         echoProfileWindowController?.window, commitmentsWindowController?.window].compactMap { $0 }
+    }
+
+    /// Guarantees a managed window is actually reachable *and* that AppKit's idea of where it
+    /// is matches what WindowServer has on screen. Returns true when the frame was repaired.
     @discardableResult
     func keepWindowReachable(_ window: NSWindow, recenterIfUnreachable: Bool = true) -> Bool {
         guard let screen = window.screen ?? NSScreen.main ?? NSScreen.screens.first else { return false }
         let visible = screen.visibleFrame
-        var frame = window.frame
+        let appKitFrame = window.frame
+        // What WindowServer has is what the user actually sees; AppKit's model can be stale.
+        let serverFrame = spaceInspector.serverFrame(forWindowNumber: window.windowNumber)
+        let titleBarHeight = max(28, appKitFrame.height - window.contentLayoutRect.height)
 
-        // Minimum sliver of the window that must be inside visibleFrame: the full title
-        // bar height plus a wide grab area, so traffic lights and title bar drag stay usable.
-        let titleBarHeight = max(28, frame.height - window.contentLayoutRect.height)
-        let requiredWidth = min(frame.width, 260)
-        let requiredHeight = titleBarHeight + 40
+        let action = WindowFrameRepair.plan(
+            appKitFrame: appKitFrame,
+            serverFrame: serverFrame,
+            visibleFrame: visible,
+            titleBarHeight: titleBarHeight,
+            recenterIfUnreachable: recenterIfUnreachable
+        )
 
-        let hasUsableTitleBar = frame.maxY <= visible.maxY + 0.5
-            && frame.maxY >= visible.minY + requiredHeight
-            && frame.maxX >= visible.minX + requiredWidth
-            && frame.minX <= visible.maxX - requiredWidth
-
-        if hasUsableTitleBar {
+        switch action {
+        case .none:
             return false
-        }
 
-        if recenterIfUnreachable {
-            let size = NSSize(
-                width: min(frame.width, visible.width),
-                height: min(frame.height, visible.height)
-            )
-            frame.size = size
-            frame.origin = NSPoint(
-                x: visible.minX + (visible.width - size.width) / 2,
-                y: visible.minY + (visible.height - size.height) / 2
-            )
+        case .adoptServerFrame(let frame):
+            // AppKit had drifted from reality: adopt the real frame so later reachability
+            // checks (and window restoration) start from the truth.
+            spaceLog.notice("🪟 '\(window.title, privacy: .public)' out of sync with WindowServer: AppKit said \(String(describing: appKitFrame), privacy: .public), really \(String(describing: frame), privacy: .public)")
+            debugLog("🪟 Window '\(window.title)' was out of sync with WindowServer; adopting \(frame)")
+            window.setFrame(frame, display: true)
+            return true
+
+        case .recenter(let frame):
+            spaceLog.notice("🪟 Recentring unreachable window '\(window.title, privacy: .public)': \(String(describing: appKitFrame), privacy: .public) -> \(String(describing: frame), privacy: .public)")
             debugLog("🪟 Recentred off-screen window '\(window.title)' into visibleFrame \(visible)")
-        } else {
-            frame.origin.x = min(max(frame.origin.x, visible.minX), max(visible.minX, visible.maxX - requiredWidth))
-            frame.origin.y = min(max(frame.origin.y, visible.minY + requiredHeight - frame.height), visible.maxY - titleBarHeight)
-            debugLog("🪟 Clamped off-screen window '\(window.title)' back on screen")
-        }
+            window.setFrame(frame, display: true)
+            return true
 
-        window.setFrame(frame, display: true)
-        return true
+        case .clamp(let frame):
+            spaceLog.notice("🪟 Clamping window '\(window.title, privacy: .public)' back on screen: \(String(describing: appKitFrame), privacy: .public) -> \(String(describing: frame), privacy: .public)")
+            debugLog("🪟 Clamped off-screen window '\(window.title)' back on screen")
+            window.setFrame(frame, display: true)
+            return true
+        }
+    }
+
+    /// Re-checks a window after a move, but never while the user is still holding the mouse:
+    /// WindowServer owns the frame during a drag, so a competing `setFrame` fights the user.
+    private func scheduleReachabilityCheck(for window: NSWindow) {
+        reachabilityWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self, weak window] in
+            guard let self, let window, window.isVisible else { return }
+            guard NSEvent.pressedMouseButtons == 0 else {
+                self.scheduleReachabilityCheck(for: window)
+                return
+            }
+            _ = self.keepWindowReachable(window, recenterIfUnreachable: false)
+        }
+        reachabilityWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: item)
+    }
+
+    /// macOS relocates windows behind AppKit's back on Space changes, display wake and
+    /// resolution changes — exactly the events that stranded the Dashboard before.
+    private func startObservingSpaceAndDisplayChanges() {
+        let workspaceCentre = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.activeSpaceDidChangeNotification,
+                     NSWorkspace.screensDidWakeNotification,
+                     NSWorkspace.didWakeNotification] {
+            workspaceCentre.addObserver(self, selector: #selector(workspaceDidChange), name: name, object: nil)
+        }
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(workspaceDidChange),
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
+    }
+
+    @objc private func workspaceDidChange(_ notification: Notification) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            for window in self.managedWindows where window.isVisible {
+                self.keepWindowReachable(window)
+            }
+        }
     }
 
     func windowDidMove(_ notification: Notification) {
         guard let window = notification.object as? NSWindow, window.isVisible else { return }
         // Only rescue a window that has drifted so far it can no longer be grabbed.
-        _ = keepWindowReachable(window, recenterIfUnreachable: false)
+        scheduleReachabilityCheck(for: window)
     }
 
     func windowDidChangeScreen(_ notification: Notification) {

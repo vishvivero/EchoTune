@@ -142,17 +142,39 @@ launch_app() {
 
 check() {
   build_tools
-  "$TOOLS_DIR/window-space-check" "${1:-EchoTune}" ${2:-}
+  "$TOOLS_DIR/window-space-check" "$@"
+}
+
+# Clicks must be posted by this shell: macOS grants Accessibility to the responsible
+# process, so osascript spawned here is trusted whereas one spawned by the freshly built
+# helper is not. `click at` hit-tests like a real mouse click and reports what it hit.
+real_click_check() {
+  local app="${1:-EchoTune}" rc=0 before after point result
+  before=$("$TOOLS_DIR/window-space-check" "$app" --window-count 2>/dev/null | sed -n 's/^windows=//p')
+  point=$("$TOOLS_DIR/window-space-check" "$app" --print-close-point 2>/dev/null | sed -n 's/^close_point=//p')
+  if [[ -z "${point:-}" || -z "${before:-}" || "$before" == "0" ]]; then
+    echo "  info  real-click: nothing to click (windows=${before:-?}, point=${point:-none})"
+    return 0
+  fi
+  result=$(osascript -e "tell application \"System Events\" to click at {$point}" 2>&1)
+  sleep 1.5
+  after=$("$TOOLS_DIR/window-space-check" "$app" --window-count 2>/dev/null | sed -n 's/^windows=//p')
+  echo "  real click at ($point) -> ${result}"
+  echo "  windows ${before} -> ${after:-?}"
+  if grep -q "$app" <<<"$result"; then echo "  ok   real-click-reaches-app"; else echo "  FAIL real-click-reaches-app"; rc=1; fi
+  if [[ -n "${after:-}" && "${after}" -lt "${before}" ]]; then echo "  ok   real-click-closes-window"; else echo "  FAIL real-click-closes-window"; rc=1; fi
+  return $rc
 }
 
 scenario() {
-  local bundle="${1:-$APP_BUNDLE}"
+  local bundle="${1:-$APP_BUNDLE}" rc=0
   echo "### scenario: launch $bundle while another app is fullscreen"
   arm || return 1
   launch_app "$bundle"
   echo "--- checks"
-  check EchoTune --close
-  local rc=$?
+  check EchoTune || rc=1
+  echo "--- real click on the close button"
+  real_click_check EchoTune || rc=1
   echo "### scenario exit=$rc"
   return $rc
 }
@@ -163,5 +185,6 @@ case "${1:-check}" in
   launch)   shift; launch_app "${1:-}" ;;
   check)    shift; check "$@" ;;
   scenario) shift; scenario "${1:-}" ;;
-  *)        echo "usage: $0 {arm|disarm|launch <app>|check [App] [--close]|scenario <app>}"; exit 1 ;;
+  real-click) shift; real_click_check "${1:-EchoTune}" ;;
+  *)        echo "usage: $0 {arm|disarm|launch <app>|check [App] [flags]|real-click [App]|scenario <app>}"; exit 1 ;;
 esac

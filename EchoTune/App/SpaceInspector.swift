@@ -133,6 +133,35 @@ final class SpaceInspector {
         spaceIDs(forWindowNumber: window.windowNumber).contains { type(ofSpace: $0) == Self.spaceTypeFullScreen }
     }
 
+    /// The frame WindowServer actually has for the window, in Cocoa screen coordinates.
+    ///
+    /// `NSWindow.frame` is AppKit's *model* of the window and can drift from reality when
+    /// macOS relocates a window itself (see `WindowFrameRepair`). Returns nil when the window
+    /// is not registered with WindowServer — one that has never been ordered front, or has
+    /// been ordered out.
+    func serverFrame(forWindowNumber number: Int) -> CGRect? {
+        guard number > 0 else { return nil }
+        guard let list = CGWindowListCopyWindowInfo([.optionIncludingWindow], CGWindowID(number)) as? [[String: Any]],
+              let bounds = list.first?["kCGWindowBounds"] as? [String: CGFloat],
+              let primaryScreen = NSScreen.screens.first(where: { $0.frame.origin == .zero }) ?? NSScreen.screens.first
+        else { return nil }
+
+        // WindowServer reports Quartz coordinates: origin at the top-left of the primary
+        // display with y growing downwards. Convert to Cocoa (bottom-left origin, y upwards).
+        let quartz = CGRect(
+            x: bounds["X"] ?? 0,
+            y: bounds["Y"] ?? 0,
+            width: bounds["Width"] ?? 0,
+            height: bounds["Height"] ?? 0
+        )
+        return CGRect(
+            x: quartz.minX,
+            y: primaryScreen.frame.height - quartz.maxY,
+            width: quartz.width,
+            height: quartz.height
+        )
+    }
+
     // MARK: - Escort
 
     /// Moves the window onto a Desktop Space and brings that Space to the front, so a
