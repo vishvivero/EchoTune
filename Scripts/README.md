@@ -417,3 +417,51 @@ open ./build/exports/Direct/EchoTune.app
 **Happy building! 🚀**
 
 For questions or issues, see documentation in project root or contact support@echotune.app
+
+---
+
+## 🪟 Window / Space verification (`verify-window-space.sh`)
+
+EchoTune is a menu-bar (`LSUIElement`) app that also owns standard windows. If one of those windows
+is ordered front while *another* app's **full-screen Space** is active, macOS parks it inside that
+foreign Space: it gets no menu bar, WindowServer owns its frame (so `NSWindow.frame` silently drifts
+out of sync with what is on screen), and every click lands on the app behind it. The user sees a
+window that cannot be clicked and cannot be closed — the 7.6.8 bug. This script reproduces that
+condition and verifies the fix with evidence rather than by eye.
+
+```bash
+Scripts/verify-window-space.sh scenario /path/to/EchoTune.app   # full regression scenario
+Scripts/verify-window-space.sh arm                              # put a throwaway app full screen
+Scripts/verify-window-space.sh launch /path/to/EchoTune.app     # kill + relaunch the app
+Scripts/verify-window-space.sh check EchoTune [--close]         # run the evidence checks
+Scripts/verify-window-space.sh real-click EchoTune              # really click the red button
+Scripts/verify-window-space.sh disarm                           # leave full screen, quit the helper
+```
+
+What `check` asserts, cross-checked against three independent sources of truth (WindowServer's
+window list, AppKit's accessibility tree, and hit testing):
+
+| Check | Source | Passes when |
+| --- | --- | --- |
+| `window-on-screen` | WindowServer | `kCGWindowIsOnscreen` is set |
+| `ax-window-exposed` | Accessibility | AppKit reports a standard window at all (a title bar exists) |
+| `frame-in-sync` | WindowServer vs AppKit | the two frames agree within 2 pt |
+| `not-on-fullscreen-space` | WindowServer Spaces | the window is not in a `FULLSCREEN` Space |
+| `active-space-usable` | WindowServer Spaces | the active Space is not `FULLSCREEN` |
+| `titlebar-on-screen` | WindowServer | the title bar sits inside a screen's usable area (z-order independent) |
+| `click-reaches-titlebar` | WindowServer hit test | asserted only while the app is frontmost — another app's window on top is ordinary occlusion |
+| `close-button-present` | Accessibility | an `AXCloseButton` exists in the window |
+| `close-button-works` | Accessibility | pressing it reduces the window count (with `--close`) |
+
+`scenario` finishes by posting a **real** click on the red button through System Events, which also
+reports which element the click landed on — the strongest available proof that clicks reach the
+window rather than the app behind it. The click is deliberately issued by the shell and not by the
+Swift helper: macOS grants Accessibility per *responsible* process, so a click posted by the freshly
+built helper is refused where one posted by an already trusted shell is accepted (hence the
+`--print-close-point` and `--window-count` helper modes).
+
+It prints `VERDICT=PASS` / `VERDICT=FAIL (<failed checks>)` and exits 0/1, so it can gate a release.
+`FULLSCREEN_APP` (default `TextEdit`) selects the throwaway app used to own the full-screen Space.
+
+> Needs Accessibility permission for the terminal running it (for the click) and Automation
+> permission for System Events (for arming the full-screen Space).

@@ -3,6 +3,74 @@
 All notable changes to EchoTune are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [7.6.8] — 2026-11-22
+
+Fixes the report that the app *works* but cannot be closed, has no clickable buttons, and whose
+menu bar icon does not respond.
+
+### Fixed — the Dashboard could end up unreachable, and nothing in the menu bar worked
+
+**Root cause 1 — a window ordered into another app's full-screen Space.** EchoTune is a menu-bar
+(`.accessory`) app that also owns standard windows. Launching it, or opening a window, while
+another app's full-screen Space was active parked the window inside that foreign Space: no menu
+bar, WindowServer owning the frame, and every click landing on the app behind it. Measured live,
+WindowServer had the Dashboard at Quartz `(-228, 897)` — below a 956 pt display, in Chrome's
+full-screen Space — while `NSWindow.frame` still reported a healthy `(255, 54)`, so the existing
+off-screen check saw nothing wrong. Promoting `.accessory` → `.regular` afterwards does not make
+macOS leave that Space either.
+
+- A deliberate launch now adopts `.regular` *before* the Dashboard is created, so macOS performs
+  its normal activation and Space switch. Login launches still stay quiet in the menu bar.
+- New `SpaceInspector` reads the active Space and a window's Space membership from WindowServer
+  and can escort a window onto a Desktop Space (and bring that Space forward) for the cases where
+  the app was already a menu-bar app.
+- Standard windows are `fullScreenNone`, so EchoTune can no longer create its own full-screen
+  Space, and the onboarding window's `.moveToActiveSpace` (which moved it straight into a foreign
+  full-screen Space) is gone.
+
+**Root cause 2 — `NSApp.delegate` was never EchoTune's AppDelegate.** SwiftUI owns a lifecycle
+app's `NSApp.delegate` (it is SwiftUI's own wrapper), so all 40 `NSApp.delegate as? AppDelegate`
+lookups in the app silently evaluated to nil. The status icon never reflected the recording state
+(21 call sites) and every menu bar item and menu-card button that opens a window did nothing at
+all — *Open EchoTune Dashboard*, Settings…, Echo Profile, Tasks, Notes, Dictionary, Share and the
+menu card's own buttons (19 call sites). The delegate now publishes itself as
+`AppDelegate.shared`; a source-level test fails the build if the cast ever comes back.
+
+**Root cause 3 — no escape hatch.** ⌘W/⌘Q exist, but they live in the app's own menu bar, which is
+exactly what you cannot reach when the window is stranded. The always-reachable menu bar card now
+has **Close Dashboard Window** (enabled only while a window is on screen), and Escape closes the
+Dashboard, ignored while a text field has focus because a field editor treats Escape as "revert
+this field".
+
+**Also fixed**
+
+- `keepWindowReachable` now treats WindowServer's frame as the source of truth, adopts it when
+  AppKit's model has drifted, and re-checks every managed window on Space changes, display wake
+  and resolution changes (debounced, and never while a mouse button is down so a repair cannot
+  fight a live drag).
+- A window in the Dock counts as reachable, so the Dock icon that restores it stays, and "Close
+  Dashboard Window" can close a window the user cannot reach at all.
+- The "show main window" hotkey no longer guesses a window by title (which could raise *EchoTune
+  Settings*) and no longer uses the deprecated `ignoringOtherApps:` flag; it asks the delegate to
+  present the Dashboard.
+
+### Verification
+
+- `Scripts/verify-window-space.sh scenario` reproduces the original fault and asserts the fix:
+  it arms a foreign full-screen Space, launches the app, then checks the window's Space, the
+  agreement between WindowServer and AppKit frames, title-bar reachability and hit testing, and
+  finally posts a *real* click on the red button through System Events. Before the fix the window
+  landed on the full-screen Space with no usable title bar and a click resolved to the app behind;
+  after it the window is on a user Space with 0.0 pt drift and the click reports
+  `button 1 of window EchoTune` with the window closing (1 → 0).
+- 21 new unit tests (177 total, 175 passing, 2 skipped), covering the pure frame-repair logic,
+  both escape hatches driven against the live delegate, delegate reachability, and the
+  window-presentation consolidation.
+- The four 1470 x 33 menu-bar-sized proxy windows that the stranded state produced are gone: the
+  app now registers exactly one window (the Dashboard), and its Dock lifecycle is verified live —
+  the app reports policy `.regular` with the Dock tile while a window exists, and `.accessory`
+  without it once the window is closed.
+
 ## [7.6.7] — 2026-11-20
 
 Restores full interactivity: the Dashboard window can no longer be stranded off-screen, and the menu bar icon responds to the first click again.
