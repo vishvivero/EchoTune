@@ -14,15 +14,20 @@ struct WindowEscapeHatchTests {
 
     private var appDelegate: AppDelegate? { AppDelegate.shared }
 
-    private func waitUntilWindowIsGone(_ appDelegate: AppDelegate) async throws {
+    /// Waits for the Dashboard specifically: other windows must not be able to make this
+    /// test pass or fail.
+    private func waitUntilWindowIsGone(_ delegate: AppDelegate) async throws {
         var attempts = 0
-        while appDelegate.hasVisibleStandardWindow && attempts < 30 {
+        while delegate.dashboardWindow?.isVisible == true && attempts < 30 {
             try await Task.sleep(nanoseconds: 100_000_000)
             attempts += 1
         }
     }
 
     @Test func menuBarEscapeHatchClosesTheDashboardWindow() async throws {
+        await AppWindowTestGate.acquire()
+        defer { AppWindowTestGate.release() }
+
         guard let appDelegate else {
             Issue.record("EchoTune is not running its AppDelegate")
             return
@@ -35,29 +40,41 @@ struct WindowEscapeHatchTests {
         appDelegate.closeStandardWindow()
         try await waitUntilWindowIsGone(appDelegate)
 
-        #expect(!appDelegate.hasVisibleStandardWindow, "the menu-bar close item must be able to close the window")
+        if appDelegate.dashboardWindow?.isVisible == true {
+            AppWindowTestGate.recordDiagnostics("menu-bar escape hatch close", appDelegate)
+        }
+        #expect(appDelegate.dashboardWindow?.isVisible != true, "the menu-bar close item must be able to close the window")
     }
 
     @Test func escapeClosesTheDashboardWindow() async throws {
-        guard let appDelegate else {
+        await AppWindowTestGate.acquire()
+        defer { AppWindowTestGate.release() }
+
+        guard let delegate = appDelegate else {
             Issue.record("EchoTune is not running its AppDelegate")
             return
         }
 
-        appDelegate.showDashboard(item: .home)
-        guard let window = appDelegate.dashboardWindow as? ActivatingStandardWindow else {
+        delegate.showDashboard(item: .home)
+        guard let window = delegate.dashboardWindow as? ActivatingStandardWindow else {
             Issue.record("the Dashboard should be an ActivatingStandardWindow")
             return
         }
 
         // What AppKit sends when Escape is pressed.
         window.cancelOperation(nil)
-        try await waitUntilWindowIsGone(appDelegate)
+        try await waitUntilWindowIsGone(delegate)
 
-        #expect(!appDelegate.hasVisibleStandardWindow, "Escape should close the window")
+        if delegate.dashboardWindow?.isVisible == true {
+            AppWindowTestGate.recordDiagnostics("escape close", delegate)
+        }
+        #expect(delegate.dashboardWindow?.isVisible != true, "Escape should close the window")
     }
 
     @Test func escapeIsIgnoredWhileEditingText() async throws {
+        await AppWindowTestGate.acquire()
+        defer { AppWindowTestGate.release() }
+
         guard let appDelegate else {
             Issue.record("EchoTune is not running its AppDelegate")
             return
@@ -79,10 +96,16 @@ struct WindowEscapeHatchTests {
         window.cancelOperation(nil)
         try await Task.sleep(nanoseconds: 300_000_000)
 
-        #expect(appDelegate.hasVisibleStandardWindow, "Escape must not close the window while text is being edited")
+        if appDelegate.dashboardWindow?.isVisible != true {
+            AppWindowTestGate.recordDiagnostics("escape while editing (window went away)", appDelegate)
+        }
+        #expect(appDelegate.dashboardWindow?.isVisible == true, "Escape must not close the window while text is being edited")
     }
 
     @Test func closingWithNoWindowOpenIsSafe() async throws {
+        await AppWindowTestGate.acquire()
+        defer { AppWindowTestGate.release() }
+
         guard let appDelegate else {
             Issue.record("EchoTune is not running its AppDelegate")
             return
@@ -90,10 +113,10 @@ struct WindowEscapeHatchTests {
 
         appDelegate.closeStandardWindow()
         try await waitUntilWindowIsGone(appDelegate)
-        #expect(!appDelegate.hasVisibleStandardWindow)
+        #expect(appDelegate.dashboardWindow?.isVisible != true)
 
         // A second call must be a harmless no-op.
         appDelegate.closeStandardWindow()
-        #expect(!appDelegate.hasVisibleStandardWindow)
+        #expect(appDelegate.dashboardWindow?.isVisible != true)
     }
 }

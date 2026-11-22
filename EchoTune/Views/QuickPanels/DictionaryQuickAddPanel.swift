@@ -56,7 +56,11 @@ final class DictionaryQuickAddPanelController {
             p.center()
         }
 
-        NSApp.activate(ignoringOtherApps: true)
+        // A HUD must accept typing straight away, and `hidesOnDeactivate` means the app has to
+        // be active for it to stay on screen, so activating here is deliberate. These are
+        // transient panels, not standard windows, so they do not go through the AppDelegate's
+        // window presentation path. (`ignoringOtherApps:` has been a no-op since macOS 14.)
+        NSApp.activate()
         p.makeKeyAndOrderFront(nil)
     }
 

@@ -355,7 +355,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         rootMenu.addItem(makeActionItem(
             title: "Close Dashboard Window",
             symbol: "xmark.rectangle",
-            isEnabled: (AppDelegate.shared)?.hasVisibleStandardWindow ?? false,
+            isEnabled: AppDelegate.shared?.hasVisibleStandardWindow ?? false,
             action: #selector(closeDashboardWindow)
         ))
         rootMenu.addItem(makeWorkspaceSubmenuItem())
@@ -803,62 +803,62 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func openDashboardHome() {
-        (AppDelegate.shared)?.showDashboard(item: .home)
+        AppDelegate.shared?.showDashboard(item: .home)
     }
 
     @objc private func closeDashboardWindow() {
         rootMenu.cancelTracking()
         DispatchQueue.main.async {
-            (AppDelegate.shared)?.closeStandardWindow()
+            AppDelegate.shared?.closeStandardWindow()
         }
     }
 
     @objc private func openHistory() {
-        (AppDelegate.shared)?.showDashboard(item: .history)
+        AppDelegate.shared?.showDashboard(item: .history)
     }
 
     @objc private func openNotes() {
-        (AppDelegate.shared)?.showDashboard(item: .notes)
+        AppDelegate.shared?.showDashboard(item: .notes)
     }
 
     @objc private func openDictionary() {
-        (AppDelegate.shared)?.showDashboard(item: .dictionary)
+        AppDelegate.shared?.showDashboard(item: .dictionary)
     }
 
     @objc private func openShareCard() {
-        (AppDelegate.shared)?.showDashboard(item: .share)
+        AppDelegate.shared?.showDashboard(item: .share)
     }
 
     @objc private func openEchoProfile() {
-        (AppDelegate.shared)?.showEchoProfile()
+        AppDelegate.shared?.showEchoProfile()
     }
 
     @objc private func openTasks() {
-        (AppDelegate.shared)?.showCommitments()
+        AppDelegate.shared?.showCommitments()
     }
 
     @objc private func openSettingsGeneral() {
-        (AppDelegate.shared)?.showSettings(tab: .general)
+        AppDelegate.shared?.showSettings(tab: .general)
     }
 
     @objc private func openSettingsModels() {
-        (AppDelegate.shared)?.showSettings(tab: .aiModels)
+        AppDelegate.shared?.showSettings(tab: .aiModels)
     }
 
     @objc private func openSettingsSpeech() {
-        (AppDelegate.shared)?.showSettings(tab: .speech)
+        AppDelegate.shared?.showSettings(tab: .speech)
     }
 
     @objc private func openSettingsAutomation() {
-        (AppDelegate.shared)?.showSettings(tab: .automation)
+        AppDelegate.shared?.showSettings(tab: .automation)
     }
 
     @objc private func openSettingsHotkeys() {
-        (AppDelegate.shared)?.showSettings(tab: .hotkeys)
+        AppDelegate.shared?.showSettings(tab: .hotkeys)
     }
 
     @objc private func openAboutLicense() {
-        (AppDelegate.shared)?.showSettings(tab: .license)
+        AppDelegate.shared?.showSettings(tab: .license)
     }
 
     @objc private func checkForUpdates() {
@@ -877,6 +877,6 @@ extension StatusBarController: NSMenuItemValidation {
     /// "Close Dashboard Window" only makes sense while one of our windows is on screen.
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         guard menuItem.action == #selector(closeDashboardWindow) else { return true }
-        return (AppDelegate.shared)?.hasVisibleStandardWindow ?? false
+        return AppDelegate.shared?.hasVisibleStandardWindow ?? false
     }
 }

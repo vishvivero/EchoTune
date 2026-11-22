@@ -54,6 +54,9 @@ struct AppDelegateReachabilityTests {
 
     /// The menu-bar openers were the most user-visible casualty, so drive them for real.
     @Test func menuBarOpenersPresentTheirWindows() async throws {
+        await AppWindowTestGate.acquire()
+        defer { AppWindowTestGate.release() }
+
         guard let delegate = AppDelegate.shared else {
             Issue.record("no app delegate")
             return
@@ -80,6 +83,9 @@ struct AppDelegateReachabilityTests {
 
     /// The Dashboard opener is the one a user reaches for from the menu bar.
     @Test func dashboardOpenerPresentsTheDashboard() async throws {
+        await AppWindowTestGate.acquire()
+        defer { AppWindowTestGate.release() }
+
         guard let delegate = AppDelegate.shared else {
             Issue.record("no app delegate")
             return
@@ -87,14 +93,14 @@ struct AppDelegateReachabilityTests {
 
         delegate.showDashboard(item: .home)
         try await settle()
-        #expect(delegate.hasVisibleStandardWindow, "Open EchoTune Dashboard should present the Dashboard")
+        #expect(delegate.dashboardWindow?.isVisible == true, "Open EchoTune Dashboard should present the Dashboard")
 
         delegate.closeStandardWindow()
         var attempts = 0
-        while delegate.hasVisibleStandardWindow && attempts < 30 {
+        while delegate.dashboardWindow?.isVisible == true && attempts < 30 {
             try await Task.sleep(nanoseconds: 100_000_000)
             attempts += 1
         }
-        #expect(!delegate.hasVisibleStandardWindow)
+        #expect(delegate.dashboardWindow?.isVisible != true)
     }
 }

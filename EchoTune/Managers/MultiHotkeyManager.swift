@@ -485,12 +485,17 @@ class MultiHotkeyManager: ObservableObject {
         }
     }
 
-    private func showMainWindow() {
+    /// Brings the Dashboard forward for the "show main window" hotkey.
+    ///
+    /// This used to guess a window by title (`NSApp.windows.first { $0.title.contains("EchoTune") }`),
+    /// which matched the *Settings* window ("EchoTune Settings") just as readily as the Dashboard,
+    /// and it activated with `ignoringOtherApps:` (a no-op since macOS 14). Presenting the
+    /// Dashboard is the delegate's job: it owns the single Dashboard window, sets the right
+    /// activation policy, escorts the window out of another app's full-screen Space and
+    /// re-centres it if it has drifted off screen.
+    func showMainWindow() {
         DispatchQueue.main.async {
-            NSApp.activate(ignoringOtherApps: true)
-            if let window = NSApp.windows.first(where: { $0.title.contains("EchoTune") || $0.isKeyWindow }) {
-                window.makeKeyAndOrderFront(nil)
-            }
+            AppDelegate.shared?.showDashboard(item: .home)
         }
     }
 

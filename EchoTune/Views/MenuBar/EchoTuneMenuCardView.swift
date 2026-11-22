@@ -389,7 +389,7 @@ struct EchoTuneMenuCardView: View {
                     .menuTrackingButton {
                         presentation.onDismissMenu?()
                         DispatchQueue.main.async {
-                            (AppDelegate.shared)?.showSettings(tab: .license)
+                            AppDelegate.shared?.showSettings(tab: .license)
                         }
                     }
             }
@@ -486,7 +486,7 @@ struct EchoTuneMenuCardView: View {
                     .menuTrackingButton {
                         presentation.onDismissMenu?()
                         DispatchQueue.main.async {
-                            (AppDelegate.shared)?.showCommitments()
+                            AppDelegate.shared?.showCommitments()
                         }
                     }
             }
@@ -836,7 +836,7 @@ struct EchoTuneMenuCardView: View {
                         .menuTrackingButton {
                             presentation.onDismissMenu?()
                             DispatchQueue.main.async {
-                                (AppDelegate.shared)?.showDashboard(item: .history)
+                                AppDelegate.shared?.showDashboard(item: .history)
                             }
                         }
                 }
