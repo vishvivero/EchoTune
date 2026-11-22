@@ -287,20 +287,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
          echoProfileWindowController?.window, commitmentsWindowController?.window].compactMap { $0 }
     }
 
-    /// True while one of EchoTune's standard windows is on screen.
+    /// True while one of EchoTune's standard windows is on screen or in the Dock.
+    ///
+    /// A miniaturized window still counts: it is one the user can reach (from the Dock), and
+    /// keeping it in the count is what keeps the app in `.regular` mode so the Dock icon the
+    /// user needs in order to restore it stays put.
     var hasVisibleStandardWindow: Bool {
-        managedWindows.contains { $0.isVisible }
+        managedWindows.contains { $0.isVisible || $0.isMiniaturized }
     }
 
-    /// Closes whichever standard window is in front — the menu-bar escape hatch for a
-    /// window the user cannot reach with the mouse.
+    /// Closes whichever standard window is in front — the menu-bar escape hatch for a window
+    /// the user cannot reach with the mouse. Falls back to a miniaturized window, which is one
+    /// they may not be able to reach at all.
     func closeStandardWindow() {
         let frontmost = [NSApp.keyWindow, NSApp.mainWindow]
             .compactMap { $0 }
             .first { candidate in managedWindows.contains { $0 === candidate } }
-        let target = frontmost ?? managedWindows.first { $0.isVisible }
+        let target = frontmost
+            ?? managedWindows.first { $0.isVisible }
+            ?? managedWindows.first { $0.isMiniaturized }
         guard let target else { return }
         spaceLog.notice("Closing '\(target.title, privacy: .public)' from the menu bar")
+        if target.isMiniaturized {
+            target.deminiaturize(nil)
+        }
         target.performClose(nil)
     }
 

@@ -14,11 +14,15 @@ struct WindowEscapeHatchTests {
 
     private var appDelegate: AppDelegate? { AppDelegate.shared }
 
-    /// Waits for the Dashboard specifically: other windows must not be able to make this
-    /// test pass or fail.
+    /// Waits for the Dashboard to be gone for good. Scoped to the Dashboard so other windows
+    /// cannot make this test pass or fail, and it counts a Dock window as still present.
     private func waitUntilWindowIsGone(_ delegate: AppDelegate) async throws {
+        func isStillAround() -> Bool {
+            guard let window = delegate.dashboardWindow else { return false }
+            return window.isVisible || window.isMiniaturized
+        }
         var attempts = 0
-        while delegate.dashboardWindow?.isVisible == true && attempts < 30 {
+        while isStillAround() && attempts < 30 {
             try await Task.sleep(nanoseconds: 100_000_000)
             attempts += 1
         }
@@ -118,5 +122,34 @@ struct WindowEscapeHatchTests {
         // A second call must be a harmless no-op.
         appDelegate.closeStandardWindow()
         #expect(appDelegate.dashboardWindow?.isVisible != true)
+    }
+
+    /// A miniaturized window lives in the Dock, which is somewhere the user can still reach it,
+    /// so it must keep the app in `.regular` (the Dock icon is the only way back) and it must
+    /// stay closeable from the menu bar.
+    @Test func aDockWindowStaysReachableAndClosesFromTheMenuBar() async throws {
+        await AppWindowTestGate.acquire()
+        defer { AppWindowTestGate.release() }
+
+        guard let delegate = appDelegate else {
+            Issue.record("EchoTune is not running its AppDelegate")
+            return
+        }
+
+        delegate.showDashboard(item: .home)
+        try await Task.sleep(nanoseconds: 400_000_000)
+        delegate.dashboardWindow?.miniaturize(nil)
+        try await Task.sleep(nanoseconds: 400_000_000)
+
+        #expect(delegate.dashboardWindow?.isMiniaturized == true, "precondition: the Dashboard is in the Dock")
+        #expect(delegate.hasVisibleStandardWindow, "a window in the Dock is still a window the user can reach")
+        // The invariant that matters: a window exists, so the app must not be a background agent
+        // (an .accessory app cannot show usable traffic lights and would have no Dock icon).
+        #expect(NSApp.activationPolicy() == .regular, "the Dock icon must stay while a window exists")
+
+        delegate.closeStandardWindow()
+        try await waitUntilWindowIsGone(delegate)
+
+        #expect(delegate.hasVisibleStandardWindow == false, "the menu bar must be able to close a window sitting in the Dock")
     }
 }
