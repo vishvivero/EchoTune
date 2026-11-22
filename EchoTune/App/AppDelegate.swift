@@ -8,6 +8,7 @@
 import AppKit
 import SwiftUI
 import UserNotifications
+import os.log
 
 /// `kAELaunchedAsLogInItem` lives in Carbon; keep the raw four-char code local so this
 /// file does not need a Carbon import just for one comparison.
@@ -40,8 +41,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     var commitmentsWindowController: CommitmentsWindowController?
 
     private let onboardingState = OnboardingStateStore.shared
+    private let spaceInspector = SpaceInspector.shared
     private let dashboardSize = NSSize(width: 960, height: 720)
     private let dashboardMinimumSize = NSSize(width: 900, height: 600)
+
+    /// Collection behaviour shared by every standard window EchoTune owns.
+    ///
+    /// `.fullScreenNone` keeps EchoTune from creating its *own* full-screen Space — a
+    /// Dashboard parked in one has exactly the same "no menu bar, clicks fall through,
+    /// can't close" problem this file works around. It also means any full-screen Space
+    /// that is active always belongs to another app.
+    ///
+    /// The previous onboarding window additionally used `.moveToActiveSpace`, which is
+    /// actively harmful here: when the active Space belongs to another app's full-screen
+    /// window, "move to the active Space" is precisely what strands it out of reach.
+    private let standardWindowCollectionBehavior: NSWindow.CollectionBehavior = [.fullScreenNone]
 
     /// True when macOS started us at login rather than the user opening the app.
     /// Captured in `applicationWillFinishLaunching`, which is when AppKit still exposes
@@ -106,16 +120,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         if !isTestHost {
             if onboardingState.hasCompletedOnboarding {
-                // Stay a menu bar app so a login launch stays quiet, but when the user
-                // deliberately opens EchoTune, show the Dashboard instead of booting to
-                // an invisible background process that looks broken.
-                NSApp.setActivationPolicy(.accessory)
-                if !launchedAsLoginItem {
+                if launchedAsLoginItem {
+                    // A login launch stays a quiet, pure menu-bar app.
+                    NSApp.setActivationPolicy(.accessory)
+                } else {
+                    // The user deliberately opened EchoTune, so the Dashboard is about to be
+                    // presented. Adopt `.regular` *before* the window is created and ordered:
+                    // promoting `.accessory` → `.regular` afterwards does not make macOS
+                    // switch away from another app's full-screen Space or hand us focus on
+                    // macOS 26, which is what left the Dashboard stranded, unclickable and
+                    // impossible to close. Starting out `.regular` lets macOS perform its
+                    // normal activation and Space switch.
+                    NSApp.setActivationPolicy(.regular)
                     DispatchQueue.main.async { [weak self] in
                         self?.showDashboard(item: .home)
                     }
                 }
             } else {
+                NSApp.setActivationPolicy(.regular)
                 showOnboarding()
             }
         } else if args.contains("--ui-test-force-onboarding") {
@@ -169,9 +191,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // so its traffic lights look absent and every click lands on whatever is behind it.
         // Put it back on screen before showing it.
         keepWindowReachable(window)
+
         if NSApp.activationPolicy() != .regular {
             NSApp.setActivationPolicy(.regular)
         }
+
+        // Presenting a standard window while another app's full-screen Space owns the
+        // display strands it: no menu bar, a WindowServer-owned frame that AppKit's copy
+        // silently drifts away from, and clicks that fall through to the app behind.
+        // Promoting to `.regular` does not make macOS leave that Space, so put the window
+        // on a Desktop Space and bring that Space forward instead. (`simple`/`escort`
+        // WindowServer behaviour verified on macOS 26.6.)
+        if spaceInspector.activeSpaceIsFullScreen || spaceInspector.isOnFullScreenSpace(window) {
+            let escorted = spaceInspector.escortToDesktopSpace(window)
+            spaceLog.notice("present '\(window.title, privacy: .public)': full-screen Space active — escorted=\(escorted, privacy: .public)")
+        }
+
         NSApp.activate()
         window.makeKeyAndOrderFront(nil)
     }
@@ -298,7 +333,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             win.center()
             win.isReleasedWhenClosed = false
             win.delegate = self
-            win.collectionBehavior = [.moveToActiveSpace]
+            win.collectionBehavior = standardWindowCollectionBehavior
             onboardingWindow = win
         }
 
@@ -326,6 +361,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             win.center()
             win.isReleasedWhenClosed = false
             win.delegate = self
+            win.collectionBehavior = standardWindowCollectionBehavior
             dashboardWindow = win
         }
 
@@ -370,6 +406,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             win.center()
             win.isReleasedWhenClosed = false
             win.delegate = self
+            win.collectionBehavior = standardWindowCollectionBehavior
             settingsWindow = win
         }
 

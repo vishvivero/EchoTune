@@ -167,11 +167,12 @@ class EchoProfileWindowController: NSWindowController {
     convenience init() {
         let view = EchoProfileView()
         let hostingController = NSHostingController(rootView: view)
-        let window = NSWindow(contentViewController: hostingController)
+        let window = ActivatingStandardWindow(contentViewController: hostingController)
         window.title = "Echo Profile"
         window.setContentSize(NSSize(width: 480, height: 430))
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.isReleasedWhenClosed = false
+        window.collectionBehavior = [.fullScreenNone]
         window.center()
         self.init(window: window)
     }

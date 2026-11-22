@@ -484,11 +484,12 @@ class CommitmentsWindowController: NSWindowController {
     convenience init() {
         let view = CommitmentsView()
         let hostingController = NSHostingController(rootView: view)
-        let window = NSWindow(contentViewController: hostingController)
+        let window = ActivatingStandardWindow(contentViewController: hostingController)
         window.title = "Tasks"
         window.setContentSize(NSSize(width: 560, height: 560))
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.isReleasedWhenClosed = false
+        window.collectionBehavior = [.fullScreenNone]
         window.center()
         self.init(window: window)
     }
