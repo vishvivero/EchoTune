@@ -3,6 +3,70 @@
 All notable changes to EchoTune are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [7.6.9] — 2026-11-22
+
+Fixes the menu bar icon taking no click at all. The app worked (dictation, hotkeys, windows) but
+clicking the icon did nothing, which is what the previous two releases were chasing.
+
+### Root cause — Control Center never forwards the click for this app
+
+On macOS 26 the window server draws third-party status items through Control Center
+(`NSSceneStatusItem` / `NSStatusItemView`, CGWindowLayer 25) and is responsible for forwarding the
+click back into the owning app. Measured on macOS 26.6, that forward is simply not delivered for
+EchoTune:
+
+| Evidence | Result |
+| --- | --- |
+| Item registered and drawn | ✅ `Control Center` window `name=EchoTuneStatusItem`, `x=892 w=36`, layer 25 |
+| `AXUIElementPerformAction(item, kAXPressAction)` | ✅ opens the menu (so the menu itself is fine) |
+| `AXUIElementCopyElementAtPosition` at the icon centre | ✅ resolves to our `AXMenuBarItem` |
+| **A real mouse-down, swept across 30 x-positions over the whole slot** | ❌ **never opens anything** |
+| Control Center's unified log for that click | ❌ no `[Forward Event]` for us at all |
+| Same click on 6 other third-party items (Tailscale, Ollama, AlDente, CopyClip, Proton VPN, SSMenuAgent) | ✅ all open |
+| Same click on the Apple menu | ✅ opens |
+
+So the click injection is sound and the fault is specific to EchoTune: a status item that is never
+told about the click cannot react to it. Two different transports were tried on the previous
+release — the native `statusItem.menu` and `button.action` + `NSPopover` — and both failed, because
+neither is reached. Re-vending the item and restarting Control Center were tried too; both failed.
+A menu-height reduction (the card was 826 pt tall, barely fitting a 956 pt screen) did not change it.
+
+### The fix — stop depending on the forward
+
+- The icon's own rect is watched directly by two independent detectors: an
+  `NSEvent.addGlobalMonitorForEvents` for mouse-downs (which is where a menu bar click goes, because
+  Control Center owns the window) and a **listen-only** `CGEvent` tap for `leftMouseDown` /
+  `rightMouseDown`. The tap cannot consume or alter any event, and both funnel through one cooldown,
+  so a click reported twice is still handled once.
+- The two paths cannot double-fire by construction: a global monitor sees events delivered to *other*
+  applications, while the button action fires only when the event is delivered to *us*. A 0.25 s
+  cooldown covers the remaining case.
+- A second guard stops the icon appearing dead when the user clicks it to close: the click goes to
+  Control Center, the `.transient` popover dismisses itself, and the monitor then sees the same
+  click. Reopening within 0.3 s of a self-dismiss is suppressed. Both rules are pinned by tests.
+- The CodexBar-designed card is back in an `NSPopover` with its Model / Microphone / Language / Paste
+  pickers, so the UI works in the normal run loop instead of NSMenu's modal tracking loop.
+- The status item is no longer re-vended on activation-policy changes (that tore down Control
+  Center's tracked scene, which broke the icon in 7.6.3–7.6.5), and the recording timer no longer
+  writes a tenths-of-a-second string into `button.title` ten times a second (which forced Control
+  Center to re-lay-out the status-item scene at the same rate).
+
+### Also in this release
+
+- Restored the "Close Dashboard Window" escape hatch, `AppDelegate.shared` lookups and the
+  Space/frame repair that 7.6.8 introduced, on top of the popover UI.
+
+### Verification
+
+- **Menu bar, real clicks:** click → open, click → close, click �� open, click → close. 4/4, with the
+  app logging `Menu bar icon click handled by monitor` + `Toggling popover` for each.
+- **Window controls:** `Scripts/verify-window-space.sh check EchoTune` → **VERDICT=PASS** (frame
+  drift 0.0 pt, title bar on screen, click reaches the title bar). `real-click EchoTune` → a real
+  click on the red button reports `button 1 of window EchoTune` and the window count goes **1 → 0**.
+- **Tests:** 182 passing, 0 failing, 2 skipped, including the new `MenuBarClickTests` (8 cases).
+- **Launch surface:** the stale Debug/`7.6.7` bundles that made Spotlight offer an old copy are
+  archived out of the app index, so `mdfind` resolves to `/Applications/EchoTune.app` alone.
+
 ## [7.6.8] — 2026-11-22
 
 Fixes the report that the app *works* but cannot be closed, has no clickable buttons, and whose

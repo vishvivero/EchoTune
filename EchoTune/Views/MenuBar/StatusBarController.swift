@@ -2,29 +2,40 @@
 //  StatusBarController.swift
 //  EchoTune
 //
-//  CodexBar-style native NSMenu status bar controller.
-//  Combines a rich hosted SwiftUI dashboard card (Overview / Controls / Recent)
-//  at the top of a native NSMenu with crisp AppKit submenus and action rows
-//  (Model switcher, Microphone picker, Language picker, Recent dictations,
-//  Dashboard/Profile/Tasks/Notes/Dictionary launchers, Sparkle updater,
-//  Settings ⌘, and Quit ⌘Q), plus a 1:1 Retina animated status-bar glyph.
+//  Menu bar icon + CodexBar-designed popover.
+//
+//  WHY THERE IS A BIT OF ARDOISE HERE
+//  ----------------------------------
+//  On macOS 26 the window server draws third-party status items through Control
+//  Center (`NSSceneStatusItem` / `NSStatusItemView`, CGWindowLayer 25) and is
+//  responsible for forwarding the click back into the owning app. Measured on this
+//  machine (macOS 26.6, 2026-11-22), that forward is not delivered for EchoTune:
+//
+//    * the item is registered and drawn (`name = EchoTuneStatusItem`, layer 25),
+//    * `AXUIElementPerformAction(item, kAXPressAction)` DOES open the menu,
+//    * `AXUIElementCopyElementAtPosition` at the icon's centre DOES resolve to our
+//      `AXMenuBarItem`,
+//    * a *real* mouse-down swept across 30 positions over the whole slot never
+//      opens it, and Control Center logs no `[Forward Event]` for us at all,
+//    * six other third-party items on the same Mac (Tailscale, Ollama, AlDente,
+//      CopyClip, Proton VPN, SSMenuAgent) DO open from the same synthetic click,
+//      and the Apple menu does too — so the click injection is not the problem.
+//
+//  A status item that is never told about the click cannot react to it, and
+//  `statusItem.menu`, `button.action`, re-vending the item and restarting Control
+//  Center were each tried and all still failed. So we do not depend on the forward:
+//  the icon's own rect is watched directly, and the click is handled here.
+//
+//  The two paths can never double-fire: a global monitor sees events delivered to
+//  *other* applications (which is what a menu bar click is), while the button action
+//  fires only when the event is delivered to *us*. A cooldown guards the one case
+//  where the popover's own transient dismissal and a repeat click coincide.
 //
 
 import AppKit
 import Combine
 import SwiftUI
-
-/// Custom NSMenuItem that suppresses AppKit's full-row selection fill behind
-/// our hosted SwiftUI card (matching CodexBar's `MenuCardMenuItem`).
-final class EchoMenuCardItem: NSMenuItem {
-    override var isHighlighted: Bool { false }
-}
-
-final class FirstMouseMenuHostingView: NSHostingView<AnyView> {
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
-        true
-    }
-}
+import os.log
 
 struct VisualEffectView: NSViewRepresentable {
     let material: NSVisualEffectView.Material
@@ -44,62 +55,269 @@ struct VisualEffectView: NSViewRepresentable {
     }
 }
 
-final class StatusBarController: NSObject, NSMenuDelegate {
-    static let menuWidth: CGFloat = 320
+/// Pure decision logic for "was this click on our menu bar icon, and should it toggle?".
+/// Extracted so the behaviour is unit-testable without a live status item.
+enum StatusItemClickDecision {
+    /// Click tolerance around the icon, in points (the button is ~36x24 pt).
+    static let rectSlack: CGFloat = 3
 
-    private let statusItem: NSStatusItem
-    private let rootMenu: NSMenu
+    /// A repeat click within this window of the previous one is treated as the same
+    /// gesture and ignored.
+    static let toggleCooldown: TimeInterval = 0.25
+
+    /// When the popover dismisses itself because the click landed outside it, that
+    /// click is the user's close gesture; it must not immediately reopen the popover.
+    static let closedRecentlyWindow: TimeInterval = 0.30
+
+    static func shouldToggle(
+        clickPoint: CGPoint,
+        statusItemRect: CGRect,
+        popoverIsShown: Bool,
+        secondsSinceLastToggle: TimeInterval,
+        secondsSincePopoverClosed: TimeInterval
+    ) -> Bool {
+        let hitRect = statusItemRect.insetBy(dx: -rectSlack, dy: -rectSlack)
+        guard hitRect.contains(clickPoint) else { return false }
+
+        if secondsSinceLastToggle < toggleCooldown { return false }
+        if !popoverIsShown && secondsSincePopoverClosed < closedRecentlyWindow { return false }
+        return true
+    }
+
+    /// Clicks anywhere else only matter while the popover is open (dismiss it).
+    static func shouldDismiss(
+        clickPoint: CGPoint,
+        statusItemRect: CGRect,
+        popoverIsShown: Bool
+    ) -> Bool {
+        guard popoverIsShown else { return false }
+        return !statusItemRect.insetBy(dx: -rectSlack, dy: -rectSlack).contains(clickPoint)
+    }
+}
+
+final class StatusBarController: NSObject {
+    private var statusItem: NSStatusItem
+    private let popover: NSPopover
     private let presentation = EchoMenuPresentationState()
-    private var cardHostingView: FirstMouseMenuHostingView?
-    private var cardMenuItem: EchoMenuCardItem?
     private var cancellables = Set<AnyCancellable>()
-    private var appearanceObservation: NSKeyValueObservation?
     private var iconAnimationTimer: Timer?
     private var animationPhase: Double = 0
 
-    override init() {
-        // Repair any corrupt/offscreen saved preferred position before registering
-        let posKey = "NSStatusItem Preferred Position EchoTuneStatusItem"
-        if let savedPos = UserDefaults.standard.object(forKey: posKey) as? NSNumber {
-            let maxWidth = NSScreen.screens.map { Double($0.frame.width) }.max() ?? 2560
-            if !savedPos.doubleValue.isFinite || savedPos.doubleValue < 0 || savedPos.doubleValue > maxWidth + 512 {
-                UserDefaults.standard.removeObject(forKey: posKey)
-            }
-        }
+    /// Watches mouse-downs that go to other applications — which is where a menu
+    /// bar click goes, because Control Center owns the status item's window.
+    private var globalClickMonitor: Any?
+    /// Watches mouse-downs delivered to us, so a click on our own popover/Dashboard
+    /// can still dismiss the popover.
+    private var localClickMonitor: Any?
+    /// Independent second detector. A listen-only session event tap is below the
+    /// window server's menu-bar routing, so it sees the click even if the AppKit
+    /// monitor does not. Both funnel through the same cooldown, so a click that is
+    /// reported twice is still handled once.
+    private var clickEventTap: CFMachPort?
+    private var clickEventTapSource: CFRunLoopSource?
+    private var popoverCloseObserver: Any?
 
+    private var lastToggleAt: Date = .distantPast
+    private var lastPopoverCloseAt: Date = .distantPast
+
+    override init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        rootMenu = NSMenu(title: "EchoTune")
-        rootMenu.autoenablesItems = false
-        rootMenu.minimumWidth = Self.menuWidth
+        popover = NSPopover()
+        popover.behavior = .transient
+        popover.animates = true
 
         super.init()
 
-        statusItem.autosaveName = "EchoTuneStatusItem"
-        rootMenu.delegate = self
-        statusItem.menu = rootMenu
-
-        if let button = statusItem.button {
-            button.imageScaling = .scaleNone
-            button.imagePosition = .imageOnly
-            button.font = NSFont.monospacedDigitSystemFont(ofSize: 11.5, weight: .medium)
-            button.setAccessibilityTitle("EchoTune")
-        }
-
-        presentation.onLayoutInvalidated = { [weak self] in
-            self?.syncCardHeight()
-        }
         presentation.onDismissMenu = { [weak self] in
-            self?.rootMenu.cancelTracking()
+            self?.closePopover()
+        }
+        presentation.onLayoutInvalidated = { [weak self] in
+            self?.syncPopoverSize()
         }
 
-        buildMenuSkeleton()
+        let rootView = EchoTuneMenuCardView(presentation: presentation)
+            .environmentObject(AppState.shared)
+            .environmentObject(AppSettings.shared)
+            .environmentObject(AppCoordinator.shared)
+        let hostingController = NSHostingController(rootView: rootView)
+        hostingController.sizingOptions = .preferredContentSize
+        popover.contentViewController = hostingController
+
+        popoverCloseObserver = NotificationCenter.default.addObserver(
+            forName: NSPopover.didCloseNotification,
+            object: popover,
+            queue: .main
+        ) { [weak self] _ in
+            self?.lastPopoverCloseAt = Date()
+        }
+
+        configureStatusItemButton()
+        installClickDetection()
         setupObservations()
         updateIcon(for: AppState.shared.recordingState)
     }
 
     deinit {
         iconAnimationTimer?.invalidate()
-        appearanceObservation?.invalidate()
+        if let globalClickMonitor { NSEvent.removeMonitor(globalClickMonitor) }
+        if let localClickMonitor { NSEvent.removeMonitor(localClickMonitor) }
+        if let popoverCloseObserver { NotificationCenter.default.removeObserver(popoverCloseObserver) }
+        if let clickEventTapSource { CFRunLoopRemoveSource(CFRunLoopGetCurrent(), clickEventTapSource, .commonModes) }
+        if let clickEventTap { CGEvent.tapEnable(tap: clickEventTap, enable: false) }
+    }
+
+    private func configureStatusItemButton() {
+        guard let button = statusItem.button else { return }
+        button.target = self
+        button.action = #selector(togglePopover(_:))
+        button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        button.imagePosition = .imageOnly
+        button.font = NSFont.monospacedDigitSystemFont(ofSize: 11.5, weight: .medium)
+        button.setAccessibilityTitle("EchoTune")
+    }
+
+    // MARK: - Click detection that does not rely on Control Center
+
+    private func installClickDetection() {
+        // Events delivered to another application (a menu bar click is one: Control
+        // Center owns the status item's window). Mouse monitors need no extra grant.
+        globalClickMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown]
+        ) { [weak self] _ in
+            self?.handleClick(at: NSEvent.mouseLocation, deliveredToUs: false)
+        }
+
+        // Events delivered to us, so clicking our own windows still dismisses.
+        localClickMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown]
+        ) { [weak self] event in
+            guard let self else { return event }
+            // A click inside the popover is the user using the card — never a dismiss.
+            if let popoverWindow = self.popover.contentViewController?.view.window,
+               event.window === popoverWindow {
+                return event
+            }
+            let inScreen = event.window.map {
+                $0.convertToScreen(NSRect(origin: event.locationInWindow, size: .zero)).origin
+            } ?? NSEvent.mouseLocation
+            self.handleClick(at: inScreen, deliveredToUs: true)
+            return event
+        }
+
+        installClickEventTap()
+    }
+
+    /// Listen-only tap on mouse-downs. `NSEvent`'s global monitor does not always see
+    /// clicks handled by the window server's own menu-bar machinery, so the icon also
+    /// gets a second, independent reporter. `.listenOnly` means it can never consume
+    /// or alter an event.
+    private func installClickEventTap() {
+        let mask = CGEventMask(1 << CGEventType.leftMouseDown.rawValue)
+            | CGEventMask(1 << CGEventType.rightMouseDown.rawValue)
+        let callback: CGEventTapCallBack = { _, type, event, refcon in
+            guard let refcon else { return Unmanaged.passUnretained(event) }
+            let controller = Unmanaged<StatusBarController>.fromOpaque(refcon).takeUnretainedValue()
+            if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+                if let tap = controller.clickEventTap { CGEvent.tapEnable(tap: tap, enable: true) }
+                return Unmanaged.passUnretained(event)
+            }
+            // Read the cursor in Cocoa screen space so both detectors agree on coordinates.
+            DispatchQueue.main.async {
+                controller.handleClick(at: NSEvent.mouseLocation, deliveredToUs: false)
+            }
+            return Unmanaged.passUnretained(event)
+        }
+        guard let tap = CGEvent.tapCreate(
+            tap: .cgSessionEventTap,
+            place: .tailAppendEventTap,
+            options: .listenOnly,
+            eventsOfInterest: mask,
+            callback: callback,
+            userInfo: UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
+        ) else {
+            os_log("⚠️ Could not install menu bar click event tap; falling back to NSEvent monitors", log: appLog, type: .error)
+            return
+        }
+        clickEventTap = tap
+        let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+        clickEventTapSource = source
+        CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
+        CGEvent.tapEnable(tap: tap, enable: true)
+        os_log("✓ Menu bar click event tap installed", log: appLog, type: .info)
+    }
+
+    /// The status item's rect in screen coordinates (Cocoa, bottom-left origin).
+    private var statusItemRectInScreen: CGRect? {
+        guard let button = statusItem.button, let window = button.window else { return nil }
+        return window.convertToScreen(button.convert(button.bounds, to: nil))
+    }
+
+    private func handleClick(at point: CGPoint, deliveredToUs: Bool) {
+        guard let rect = statusItemRectInScreen else { return }
+
+        if StatusItemClickDecision.shouldToggle(
+            clickPoint: point,
+            statusItemRect: rect,
+            popoverIsShown: popover.isShown,
+            secondsSinceLastToggle: Date().timeIntervalSince(lastToggleAt),
+            secondsSincePopoverClosed: Date().timeIntervalSince(lastPopoverCloseAt)
+        ) {
+            os_log("🖱️ Menu bar icon click handled by monitor (deliveredToUs=%d)", log: appLog, type: .info, deliveredToUs ? 1 : 0)
+            lastToggleAt = Date()
+            togglePopover(nil)
+            return
+        }
+
+        if deliveredToUs,
+           StatusItemClickDecision.shouldDismiss(clickPoint: point, statusItemRect: rect, popoverIsShown: popover.isShown) {
+            closePopover()
+        }
+    }
+
+    /// No longer re-vends the status item: recreating it tears down Control Center's
+    /// tracked scene, which is what made the icon unclickable in 7.6.3–7.6.5. The app
+    /// now owns one long-lived item for its whole lifetime; this only closes the popover.
+    func rebuildStatusItemAfterPolicyChange() {
+        closePopover()
+    }
+
+    // MARK: - Popover Presentation
+
+    @objc func togglePopover(_ sender: AnyObject?) {
+        lastToggleAt = Date()
+        os_log("🖱️ Toggling popover (shown=%d)", log: appLog, type: .info, popover.isShown ? 1 : 0)
+        if popover.isShown {
+            closePopover()
+        } else {
+            showPopover()
+        }
+    }
+
+    private func showPopover() {
+        guard let button = statusItem.button else { return }
+        presentation.refreshHardware()
+        PermissionsManager.shared.checkAllPermissions()
+        TranscriptionStats.shared.loadStats()
+        syncPopoverSize()
+
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        popover.contentViewController?.view.window?.makeKey()
+    }
+
+    private func closePopover() {
+        if popover.isShown {
+            popover.performClose(nil)
+        }
+    }
+
+    private func syncPopoverSize() {
+        guard let vc = popover.contentViewController else { return }
+        vc.view.layoutSubtreeIfNeeded()
+        let fitted = vc.view.fittingSize
+        if fitted.width > 0 && fitted.height > 0 {
+            // Leave the icon-to-popover gap out of the height so the card is not clipped.
+            popover.contentSize = fitted
+        }
     }
 
     // MARK: - Observations & Icon Animation
@@ -120,101 +338,10 @@ final class StatusBarController: NSObject, NSMenuDelegate {
                 self.updateIcon(for: AppState.shared.recordingState)
             }
             .store(in: &cancellables)
-
-        appearanceObservation = NSApp.observe(\.effectiveAppearance, options: [.new]) { [weak self] _, _ in
-            DispatchQueue.main.async {
-                guard let self else { return }
-                self.pinMenuAppearance(self.rootMenu)
-                self.updateIcon(for: AppState.shared.recordingState)
-            }
-        }
-    }
-
-    func updateIcon(for state: RecordingState) {
-        guard let button = statusItem.button else { return }
-        button.toolTip = "EchoTune — \(state.description)"
-
-        let modelManager = ModelManager.shared
-        let needsTimer: Bool
-        var newPosition: NSButton.ImagePosition = .imageOnly
-        var newImage: NSImage
-        var newTitle = ""
-
-        switch state {
-        case .recording:
-            needsTimer = true
-            // The duration text is quantised to whole seconds on purpose. Writing a
-            // 1/10s timer string into `button.title` resized the status item on every
-            // animation frame, which on macOS 26 forced Control Center to re-lay-out the
-            // status-item scene ~12x/sec. That scene churn is what stopped Control Center
-            // forwarding clicks into EchoTune, so the menu bar icon looked "dead". Keep the
-            // width stable and only re-render the waveform.
-            newPosition = .imageLeading
-            newImage = MenuBarIconRenderer.render(state: .recording(level: AudioManager.shared.audioLevel))
-            newTitle = " \(Self.wholeSecondDurationText())"
-
-        case .processing:
-            needsTimer = true
-            newImage = MenuBarIconRenderer.render(state: .processing(phase: animationPhase))
-
-        case .loadingModel:
-            needsTimer = true
-            let progress = max(WhisperEngine.shared.loadingProgress, ParakeetEngine.shared.loadingProgress, 0.15)
-            newImage = MenuBarIconRenderer.render(state: .loading(progress: progress))
-
-        case .error:
-            needsTimer = false
-            newImage = MenuBarIconRenderer.render(state: .error)
-
-        case .idle:
-            needsTimer = false
-            if modelManager.isDownloading {
-                newImage = MenuBarIconRenderer.render(state: .loading(progress: modelManager.downloadProgress))
-            } else {
-                newImage = MenuBarIconRenderer.render(state: .idle)
-            }
-        }
-
-        // Never touch the status button when nothing actually changed — every write here
-        // becomes an NSSceneFenceAction across the Control Center XPC boundary.
-        if button.imagePosition != newPosition {
-            button.imagePosition = newPosition
-        }
-        if !Self.imagesEqual(button.image, newImage) {
-            button.image = newImage
-        }
-        if button.title != newTitle {
-            button.title = newTitle
-        }
-        if button.contentTintColor != nil {
-            button.contentTintColor = nil
-        }
-
-        if needsTimer {
-            startIconAnimationTimerIfNeeded()
-        } else {
-            stopIconAnimationTimer()
-        }
-    }
-
-    /// Whole-second recording readout — stable width, no per-frame resizing.
-    private static func wholeSecondDurationText() -> String {
-        let total = Int(AudioManager.shared.recordingDuration.rounded(.down))
-        return String(format: "%d:%02d", total / 60, total % 60)
-    }
-
-    private static func imagesEqual(_ lhs: NSImage?, _ rhs: NSImage?) -> Bool {
-        switch (lhs, rhs) {
-        case (nil, nil): return true
-        case let (l?, r?): return l === r
-        default: return false
-        }
     }
 
     private func startIconAnimationTimerIfNeeded() {
         guard iconAnimationTimer == nil else { return }
-        // 10 Hz is plenty for a menu-bar waveform and keeps Control Center's status-item
-        // scene updates an order of magnitude below the level that broke click forwarding.
         let timer = Timer(timeInterval: 1.0 / 10.0, repeats: true) { [weak self] _ in
             guard let self else { return }
             self.animationPhase += 0.45
@@ -230,653 +357,59 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         animationPhase = 0
     }
 
-    // MARK: - NSMenuDelegate & Appearance Pinning (CodexBar pattern)
-
-    func menuWillOpen(_ menu: NSMenu) {
-        guard menu === rootMenu else { return }
-        pinMenuAppearance(rootMenu)
-        _ = AudioManager.shared.getAvailableInputDevices()
-        PermissionsManager.shared.checkAllPermissions()
-        TranscriptionStats.shared.loadStats()
-        rebuildDynamicMenuItems()
-        syncCardHeight()
-    }
-
-    private func pinMenuAppearance(_ menu: NSMenu) {
-        menu.appearance = NSApp.effectiveAppearance
-        for item in menu.items {
-            item.submenu?.appearance = nil
-        }
-    }
-
-    // MARK: - Menu Construction
-
-    private func buildMenuSkeleton() {
-        let rootCard = AnyView(
-            EchoTuneMenuCardView(presentation: presentation)
-                .environmentObject(AppState.shared)
-                .environmentObject(AppSettings.shared)
-                .environmentObject(AppCoordinator.shared)
-        )
-        let hosting = FirstMouseMenuHostingView(rootView: rootCard)
-        hosting.translatesAutoresizingMaskIntoConstraints = true
-
-        let item = EchoMenuCardItem()
-        item.title = ""
-        item.view = hosting
-        item.isEnabled = true
-
-        self.cardHostingView = hosting
-        self.cardMenuItem = item
-
-        rootMenu.addItem(item)
-        rootMenu.addItem(.separator())
-
-        rebuildDynamicMenuItems()
-        syncCardHeight()
-    }
-
-    private func syncCardHeight() {
-        guard let hosting = cardHostingView else { return }
-        hosting.frame.size.width = Self.menuWidth
-        hosting.layoutSubtreeIfNeeded()
-        let fitted = hosting.fittingSize
-        let measuredHeight = max(220, ceil(fitted.height + 2))
-        if abs(hosting.frame.height - measuredHeight) > 0.5 || abs(hosting.frame.width - Self.menuWidth) > 0.5 {
-            hosting.frame = NSRect(x: 0, y: 0, width: Self.menuWidth, height: measuredHeight)
-        }
-    }
-
-    private func rebuildDynamicMenuItems() {
-        // Keep cardMenuItem (index 0) and its separator (index 1) permanently
-        // attached so NSHostingView never detaches during menuWillOpen on macOS 26.
-        while rootMenu.numberOfItems > 2 {
-            rootMenu.removeItem(at: 2)
-        }
-
-        // Section 0: Native 1-Click Dictate & Copy Last Actions
-        let isRecording = AppState.shared.recordingState == .recording
-        let shortcutLabel = ShortcutManager.shared.getCurrentShortcutString()
-        let dictateItem = makeActionItem(
-            title: isRecording ? "Stop Dictation" : "Start Dictation (\(shortcutLabel))",
-            symbol: isRecording ? "stop.circle.fill" : "mic.fill",
-            action: #selector(toggleDictationFromMenu)
-        )
-        rootMenu.addItem(dictateItem)
-
-        let copyItem = makeActionItem(
-            title: "Copy Last Dictation",
-            symbol: "doc.on.doc",
-            action: #selector(copyLatestFromMenu)
-        )
-        copyItem.isEnabled = !TranscriptionHistoryManager.shared.transcriptions.isEmpty
-        rootMenu.addItem(copyItem)
-
-        rootMenu.addItem(.separator())
-
-        // Section 1: Live Pipeline Pickers (Submenus)
-        rootMenu.addItem(makeModelSubmenuItem())
-        rootMenu.addItem(makeMicrophoneSubmenuItem())
-        rootMenu.addItem(makeLanguageSubmenuItem())
-        rootMenu.addItem(makePasteMethodSubmenuItem())
-        rootMenu.addItem(makeEnhancementSubmenuItem())
-        rootMenu.addItem(makeRecentDictationsSubmenuItem())
-
-        rootMenu.addItem(.separator())
-
-        // Section 1b: Instant Floating HUDs (#12)
-        rootMenu.addItem(makeActionItem(
-            title: "Quick History Search…",
-            symbol: "magnifyingglass",
-            keyEquivalent: "H",
-            modifiers: [.command, .shift],
-            action: #selector(openQuickHistoryHUD)
-        ))
-        rootMenu.addItem(makeActionItem(
-            title: "Quick-Add to Dictionary…",
-            symbol: "plus.bubble",
-            keyEquivalent: "D",
-            modifiers: [.command, .shift],
-            action: #selector(openQuickAddDictionaryHUD)
-        ))
-
-        rootMenu.addItem(.separator())
-
-        // Section 2: Dashboard + Workspace Submenu (keeps root menu compact on 13" screens)
-        rootMenu.addItem(makeActionItem(
-            title: "Open EchoTune Dashboard",
-            symbol: "rectangle.grid.1x2",
-            action: #selector(openDashboardHome)
-        ))
-        // The menu bar is always reachable, so it must be able to close a window the user
-        // cannot reach with the mouse (a window stranded off screen used to have no way out
-        // at all). The whole menu is rebuilt in menuWillOpen, so this state is re-evaluated
-        // every time the menu is opened.
-        rootMenu.addItem(makeActionItem(
-            title: "Close Dashboard Window",
-            symbol: "xmark.rectangle",
-            isEnabled: AppDelegate.shared?.hasVisibleStandardWindow ?? false,
-            action: #selector(closeDashboardWindow)
-        ))
-        rootMenu.addItem(makeWorkspaceSubmenuItem())
-
-        rootMenu.addItem(.separator())
-
-        // Section 3: Meta / App Lifecycle (CodexBar metaSection)
-        rootMenu.addItem(makeActionItem(
-            title: "Check for Updates…",
-            symbol: "arrow.triangle.2.circlepath.circle",
-            action: #selector(checkForUpdates)
-        ))
-        rootMenu.addItem(makeActionItem(
-            title: "Settings…",
-            symbol: "gearshape",
-            keyEquivalent: ",",
-            action: #selector(openSettingsGeneral)
-        ))
-        rootMenu.addItem(makeActionItem(
-            title: "About EchoTune (v\(Bundle.main.appVersionString))",
-            symbol: "info.circle",
-            action: #selector(openAboutLicense)
-        ))
-        rootMenu.addItem(makeActionItem(
-            title: "Quit EchoTune",
-            symbol: "xmark.rectangle",
-            keyEquivalent: "q",
-            action: #selector(quitApp)
-        ))
-    }
-
-    // MARK: - Submenu Builders
-
-    private func makeModelSubmenuItem() -> NSMenuItem {
-        let submenu = NSMenu(title: "Transcription Model")
-        submenu.autoenablesItems = false
+    func updateIcon(for state: RecordingState) {
+        guard let button = statusItem.button else { return }
+        button.toolTip = "EchoTune — \(state.description)"
 
         let modelManager = ModelManager.shared
-        let activeID = modelManager.currentModel?.id ?? AppSettings.shared.defaultTranscriptionModel
+        let needsTimer: Bool
+        let image: NSImage
+        var title = ""
 
-        let locals = modelManager.availableModels.filter { $0.category == .local }
-        let clouds = modelManager.availableModels.filter { $0.category == .cloud }
+        switch state {
+        case .recording:
+            needsTimer = true
+            image = MenuBarIconRenderer.render(state: .recording(level: AudioManager.shared.audioLevel))
+            title = " \(AudioManager.formatDuration(AudioManager.shared.recordingDuration))"
+            button.imagePosition = .imageLeading
 
-        let localHeader = NSMenuItem(title: "On-Device Models", action: nil, keyEquivalent: "")
-        localHeader.isEnabled = false
-        submenu.addItem(localHeader)
+        case .processing:
+            needsTimer = true
+            image = MenuBarIconRenderer.render(state: .processing(phase: animationPhase))
+            button.imagePosition = .imageOnly
 
-        for model in locals {
-            let isSelected = model.id == activeID
-            let statusTag: String
-            if model.isBuiltIn {
-                statusTag = "Built-in"
-            } else if modelManager.isInstalledAndUsable(model) {
-                statusTag = "Ready"
+        case .loadingModel:
+            needsTimer = true
+            let progress = max(WhisperEngine.shared.loadingProgress, ParakeetEngine.shared.loadingProgress, 0.15)
+            image = MenuBarIconRenderer.render(state: .loading(progress: progress))
+            button.imagePosition = .imageOnly
+
+        case .error:
+            needsTimer = false
+            image = MenuBarIconRenderer.render(state: .error)
+            button.imagePosition = .imageOnly
+
+        case .idle:
+            needsTimer = false
+            if modelManager.isDownloading {
+                image = MenuBarIconRenderer.render(state: .loading(progress: modelManager.downloadProgress))
             } else {
-                statusTag = "Download"
+                image = MenuBarIconRenderer.render(state: .idle)
             }
-
-            let item = NSMenuItem(
-                title: "\(model.name) — \(statusTag)",
-                action: #selector(selectModelFromMenu(_:)),
-                keyEquivalent: ""
-            )
-            item.target = self
-            item.representedObject = model.id
-            item.state = isSelected ? .on : .off
-            item.image = symbolImage(model.isBuiltIn ? "apple.logo" : "cpu")
-            submenu.addItem(item)
+            button.imagePosition = .imageOnly
         }
 
-        if !clouds.isEmpty {
-            submenu.addItem(.separator())
-            let cloudHeader = NSMenuItem(title: "Cloud Models (BYO API Key)", action: nil, keyEquivalent: "")
-            cloudHeader.isEnabled = false
-            submenu.addItem(cloudHeader)
+        // Only touch the button when something actually changed. Writing to it every
+        // animation frame made Control Center re-lay-out the status item ~10x/second
+        // (an NSSceneFenceAction storm in its log), which is its own source of trouble.
+        if button.image !== image { button.image = image }
+        if button.title != title { button.title = title }
+        if button.contentTintColor != nil { button.contentTintColor = nil }
 
-            for model in clouds {
-                let isSelected = model.id == activeID
-                let item = NSMenuItem(
-                    title: model.name,
-                    action: #selector(selectModelFromMenu(_:)),
-                    keyEquivalent: ""
-                )
-                item.target = self
-                item.representedObject = model.id
-                item.state = isSelected ? .on : .off
-                item.image = symbolImage("cloud")
-                submenu.addItem(item)
-            }
-        }
-
-        submenu.addItem(.separator())
-        submenu.addItem(makeActionItem(
-            title: "Manage AI Models & Keys…",
-            symbol: "slider.horizontal.below.rectangle",
-            action: #selector(openSettingsModels)
-        ))
-
-        let parent = NSMenuItem(title: "Transcription Model", action: nil, keyEquivalent: "")
-        parent.image = symbolImage("cpu")
-        parent.submenu = submenu
-        return parent
-    }
-
-    private func makeMicrophoneSubmenuItem() -> NSMenuItem {
-        let submenu = NSMenu(title: "Microphone Input")
-        submenu.autoenablesItems = false
-
-        let devices = AudioManager.shared.getAvailableInputDevices()
-        let currentID = AudioManager.shared.currentInputDevice?.id
-
-        if devices.isEmpty {
-            let empty = NSMenuItem(title: "System Default Microphone", action: nil, keyEquivalent: "")
-            empty.isEnabled = false
-            submenu.addItem(empty)
+        if needsTimer {
+            startIconAnimationTimerIfNeeded()
         } else {
-            for device in devices {
-                let title = device.isDefault ? "\(device.name) (System Default)" : device.name
-                let item = NSMenuItem(
-                    title: title,
-                    action: #selector(selectMicrophoneFromMenu(_:)),
-                    keyEquivalent: ""
-                )
-                item.target = self
-                item.representedObject = device.id
-                item.state = (device.id == currentID || (currentID == nil && device.isDefault)) ? .on : .off
-                item.image = symbolImage(device.icon)
-                submenu.addItem(item)
-            }
+            stopIconAnimationTimer()
         }
-
-        let parent = NSMenuItem(title: "Microphone Input", action: nil, keyEquivalent: "")
-        parent.image = symbolImage("mic")
-        parent.submenu = submenu
-        return parent
-    }
-
-    private func makeLanguageSubmenuItem() -> NSMenuItem {
-        let submenu = NSMenu(title: "Dictation Language")
-        submenu.autoenablesItems = false
-        let settings = AppSettings.shared
-
-        let autoItem = NSMenuItem(
-            title: "Auto-Detect Language (Multilingual)",
-            action: #selector(toggleAutoDetectLanguage),
-            keyEquivalent: ""
-        )
-        autoItem.target = self
-        autoItem.state = settings.autoDetectLanguage ? .on : .off
-        autoItem.image = symbolImage("sparkles")
-        submenu.addItem(autoItem)
-
-        submenu.addItem(.separator())
-
-        let languages: [(code: String, label: String)] = [
-            ("en-US", "English (US)"),
-            ("en-GB", "English (UK)"),
-            ("es-ES", "Spanish"),
-            ("fr-FR", "French"),
-            ("de-DE", "German"),
-            ("ja-JP", "Japanese"),
-            ("zh-CN", "Chinese (Mandarin)"),
-            ("hi-IN", "Hindi"),
-            ("pt-BR", "Portuguese"),
-            ("it-IT", "Italian"),
-            ("ar-SA", "Arabic")
-        ]
-
-        for lang in languages {
-            let item = NSMenuItem(
-                title: lang.label,
-                action: #selector(selectLanguageFromMenu(_:)),
-                keyEquivalent: ""
-            )
-            item.target = self
-            item.representedObject = lang.code
-            item.state = (!settings.autoDetectLanguage && settings.preferredLanguage == lang.code) ? .on : .off
-            submenu.addItem(item)
-        }
-
-        submenu.addItem(.separator())
-        submenu.addItem(makeActionItem(
-            title: "Speech & Translation Settings…",
-            symbol: "globe",
-            action: #selector(openSettingsSpeech)
-        ))
-
-        let parent = NSMenuItem(title: "Dictation Language", action: nil, keyEquivalent: "")
-        parent.image = symbolImage("globe")
-        parent.submenu = submenu
-        return parent
-    }
-
-    private func makePasteMethodSubmenuItem() -> NSMenuItem {
-        let submenu = NSMenu(title: "Paste Method")
-        submenu.autoenablesItems = false
-        let current = AppSettings.shared.pasteMethod
-
-        for method in PasteMethod.allCases {
-            let item = NSMenuItem(
-                title: method.displayName,
-                action: #selector(selectPasteMethodFromMenu(_:)),
-                keyEquivalent: ""
-            )
-            item.target = self
-            item.representedObject = method.rawValue
-            item.state = (method == current) ? .on : .off
-            submenu.addItem(item)
-        }
-
-        let parent = NSMenuItem(title: "Paste Method (\(current.shortName))", action: nil, keyEquivalent: "")
-        parent.image = symbolImage("keyboard.badge.ellipsis")
-        parent.submenu = submenu
-        return parent
-    }
-
-    private func makeEnhancementSubmenuItem() -> NSMenuItem {
-        let submenu = NSMenu(title: "AI Enhancement")
-        submenu.autoenablesItems = false
-        let settings = AppSettings.shared
-
-        let enabledItem = NSMenuItem(
-            title: "Enable AI Cleanup & Formatting",
-            action: #selector(toggleAIEnhancement),
-            keyEquivalent: ""
-        )
-        enabledItem.target = self
-        enabledItem.state = settings.aiEnhancementEnabled ? .on : .off
-        enabledItem.image = symbolImage("sparkles")
-        submenu.addItem(enabledItem)
-
-        let translateItem = NSMenuItem(
-            title: "Translate Dictation to English",
-            action: #selector(toggleTranslateToEnglish),
-            keyEquivalent: ""
-        )
-        translateItem.target = self
-        translateItem.state = settings.translateToEnglish ? .on : .off
-        translateItem.image = symbolImage("character.bubble")
-        submenu.addItem(translateItem)
-
-        submenu.addItem(.separator())
-        submenu.addItem(makeActionItem(
-            title: "Configure Prompts & Automation…",
-            symbol: "bolt.fill",
-            action: #selector(openSettingsAutomation)
-        ))
-        submenu.addItem(makeActionItem(
-            title: "Configure Keyboard Shortcuts…",
-            symbol: "keyboard",
-            action: #selector(openSettingsHotkeys)
-        ))
-
-        let parent = NSMenuItem(title: "AI Cleanup & Shortcuts", action: nil, keyEquivalent: "")
-        parent.image = symbolImage("wand.and.stars")
-        parent.submenu = submenu
-        return parent
-    }
-
-    private func makeRecentDictationsSubmenuItem() -> NSMenuItem {
-        let submenu = NSMenu(title: "Recent Dictations")
-        submenu.autoenablesItems = false
-        let items = Array(TranscriptionHistoryManager.shared.transcriptions.prefix(8))
-
-        if items.isEmpty {
-            let empty = NSMenuItem(title: "No dictations recorded yet", action: nil, keyEquivalent: "")
-            empty.isEnabled = false
-            submenu.addItem(empty)
-        } else {
-            let hint = NSMenuItem(title: "Click any transcript to copy", action: nil, keyEquivalent: "")
-            hint.isEnabled = false
-            submenu.addItem(hint)
-
-            for entry in items {
-                let singleLine = entry.text
-                    .replacingOccurrences(of: "\n", with: " ")
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                let clipped = singleLine.count > 48 ? String(singleLine.prefix(48)) + "…" : singleLine
-                let row = NSMenuItem(
-                    title: clipped.isEmpty ? "(Empty)" : clipped,
-                    action: #selector(copyHistoryItemFromMenu(_:)),
-                    keyEquivalent: ""
-                )
-                row.target = self
-                row.representedObject = entry.text
-                row.toolTip = entry.text
-                row.image = symbolImage("doc.on.doc")
-                submenu.addItem(row)
-            }
-
-            submenu.addItem(.separator())
-            submenu.addItem(makeActionItem(
-                title: "Open Full History…",
-                symbol: "clock.arrow.circlepath",
-                action: #selector(openHistory)
-            ))
-        }
-
-        let parent = NSMenuItem(title: "Recent Dictations", action: nil, keyEquivalent: "")
-        parent.image = symbolImage("clock.arrow.circlepath")
-        parent.submenu = submenu
-        return parent
-    }
-
-    private func makeWorkspaceSubmenuItem() -> NSMenuItem {
-        let submenu = NSMenu(title: "Workspace & Memory")
-        submenu.autoenablesItems = false
-
-        submenu.addItem(makeActionItem(
-            title: "Echo Profile",
-            symbol: "brain.head.profile",
-            action: #selector(openEchoProfile)
-        ))
-
-        let openTaskCount = CommitmentMemoryManager.shared.commitments.filter { $0.status == .open }.count
-        let tasksTitle = openTaskCount > 0 ? "Tasks & Commitments (\(openTaskCount))" : "Tasks & Commitments"
-        submenu.addItem(makeActionItem(
-            title: tasksTitle,
-            symbol: "checklist",
-            action: #selector(openTasks)
-        ))
-
-        submenu.addItem(makeActionItem(
-            title: "Voice Notes",
-            symbol: "note.text",
-            action: #selector(openNotes)
-        ))
-        submenu.addItem(makeActionItem(
-            title: "Custom Dictionary",
-            symbol: "character.book.closed",
-            action: #selector(openDictionary)
-        ))
-        submenu.addItem(makeActionItem(
-            title: "Share Progress Card…",
-            symbol: "square.and.arrow.up",
-            action: #selector(openShareCard)
-        ))
-
-        let parent = NSMenuItem(title: "Workspace & Memory", action: nil, keyEquivalent: "")
-        parent.image = symbolImage("brain.head.profile")
-        parent.submenu = submenu
-        return parent
-    }
-
-    // MARK: - NSMenuItem Factory
-
-    private func makeActionItem(
-        title: String,
-        symbol: String,
-        keyEquivalent: String = "",
-        modifiers: NSEvent.ModifierFlags = [.command],
-        isEnabled: Bool = true,
-        action: Selector
-    ) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent)
-        if !keyEquivalent.isEmpty {
-            item.keyEquivalentModifierMask = modifiers
-        }
-        item.target = self
-        item.isEnabled = isEnabled
-        item.image = symbolImage(symbol)
-        return item
-    }
-
-    private func symbolImage(_ name: String) -> NSImage? {
-        let config = NSImage.SymbolConfiguration(pointSize: 13.5, weight: .regular)
-        let img = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
-            .withSymbolConfiguration(config)
-        img?.isTemplate = true
-        return img
-    }
-
-    // MARK: - Actions
-
-    @objc private func toggleDictationFromMenu() {
-        DispatchQueue.main.async {
-            AppCoordinator.shared.toggleDictation()
-        }
-    }
-
-    @objc private func copyLatestFromMenu() {
-        guard let latest = TranscriptionHistoryManager.shared.transcriptions.first else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(latest.text, forType: .string)
-    }
-
-    @objc private func selectModelFromMenu(_ sender: NSMenuItem) {
-        guard let modelID = sender.representedObject as? String else { return }
-        let mm = ModelManager.shared
-        guard let target = mm.availableModels.first(where: { $0.id == modelID }) else { return }
-
-        if target.category == .local && !target.isBuiltIn && !mm.isInstalledAndUsable(target) {
-            mm.downloadModel(target) { result in
-                if case .success(let installed) = result {
-                    _ = mm.setCurrentModel(installed)
-                }
-            }
-        } else {
-            _ = mm.setCurrentModel(target)
-        }
-    }
-
-    @objc private func selectMicrophoneFromMenu(_ sender: NSMenuItem) {
-        guard let deviceID = sender.representedObject as? String else { return }
-        AudioManager.shared.selectAudioDevice(id: deviceID)
-    }
-
-    @objc private func toggleAutoDetectLanguage() {
-        AppSettings.shared.autoDetectLanguage.toggle()
-    }
-
-    @objc private func selectLanguageFromMenu(_ sender: NSMenuItem) {
-        guard let code = sender.representedObject as? String else { return }
-        AppSettings.shared.autoDetectLanguage = false
-        AppSettings.shared.preferredLanguage = code
-    }
-
-    @objc private func selectPasteMethodFromMenu(_ sender: NSMenuItem) {
-        guard let raw = sender.representedObject as? String,
-              let method = PasteMethod(rawValue: raw) else { return }
-        AppSettings.shared.pasteMethod = method
-    }
-
-    @objc private func openQuickHistoryHUD() {
-        QuickHistoryPanelController.shared.toggle()
-    }
-
-    @objc private func openQuickAddDictionaryHUD() {
-        DictionaryQuickAddPanelController.shared.show()
-    }
-
-    @objc private func toggleAIEnhancement() {
-        AppSettings.shared.aiEnhancementEnabled.toggle()
-    }
-
-    @objc private func toggleTranslateToEnglish() {
-        AppSettings.shared.translateToEnglish.toggle()
-    }
-
-    @objc private func copyHistoryItemFromMenu(_ sender: NSMenuItem) {
-        guard let text = sender.representedObject as? String else { return }
-        let pb = NSPasteboard.general
-        pb.clearContents()
-        pb.setString(text, forType: .string)
-    }
-
-    @objc private func openDashboardHome() {
-        AppDelegate.shared?.showDashboard(item: .home)
-    }
-
-    @objc private func closeDashboardWindow() {
-        rootMenu.cancelTracking()
-        DispatchQueue.main.async {
-            AppDelegate.shared?.closeStandardWindow()
-        }
-    }
-
-    @objc private func openHistory() {
-        AppDelegate.shared?.showDashboard(item: .history)
-    }
-
-    @objc private func openNotes() {
-        AppDelegate.shared?.showDashboard(item: .notes)
-    }
-
-    @objc private func openDictionary() {
-        AppDelegate.shared?.showDashboard(item: .dictionary)
-    }
-
-    @objc private func openShareCard() {
-        AppDelegate.shared?.showDashboard(item: .share)
-    }
-
-    @objc private func openEchoProfile() {
-        AppDelegate.shared?.showEchoProfile()
-    }
-
-    @objc private func openTasks() {
-        AppDelegate.shared?.showCommitments()
-    }
-
-    @objc private func openSettingsGeneral() {
-        AppDelegate.shared?.showSettings(tab: .general)
-    }
-
-    @objc private func openSettingsModels() {
-        AppDelegate.shared?.showSettings(tab: .aiModels)
-    }
-
-    @objc private func openSettingsSpeech() {
-        AppDelegate.shared?.showSettings(tab: .speech)
-    }
-
-    @objc private func openSettingsAutomation() {
-        AppDelegate.shared?.showSettings(tab: .automation)
-    }
-
-    @objc private func openSettingsHotkeys() {
-        AppDelegate.shared?.showSettings(tab: .hotkeys)
-    }
-
-    @objc private func openAboutLicense() {
-        AppDelegate.shared?.showSettings(tab: .license)
-    }
-
-    @objc private func checkForUpdates() {
-        UpdateManager.shared.checkForUpdates()
-    }
-
-    @objc private func quitApp() {
-        rootMenu.cancelTracking()
-        DispatchQueue.main.async {
-            NSApp.terminate(nil)
-        }
-    }
-}
-
-extension StatusBarController: NSMenuItemValidation {
-    /// "Close Dashboard Window" only makes sense while one of our windows is on screen.
-    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        guard menuItem.action == #selector(closeDashboardWindow) else { return true }
-        return AppDelegate.shared?.hasVisibleStandardWindow ?? false
     }
 }
