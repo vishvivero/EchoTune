@@ -257,7 +257,7 @@ extension AppCoordinator {
             self.appState.recordingStatusDetail = nil
 
             // Update status bar
-            if let appDelegate = NSApp.delegate as? AppDelegate,
+            if let appDelegate = AppDelegate.shared,
                let statusBar = appDelegate.statusBarController {
                 statusBar.updateIcon(for: .idle)
             }
@@ -601,7 +601,7 @@ extension AppCoordinator {
             }
             self.appState.recordingState = .idle
             self.appState.recordingStatusDetail = nil
-            if let appDelegate = NSApp.delegate as? AppDelegate, let statusBar = appDelegate.statusBarController {
+            if let appDelegate = AppDelegate.shared, let statusBar = appDelegate.statusBarController {
                 statusBar.updateIcon(for: .idle)
             }
             self.analyticsManager.recordTranscription(duration: recordingDuration, wordCount: wordCount, transcriptionTime: processingMetadata.totalLatency ?? recordingDuration)
@@ -670,7 +670,7 @@ extension AppCoordinator {
         self.appState.recordingStatusDetail = nil
 
         // Update status bar
-        if let appDelegate = NSApp.delegate as? AppDelegate,
+        if let appDelegate = AppDelegate.shared,
            let statusBar = appDelegate.statusBarController {
             statusBar.updateIcon(for: .idle)
         }
@@ -699,7 +699,7 @@ extension AppCoordinator {
         }
 
         // Update status bar
-        if let appDelegate = NSApp.delegate as? AppDelegate,
+        if let appDelegate = AppDelegate.shared,
            let statusBar = appDelegate.statusBarController {
             statusBar.updateIcon(for: .idle)
         }

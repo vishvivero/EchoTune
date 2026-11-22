@@ -30,15 +30,35 @@ final class ActivatingStandardWindow: NSWindow {
         }
         super.sendEvent(event)
     }
+
+    /// Escape closes the window, so a window whose traffic lights are hard to hit still has
+    /// a way out. Skipped while a text field has focus: the field editor treats Escape as
+    /// "revert this field", and closing the window out from under it would discard typing.
+    override func cancelOperation(_ sender: Any?) {
+        guard !(firstResponder is NSTextView) else { return }
+        performClose(nil)
+    }
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate, NSWindowDelegate {
+    /// The live app delegate.
+    ///
+    /// SwiftUI owns a lifecycle app's `NSApp.delegate` (it is SwiftUI's own wrapper object),
+    /// so `NSApp.delegate as? AppDelegate` silently yields nil. Anything that needs to reach
+    /// the delegate — the menu bar items, the recording pipeline — must use this instead.
+    static private(set) weak var shared: AppDelegate?
+
     var statusBarController: StatusBarController?
     var settingsWindow: NSWindow?
     var dashboardWindow: NSWindow?
     var onboardingWindow: NSWindow?
     var echoProfileWindowController: EchoProfileWindowController?
     var commitmentsWindowController: CommitmentsWindowController?
+
+    override init() {
+        super.init()
+        AppDelegate.shared = self
+    }
 
     private let onboardingState = OnboardingStateStore.shared
     private let spaceInspector = SpaceInspector.shared
@@ -73,6 +93,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         debugLog("🚀 EchoTune launching...")
+
+        // Diagnostics for a class of bug that is invisible at compile time: if
+        // `NSApp.delegate` is not us, every `NSApp.delegate as? AppDelegate` lookup in the
+        // app would silently do nothing.
+        let nsAppDelegate = NSApp.delegate
+        spaceLog.notice("app delegate: NSApp.delegate=\(String(describing: type(of: nsAppDelegate as Any)), privacy: .public) shared=\(AppDelegate.shared != nil, privacy: .public) same=\(AppDelegate.shared === nsAppDelegate, privacy: .public)")
 
         let args = ProcessInfo.processInfo.arguments
         let relaunchWaitPID: pid_t? = {
@@ -259,6 +285,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var managedWindows: [NSWindow] {
         [dashboardWindow, settingsWindow, onboardingWindow,
          echoProfileWindowController?.window, commitmentsWindowController?.window].compactMap { $0 }
+    }
+
+    /// True while one of EchoTune's standard windows is on screen.
+    var hasVisibleStandardWindow: Bool {
+        managedWindows.contains { $0.isVisible }
+    }
+
+    /// Closes whichever standard window is in front — the menu-bar escape hatch for a
+    /// window the user cannot reach with the mouse.
+    func closeStandardWindow() {
+        let frontmost = [NSApp.keyWindow, NSApp.mainWindow]
+            .compactMap { $0 }
+            .first { candidate in managedWindows.contains { $0 === candidate } }
+        let target = frontmost ?? managedWindows.first { $0.isVisible }
+        guard let target else { return }
+        spaceLog.notice("Closing '\(target.title, privacy: .public)' from the menu bar")
+        target.performClose(nil)
     }
 
     /// Guarantees a managed window is actually reachable *and* that AppKit's idea of where it

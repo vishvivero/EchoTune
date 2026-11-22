@@ -76,7 +76,7 @@ extension AppCoordinator {
                 appState.recordingState = .loadingModel(currentModel.name)
 
                 // Update status bar to show loading
-                if let appDelegate = NSApp.delegate as? AppDelegate,
+                if let appDelegate = AppDelegate.shared,
                    let statusBar = appDelegate.statusBarController {
                     statusBar.updateIcon(for: .loadingModel(currentModel.name))
                 }
@@ -114,7 +114,7 @@ extension AppCoordinator {
                             self.beginRecording()
                         } else {
                             debugLog("✅ Whisper model loaded after \(Int(loadDuration))s — not auto-starting")
-                            if let appDelegate = NSApp.delegate as? AppDelegate,
+                            if let appDelegate = AppDelegate.shared,
                                let statusBar = appDelegate.statusBarController {
                                 statusBar.updateIcon(for: .idle)
                             }
@@ -132,7 +132,7 @@ extension AppCoordinator {
                         self.appState.recordingState = .idle
 
                         // Update status bar
-                        if let appDelegate = NSApp.delegate as? AppDelegate,
+                        if let appDelegate = AppDelegate.shared,
                            let statusBar = appDelegate.statusBarController {
                             statusBar.updateIcon(for: .idle)
                         }
@@ -280,7 +280,7 @@ extension AppCoordinator {
             appState.recordingState = .idle
             appState.recordingStatusDetail = nil
             clearCurrentProcessingState()
-            if let appDelegate = NSApp.delegate as? AppDelegate,
+            if let appDelegate = AppDelegate.shared,
                let statusBar = appDelegate.statusBarController {
                 statusBar.updateIcon(for: .idle)
             }
@@ -298,7 +298,7 @@ extension AppCoordinator {
         debugLog("✓ Cloud recording started for: \(model.name)")
 
         // Update status bar icon
-        if let appDelegate = NSApp.delegate as? AppDelegate,
+        if let appDelegate = AppDelegate.shared,
            let statusBar = appDelegate.statusBarController {
             statusBar.updateIcon(for: .recording)
         }
@@ -365,7 +365,7 @@ extension AppCoordinator {
             appState.recordingState = .idle
             appState.recordingStatusDetail = nil
             clearCurrentProcessingState()
-            if let appDelegate = NSApp.delegate as? AppDelegate,
+            if let appDelegate = AppDelegate.shared,
                let statusBar = appDelegate.statusBarController {
                 statusBar.updateIcon(for: .idle)
             }
@@ -407,7 +407,7 @@ extension AppCoordinator {
                 appState.recordingState = .idle
                 appState.recordingStatusDetail = nil
                 clearCurrentProcessingState()
-                if let appDelegate = NSApp.delegate as? AppDelegate,
+                if let appDelegate = AppDelegate.shared,
                    let statusBar = appDelegate.statusBarController {
                     statusBar.updateIcon(for: .idle)
                 }
@@ -570,7 +570,7 @@ extension AppCoordinator {
         }
 
         // Update status bar
-        if let appDelegate = NSApp.delegate as? AppDelegate,
+        if let appDelegate = AppDelegate.shared,
            let statusBar = appDelegate.statusBarController {
             statusBar.updateIcon(for: .processing)
         }
@@ -628,7 +628,7 @@ extension AppCoordinator {
             appState.recordingState = .idle
             appState.recordingStatusDetail = nil
             clearCurrentProcessingState()
-            if let appDelegate = NSApp.delegate as? AppDelegate,
+            if let appDelegate = AppDelegate.shared,
                let statusBar = appDelegate.statusBarController {
                 statusBar.updateIcon(for: .idle)
             }
@@ -684,7 +684,7 @@ extension AppCoordinator {
         }
 
         // Update status bar icon
-        if let appDelegate = NSApp.delegate as? AppDelegate,
+        if let appDelegate = AppDelegate.shared,
            let statusBar = appDelegate.statusBarController {
             statusBar.updateIcon(for: .recording)
         }
@@ -737,7 +737,7 @@ extension AppCoordinator {
             self.appState.recordingState = .idle
             self.appState.recordingStatusDetail = nil
             self.clearCurrentProcessingState()
-            if let appDelegate = NSApp.delegate as? AppDelegate,
+            if let appDelegate = AppDelegate.shared,
                let statusBar = appDelegate.statusBarController {
                 statusBar.updateIcon(for: .idle)
             }
@@ -783,7 +783,7 @@ extension AppCoordinator {
                 self.clearCurrentProcessingState()
 
                 // Update status bar
-                if let appDelegate = NSApp.delegate as? AppDelegate,
+                if let appDelegate = AppDelegate.shared,
                    let statusBar = appDelegate.statusBarController {
                     statusBar.updateIcon(for: .idle)
                 }
@@ -879,7 +879,7 @@ extension AppCoordinator {
         }
 
         // Update status bar icon
-        if let appDelegate = NSApp.delegate as? AppDelegate,
+        if let appDelegate = AppDelegate.shared,
            let statusBar = appDelegate.statusBarController {
             statusBar.updateIcon(for: .processing)
         }
@@ -897,7 +897,7 @@ extension AppCoordinator {
                 self.appState.recordingStatusDetail = nil
                 self.transcriptionEngine.cancelTranscription()
                 self.clearCurrentProcessingState()
-                if let appDelegate = NSApp.delegate as? AppDelegate,
+                if let appDelegate = AppDelegate.shared,
                    let statusBar = appDelegate.statusBarController {
                     statusBar.updateIcon(for: .idle)
                 }
@@ -941,7 +941,7 @@ extension AppCoordinator {
             clearCurrentProcessingState()
             transcriptionEngine.cancelTranscription()
             hideRecorderUI()
-            if let appDelegate = NSApp.delegate as? AppDelegate,
+            if let appDelegate = AppDelegate.shared,
                let statusBar = appDelegate.statusBarController {
                 statusBar.updateIcon(for: .idle)
             }
@@ -951,7 +951,7 @@ extension AppCoordinator {
             appState.recordingState = .idle
             appState.recordingStatusDetail = nil
             clearCurrentProcessingState()
-            if let appDelegate = NSApp.delegate as? AppDelegate,
+            if let appDelegate = AppDelegate.shared,
                let statusBar = appDelegate.statusBarController {
                 statusBar.updateIcon(for: .idle)
             }
@@ -975,7 +975,7 @@ extension AppCoordinator {
         transcriptionEngine.cancelTranscription()
         clearCurrentProcessingState()
         hideRecorderUI()
-        if let appDelegate = NSApp.delegate as? AppDelegate,
+        if let appDelegate = AppDelegate.shared,
            let statusBar = appDelegate.statusBarController {
             statusBar.updateIcon(for: .idle)
         }
