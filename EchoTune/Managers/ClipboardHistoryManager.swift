@@ -60,8 +60,9 @@ final class ClipboardHistoryManager: ObservableObject {
     /// Newest first.
     @Published private(set) var entries: [Entry] = []
 
-    /// How many entries to keep. In-memory only, so this stays small on purpose.
-    static let capacity = 30
+    /// How many entries to keep. In-memory only, so this stays bounded — but
+    /// large enough that a session's worth of clips is never silently dropped.
+    static let capacity = 100
 
     /// Bundle identifiers whose clipboard contents must never be recorded.
     static let excludedBundleIdentifiers: Set<String> = [

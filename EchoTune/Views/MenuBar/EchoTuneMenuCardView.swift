@@ -234,11 +234,16 @@ struct EchoTuneMenuCardView: View {
                     recentContent
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .topLeading)
             .padding(.horizontal, EchoMenuCardLayout.horizontalPadding)
             .padding(.top, 10)
             .padding(.bottom, 8)
         }
-        .frame(width: EchoMenuCardLayout.width, alignment: .leading)
+        // Pin to the top-left. NSHostingView measures the card taller than its
+        // settled content on the first layout pass, which centred everything
+        // vertically and made the whole card drift as tabs changed height.
+        .frame(width: EchoMenuCardLayout.width, alignment: .topLeading)
+        .fixedSize(horizontal: false, vertical: true)
         .onChange(of: learner.suggestions.count) { _, _ in
             presentation.onLayoutInvalidated?()
         }
@@ -702,7 +707,9 @@ struct EchoTuneMenuCardView: View {
             if results.isEmpty {
                 recentEmptyState(isSearching: !presentation.recentSearchText.trimmingCharacters(in: .whitespaces).isEmpty)
             } else {
-                ForEach(results.prefix(5)) { entry in
+                // Show the whole list. The store caps itself at `capacity`, so this
+                // is bounded; capping again here hid clips the search had matched.
+                ForEach(results) { entry in
                     clipboardRow(entry)
                 }
 

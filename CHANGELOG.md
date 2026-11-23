@@ -3,6 +3,20 @@
 All notable changes to EchoTune are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [7.7.16] — Menu card top-alignment & full clipboard list
+
+### Fixed — the menu card was vertically centred
+- The card root used `.frame(alignment: .leading)`, which centres vertically inside any taller slot, so the whole card drifted as Overview/Controls/Recent changed height.
+- Switched to `.topLeading` at both the root and the inner column, and anchored the `NSHostingView` to the top of its `NSMenuItem.view` slot (`autoresizingMask = [.minYMargin]`). AppKit centres an unmeasurable custom menu view, which is why the drift reappeared on tab switches.
+- Everything is now flush with the menu's top edge no matter which tab is selected.
+
+### Fixed — Recent showed only some clips
+- The Recent list rendered `results.prefix(5)`, so matched clips beyond the first five were hidden even though the search bar reported them. It now renders every match.
+- Clipboard store capacity raised from 30 to 100, so a session's clips are not silently dropped.
+
+### Verified
+- 7 new `MenuCardLayoutTests` cases: top-left pinning at both levels, top anchoring of the hosting view, no `prefix()` truncation, capacity floor, and that 60 clips are all retained and all searchable.
+
 ## [7.7.15] — Tab-aware menu bar & clipboard Recent tab
 
 ### Changed — the native menu now follows the selected tab

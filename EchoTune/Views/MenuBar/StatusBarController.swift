@@ -223,6 +223,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         )
         let hosting = NSHostingView(rootView: rootCard)
         hosting.translatesAutoresizingMaskIntoConstraints = true
+        // NSMenuItem.view slots are laid out by AppKit, which centres a custom view
+        // whose height it cannot measure. Anchoring the hosting view to the top of
+        // its superview keeps the card flush with the menu's top edge no matter how
+        // the tab heights change.
+        hosting.autoresizingMask = [.minYMargin]
 
         let item = EchoMenuCardItem()
         item.title = ""
