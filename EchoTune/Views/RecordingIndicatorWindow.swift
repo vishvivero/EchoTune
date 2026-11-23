@@ -14,15 +14,12 @@ class RecordingIndicatorWindow: NSPanel {
     private init() {
         // screens can be empty (clamshell/display reconfigure) — fall back to a
         // fixed frame instead of crashing; the panel is repositioned on show.
-        let screenFrame = (NSScreen.main ?? NSScreen.screens.first)?.frame
-            ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        let windowWidth: CGFloat = 200
-        let windowHeight: CGFloat = 40
-
-        let xPos = screenFrame.midX - windowWidth / 2
-        let yPos = screenFrame.minY + 60
-
-        let contentRect = NSRect(x: xPos, y: yPos, width: windowWidth, height: windowHeight)
+        // ET-765 · NSScreen.main is the key-window screen, not the pointer's.
+        let screen = RecorderScreenLock.shared.screenForPlacement()
+        let contentRect = RecorderScreenResolver.topCenteredFrame(
+            size: NSSize(width: 200, height: 40),
+            screen: screen
+        )
 
         super.init(
             contentRect: contentRect,
@@ -43,17 +40,23 @@ class RecordingIndicatorWindow: NSPanel {
     }
 
     func show() {
-        if let screen = NSScreen.main {
-            let xPos = screen.frame.midX - self.frame.width / 2
-            let yPos = screen.frame.minY + 60
-            setFrame(NSRect(x: xPos, y: yPos, width: self.frame.width, height: self.frame.height), display: true)
-        }
+        // ET-765 · same locked screen the recorder is using.
+        let screen = RecorderScreenLock.shared.lock()
+        setFrame(
+            RecorderScreenResolver.topCenteredFrame(
+                size: NSSize(width: self.frame.width, height: self.frame.height),
+                screen: screen
+            ),
+            display: true
+        )
         self.setIsVisible(true)
         self.orderFrontRegardless()
         self.alphaValue = 1
     }
 
     func hide() {
+        // ET-765 · the recording is over; let the next one re-resolve the screen.
+        RecorderScreenLock.shared.unlock()
         self.orderOut(nil)
     }
 }

@@ -55,14 +55,15 @@ class MiniRecorderWindow: NSPanel {
     private var anchorY: CGFloat = 0
 
     private init() {
-        let screen = NSScreen.screens.first(where: { $0.frame.origin == .zero }) ?? NSScreen.screens.first ?? NSScreen.main
-        let screenFrame = screen?.visibleFrame ?? NSRect(x: 0, y: 24, width: 1920, height: 1056)
-
-        let xPos = screenFrame.minX + (screenFrame.width - 360) / 2
-        let yPos = screenFrame.minY + 16
+        // ET-765 · start on the screen under the cursor, not an arbitrary display.
+        let screen = RecorderScreenLock.shared.screenForPlacement()
 
         // Start with minimal height — content will resize it
-        let contentRect = NSRect(x: xPos, y: yPos, width: 360, height: 52)
+        let contentRect = RecorderScreenResolver.bottomCenteredFrame(
+            size: NSSize(width: 360, height: 52),
+            screen: screen,
+            padding: 16
+        )
 
         super.init(
             contentRect: contentRect,
@@ -79,7 +80,7 @@ class MiniRecorderWindow: NSPanel {
         self.ignoresMouseEvents = false
         self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
-        self.anchorY = yPos
+        self.anchorY = contentRect.minY
 
         let swiftUIView = MiniRecorderContentView(onHeightChange: { [weak self] newHeight in
             self?.resizeToFitContent(newHeight)
@@ -110,13 +111,17 @@ class MiniRecorderWindow: NSPanel {
     }
 
     func show() {
-        let screen = NSScreen.screens.first(where: { $0.frame.origin == .zero }) ?? NSScreen.screens.first ?? NSScreen.main
-        let screenFrame = screen?.visibleFrame ?? NSRect(x: 0, y: 24, width: 1920, height: 1056)
-        let xPos = screenFrame.minX + (screenFrame.width - panelWidth) / 2
-        let yPos = screenFrame.minY + dockPadding
+        // ET-765 · lock the screen chosen when the recording started, so the panel
+        // cannot hop displays mid-dictation.
+        let screen = RecorderScreenLock.shared.lock()
+        let frame = RecorderScreenResolver.bottomCenteredFrame(
+            size: NSSize(width: panelWidth, height: 52),
+            screen: screen,
+            padding: dockPadding
+        )
 
-        anchorY = yPos
-        self.setFrame(NSRect(x: xPos, y: yPos, width: panelWidth, height: 52), display: false)
+        anchorY = frame.minY
+        self.setFrame(frame, display: false)
         self.setIsVisible(true)
         self.orderFrontRegardless()
 

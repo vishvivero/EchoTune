@@ -3,6 +3,16 @@
 All notable changes to EchoTune are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [7.7.9] — ET-765 · Multi-monitor cursor screen placement
+
+### Fixed — recorders on the wrong display
+- The Mini/Slim recorder used `NSScreen.screens.first(where: origin == .zero)` and the recording indicator used `NSScreen.main` (the screen holding the *key window*, not the pointer). On a multi-monitor desk the recorder could open on a display you were not typing on.
+- New `RecorderScreenResolver` picks the screen whose frame contains `NSEvent.mouseLocation`, with a nearest-screen fallback for the dead zone between displays and for clamshell/display-reconfiguration cases.
+- `RecorderScreenLock` captures that screen when a recording starts and holds it until the panels hide, so the recorder cannot hop displays mid-dictation.
+
+### Verified
+- 8 `RecorderScreenResolverTests` cases: cursor hit-testing on both displays, gap handling, bottom/top frame centring inside `visibleFrame`, no-screen safety, lock stability, and a source check that neither view still calls `NSScreen.screens.first` or `NSScreen.main`.
+
 ## [7.7.8] — ET-764 · Multi-Mac setup backup & history CSV export
 
 ### Added — Settings → General → Move to Another Mac
