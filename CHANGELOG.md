@@ -3,6 +3,17 @@
 All notable changes to EchoTune are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [7.7.4] — ET-760 · Display-sleep prevention while dictating
+
+### Added
+- New `ScreenSleepPreventer` takes a single `kIOPMAssertionTypePreventUserIdleDisplaySleep` assertion named **“EchoTune is dictating”** while a recording is live, and releases it the moment recording stops.
+- Wired into `AudioManager`: `begin()` right after the engine starts, `end()` in both `stopRecording()` and `teardownAfterFailedStart()`, so a failed start can never leak the assertion.
+- Only the **display** is kept awake — the Mac can still idle down — and no other assertion types are touched.
+
+### Verified
+- `pmset -g assertions` shows `PreventUserIdleDisplaySleep named: "EchoTune is dictating"` while recording and no EchoTune assertion immediately after stopping (asserted in `ScreenSleepPreventerTests`).
+- `begin()` is idempotent, so a double-start cannot leak a second assertion.
+
 ## [7.7.3] — ET-759 · Instant CoreAudio hardware mute
 
 ### Changed — muting during dictation

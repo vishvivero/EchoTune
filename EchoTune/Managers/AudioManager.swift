@@ -192,6 +192,7 @@ class AudioManager: NSObject, ObservableObject {
         inputNode = nil
         isRecording = false
         recordingStartTime = nil
+        ScreenSleepPreventer.shared.end()
     }
 
     @discardableResult
@@ -399,6 +400,10 @@ class AudioManager: NSObject, ObservableObject {
             isRecording = true
             recordingStartTime = Date()
 
+            // ET-760 · keep the display awake while dictating, so the live
+            // preview cannot freeze mid-sentence when the Mac idles.
+            ScreenSleepPreventer.shared.begin()
+
             // Start duration tracking timer
             DispatchQueue.main.async {
                 self.recordingDuration = 0
@@ -446,6 +451,7 @@ class AudioManager: NSObject, ObservableObject {
         audioEngine.inputNode.removeTap(onBus: 0)
         audioEngine.stop()
         isRecording = false
+        ScreenSleepPreventer.shared.end()
 
         // Flush the dedicated Whisper conversion stream before the caller
         // starts finalisation, otherwise the final converted buffers could
