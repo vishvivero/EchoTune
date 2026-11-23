@@ -30,6 +30,9 @@ enum ActiveBrowserInspector {
         "com.brave.Browser": .chromium(scriptName: "Brave Browser"),
         "com.microsoft.edgemac": .chromium(scriptName: "Microsoft Edge"),
         "company.thebrowser.Browser": .chromium(scriptName: "Arc"),
+        // ET-767 · newer Chromium-family browsers people actually use.
+        "company.thebrowser.dia": .chromium(scriptName: "Dia"),
+        "ai.perplexity.comet": .chromium(scriptName: "Comet"),
         "com.operasoftware.Opera": .chromium(scriptName: "Opera"),
         "com.vivaldi.Vivaldi": .chromium(scriptName: "Vivaldi"),
         "ru.yandex.desktop.yandex-browser": .chromium(scriptName: "Yandex"),

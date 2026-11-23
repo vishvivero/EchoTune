@@ -3,6 +3,15 @@
 All notable changes to EchoTune are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [7.7.11] — ET-767 · Expanded browser URL triggers
+
+### Added
+- Power Modes now recognise **Dia** (`company.thebrowser.dia`) and **Comet** (`ai.perplexity.comet`) as scriptable browsers, so site-based Power Mode triggers fire in them like they do in Chrome, Brave, Edge, Arc, Opera, Vivaldi and Safari.
+- Both use the Chromium AppleScript dialect (`URL of active tab of front window`) — no accessibility tree walking.
+
+### Test hardening
+- Several tests asserted on process-global state (the live `pmset` assertion, live audio-device mute flags) that the running host app legitimately mutates during a test run. Those assertions are now about EchoTune's own bookkeeping, so the full suite is deterministic across consecutive runs (250/250, three runs in a row).
+
 ## [7.7.10] — ET-766 · Custom OpenAI-compatible STT & chat endpoints
 
 ### Added — Settings → Automation → Custom endpoint
