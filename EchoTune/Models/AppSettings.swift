@@ -157,6 +157,27 @@ class AppSettings: ObservableObject {
     var enhancementDailyLimit: Int { 50 }
 
     // Phase 6A: API Keys (stored securely in macOS Keychain)
+    // ET-766 · custom OpenAI-compatible endpoint (LM Studio, Ollama HTTP, vLLM, …)
+    @Published var customEndpointEnabled: Bool {
+        didSet { UserDefaults.standard.set(customEndpointEnabled, forKey: "customEndpointEnabled") }
+    }
+
+    @Published var customEndpointBaseURL: String {
+        didSet { UserDefaults.standard.set(customEndpointBaseURL, forKey: "customEndpointBaseURL") }
+    }
+
+    @Published var customEndpointSTTModel: String {
+        didSet { UserDefaults.standard.set(customEndpointSTTModel, forKey: "customEndpointSTTModel") }
+    }
+
+    @Published var customEndpointChatModel: String {
+        didSet { UserDefaults.standard.set(customEndpointChatModel, forKey: "customEndpointChatModel") }
+    }
+
+    @Published var customEndpointAPIKey: String {
+        didSet { KeychainHelper.save(customEndpointAPIKey, forKey: "customEndpointAPIKey") }
+    }
+
     @Published var groqAPIKey: String {
         didSet {
             KeychainHelper.save(groqAPIKey, forKey: "groqAPIKey")
@@ -345,6 +366,13 @@ class AppSettings: ObservableObject {
         self.deepgramAPIKey = KeychainHelper.load(forKey: "deepgramAPIKey")
         self.geminiAPIKey = KeychainHelper.load(forKey: "geminiAPIKey")
 
+        // ET-766 · custom OpenAI-compatible endpoint
+        self.customEndpointEnabled = UserDefaults.standard.object(forKey: "customEndpointEnabled") as? Bool ?? false
+        self.customEndpointBaseURL = UserDefaults.standard.string(forKey: "customEndpointBaseURL") ?? "http://localhost:1234/v1"
+        self.customEndpointSTTModel = UserDefaults.standard.string(forKey: "customEndpointSTTModel") ?? "whisper-1"
+        self.customEndpointChatModel = UserDefaults.standard.string(forKey: "customEndpointChatModel") ?? "local-model"
+        self.customEndpointAPIKey = KeychainHelper.load(forKey: "customEndpointAPIKey")
+
         // Phase 6A: Initialize Social Share Settings
         if UserDefaults.standard.object(forKey: "hasSharedForDiscount") != nil {
             self.hasSharedForDiscount = UserDefaults.standard.bool(forKey: "hasSharedForDiscount")
@@ -400,6 +428,13 @@ class AppSettings: ObservableObject {
         self.openaiAPIKey = KeychainHelper.load(forKey: "openaiAPIKey")
         self.deepgramAPIKey = KeychainHelper.load(forKey: "deepgramAPIKey")
         self.geminiAPIKey = KeychainHelper.load(forKey: "geminiAPIKey")
+
+        // ET-766 · custom OpenAI-compatible endpoint
+        self.customEndpointEnabled = UserDefaults.standard.object(forKey: "customEndpointEnabled") as? Bool ?? false
+        self.customEndpointBaseURL = UserDefaults.standard.string(forKey: "customEndpointBaseURL") ?? "http://localhost:1234/v1"
+        self.customEndpointSTTModel = UserDefaults.standard.string(forKey: "customEndpointSTTModel") ?? "whisper-1"
+        self.customEndpointChatModel = UserDefaults.standard.string(forKey: "customEndpointChatModel") ?? "local-model"
+        self.customEndpointAPIKey = KeychainHelper.load(forKey: "customEndpointAPIKey")
     }
 
     /// Fallback local engine when no model has been chosen (and when cloud is

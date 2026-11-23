@@ -3,6 +3,21 @@
 All notable changes to EchoTune are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [7.7.10] — ET-766 · Custom OpenAI-compatible STT & chat endpoints
+
+### Added — Settings → Automation → Custom endpoint
+- Connect **LM Studio**, **Ollama (HTTP)**, **vLLM**, **faster-whisper-server**, **OpenRouter** or any other server that speaks the OpenAI wire format, for both `/v1/audio/transcriptions` and `/v1/chat/completions`.
+- One-click presets, plus a **Test Connection** button that reports the server's actual reply (or the HTTP error verbatim) instead of failing silently.
+- Separate speech-to-text and chat model names, since local servers name their models differently.
+
+### Endpoint handling
+- Base-URL normalisation copes with what people actually paste: `localhost:1234`, `…/v1`, a trailing slash, query noise, or a full `…/v1/chat/completions` path.
+- Local hosts (`localhost`, `127.0.0.1`, `192.168.*`, `10.*`, `*.local`) default to `http` and need **no API key**; remote hosts default to `https` and require one.
+- `Authorization: Bearer …` is only attached when a key exists, so local servers are never sent a header they may reject.
+
+### Verified
+- 17 `CustomOpenAICompatibleServiceTests` cases covering URL normalisation, endpoint path building, key-requirement rules, multipart and JSON request shapes, response parsing for both endpoint kinds, and preset validity.
+
 ## [7.7.9] — ET-765 · Multi-monitor cursor screen placement
 
 ### Fixed — recorders on the wrong display

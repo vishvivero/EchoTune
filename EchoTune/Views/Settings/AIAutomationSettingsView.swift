@@ -119,6 +119,10 @@ struct AIAutomationSettingsView: View {
                 .cornerRadius(12)
                 .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.06), lineWidth: 1))
                 
+                // ET-766 · custom OpenAI-compatible endpoint
+                CustomEndpointSettingsSection()
+                    .padding(.top, 8)
+
                 // Section 2: Power Mode Settings
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Power Mode settings")
