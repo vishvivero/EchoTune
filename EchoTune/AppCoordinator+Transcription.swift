@@ -771,7 +771,24 @@ extension AppCoordinator {
             processed += " "
         }
 
+        // ET-768 · post-transcription hook. Detached: dictation never waits, and a
+        // wedged script is killed after 15 s.
+        runPostTranscriptionCommand(with: processed)
+
         return processed
+    }
+
+    /// Runs the active Power Mode's shell hook, if one is configured.
+    private func runPostTranscriptionCommand(with text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        guard let command = PowerModeManager.shared.currentPowerMode?.postTranscriptionCommand,
+              !command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return
+        }
+
+        CustomCommandRunner.shared.runDetached(command: command, transcript: trimmed)
     }
 
     // MARK: - Statistics

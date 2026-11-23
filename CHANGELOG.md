@@ -3,6 +3,21 @@
 All notable changes to EchoTune are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [7.7.12] — ET-768 · Post-transcription shell command hook
+
+### Added
+- Each Power Mode can run a shell command after every transcription (`PowerMode.postTranscriptionCommand`), so a dictation can feed your own workflow: append to a note, POST to a webhook, file a task.
+- New `CustomCommandRunner` runs `/bin/zsh -lc <command>` fully detached. The transcript is available **both** on stdin and as `$ECHOTUNE_TRANSCRIPT`.
+- Hard **15-second timeout**: SIGTERM, then SIGKILL one second later, so a wedged script cannot accumulate one process per dictation. A `ECHOTUNE_HOOK=post-transcription` marker is set in the child environment.
+
+### Behaviour
+- Dictation never waits on the hook — `run()` returns the process immediately.
+- A non-zero exit and its stderr are logged; nothing is surfaced as a blocking alert.
+- Empty transcripts and empty commands are ignored.
+
+### Verified
+- 8 `CustomCommandRunnerTests` cases, including stdin delivery, environment delivery, immediate hand-off, timeout behaviour, and non-zero exit reporting.
+
 ## [7.7.11] — ET-767 · Expanded browser URL triggers
 
 ### Added

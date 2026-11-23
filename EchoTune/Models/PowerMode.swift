@@ -35,6 +35,9 @@ struct PowerMode: Identifiable, Codable, Equatable {
     var autoSendEnabled: Bool
     var useShiftReturn: Bool                 // If true, sends Shift+Return instead of Return
 
+    /// ET-768 · shell command run after each transcription while this mode is active.
+    var postTranscriptionCommand: String?
+
     // Metadata
     var dateCreated: Date
     var dateModified: Date
@@ -55,7 +58,8 @@ struct PowerMode: Identifiable, Codable, Equatable {
          enhancementModel: String? = nil,
          customEnhancementPrompt: String? = nil,
          autoSendEnabled: Bool = false,
-         useShiftReturn: Bool = false) {
+         useShiftReturn: Bool = false,
+         postTranscriptionCommand: String? = nil) {
 
         self.id = id
         self.name = name
@@ -73,6 +77,7 @@ struct PowerMode: Identifiable, Codable, Equatable {
         self.customEnhancementPrompt = customEnhancementPrompt
         self.autoSendEnabled = autoSendEnabled
         self.useShiftReturn = useShiftReturn
+        self.postTranscriptionCommand = postTranscriptionCommand
         self.dateCreated = Date()
         self.dateModified = Date()
         self.useCount = 0
