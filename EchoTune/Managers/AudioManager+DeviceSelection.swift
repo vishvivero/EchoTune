@@ -129,6 +129,44 @@ extension AudioManager {
         }
     }
 
+    // MARK: - Clamshell fallback (ET-761)
+
+    /// Routes off the internal microphone when the lid is closed.
+    ///
+    /// Called before the audio engine starts. Reads the lid state once, and only
+    /// touches the default input device when the internal mic would otherwise be
+    /// used with the lid shut. Every other case leaves the user's choice alone.
+    ///
+    /// - Returns: the name of the device we switched to, or `nil` if nothing changed.
+    @discardableResult
+    func applyClamshellInputFallback() -> String? {
+        let lidClosed = ClamshellStateMonitor.isLidClosed
+        guard lidClosed else { return nil }
+
+        let devices = getAvailableInputDevices().map { (id: $0.id, name: $0.name) }
+        guard !devices.isEmpty else { return nil }
+
+        // `getAvailableInputDevices()` sets `currentInputDevice` to the system
+        // default as a side effect, so read it after the enumeration.
+        let current = currentInputDevice.map { (id: $0.id, name: $0.name) }
+            ?? devices.first(where: { _ in false })
+
+        guard let chosen = ClamshellStateMonitor.preferredInputDevice(
+            defaultDevice: current,
+            allDevices: devices,
+            lidClosed: true
+        ) else {
+            if let current, ClamshellStateMonitor.isInternalMicrophone(name: current.name) {
+                debugLog("🔒 Lid closed but no external microphone is available — keeping \(current.name)")
+            }
+            return nil
+        }
+
+        debugLog("🔒 Lid closed — routing input from \(current?.name ?? "internal mic") to \(chosen.name)")
+        selectAudioDevice(id: chosen.id)
+        return chosen.name
+    }
+
     func selectAudioDevice(id: String) {
         guard let deviceID = AudioDeviceID(id) else {
             debugLog("❌ Invalid device ID")

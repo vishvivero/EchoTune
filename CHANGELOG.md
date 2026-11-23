@@ -3,6 +3,17 @@
 All notable changes to EchoTune are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [7.7.5] — ET-761 · Closed-lid microphone auto-fallback
+
+### Fixed — dictation with the lid shut
+- With an external display in clamshell mode the internal microphone is physically muffled, but CoreAudio kept it as the default input, so dictation captured a dull nothing.
+- New `ClamshellStateMonitor` reads `IOPMrootDevice` → `AppleClamshellState`, and `AudioManager.applyClamshellInputFallback()` runs **before** the audio engine is built.
+- Lid open: the microphone is never touched. Lid closed with an already-external default: untouched. Lid closed with no external mic available: stays on internal and logs why.
+
+### Behaviour
+- Internal-microphone detection covers `Built-in`, `Internal`, `MacBook`, `iMac` device names (case-insensitive) so AirPods, USB interfaces and display microphones are correctly treated as external.
+- The read is a single IOKit property lookup per recording start — no polling, no run-loop source, and an IOKit failure can never reroute away from a working mic.
+
 ## [7.7.4] — ET-760 · Display-sleep prevention while dictating
 
 ### Added

@@ -202,6 +202,11 @@ class AudioManager: NSObject, ObservableObject {
             return .alreadyRecording
         }
 
+        // ET-761 · a closed lid muffles the internal microphone. Route to an
+        // external mic *before* the engine is constructed so the first buffer is
+        // already recorded from the right device.
+        applyClamshellInputFallback()
+
         // Clean up any existing audio engine first
         if let existingEngine = audioEngine, existingEngine.isRunning {
             debugLog("⚠️ Stopping existing audio engine")
