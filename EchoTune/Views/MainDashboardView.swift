@@ -11,7 +11,12 @@ struct MainDashboardView: View {
     @EnvironmentObject var appCoordinator: AppCoordinator
     @EnvironmentObject var appSettings: AppSettings
     @ObservedObject var whisperEngine = WhisperEngine.shared
-    @State private var selectedView: NavigationItem = .home
+    @State private var selectedView: NavigationItem
+
+    /// `initialItem` builds a fresh dashboard already on the requested section.
+    init(initialItem: NavigationItem = .home) {
+        _selectedView = State(initialValue: initialItem)
+    }
 
     var body: some View {
         ZStack {
@@ -50,9 +55,16 @@ struct MainDashboardView: View {
                 .animation(.easeInOut(duration: 0.3), value: whisperEngine.isLoading)
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("NavigateDashboardToItem"))) { note in
-            if let raw = note.userInfo?["item"] as? String,
-               let target = NavigationItem(rawValue: raw) {
+        // A destination requested before this view existed is waiting in the
+        // router; one requested while it is on screen arrives as a notification.
+        // Both routes drain the same slot, so it is applied exactly once.
+        .onAppear {
+            if let target = DashboardNavigationRouter.shared.consume() {
+                selectedView = target
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: DashboardNavigationRouter.notificationName)) { _ in
+            if let target = DashboardNavigationRouter.shared.consume() {
                 selectedView = target
             }
         }

@@ -3,6 +3,18 @@
 All notable changes to EchoTune are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [7.7.17] — Dashboard navigation hardening & test stability
+
+### Fixed — dashboard destinations could be lost
+- `showDashboard(item:)` raised the window and then posted a fire-and-forget notification. If the SwiftUI view had not mounted yet (a fresh window, or the `WindowGroup` window SwiftUI creates itself) the message was dropped and you landed on Home — the same defect "Manage AI Models & Keys…" had in Settings.
+- New `DashboardNavigationRouter` stores the destination; `MainDashboardView` drains it in `onAppear` and when the notification arrives, so it is applied exactly once whichever happens last. A brand-new window is also built directly on the item (`MainDashboardView(initialItem:)`), and the dashboard now uses the shared `focusForMenuBarPresentation` path like Settings, Echo Profile and Tasks.
+
+### Fixed — test stability
+- `StreamingTickTests` mutate `WhisperEngine.shared`'s task slots, and Swift Testing runs a suite's tests in parallel, so one test's cleanup could land between another's assignment and its cancel. The suite is now `.serialized`.
+
+### Added — wiring coverage
+- `MenuBarWiringTests` now also checks the reverse direction: every `@objc` menu handler must be referenced by a menu item (22 handlers ↔ 22 selectors today).
+
 ## [7.7.16] — Menu card top-alignment & full clipboard list
 
 ### Fixed — the menu card was vertically centred

@@ -63,6 +63,19 @@ struct MenuBarWiringTests {
         #expect(dangling.isEmpty, "these menu items point at missing handlers and do nothing when clicked: \(dangling)")
     }
 
+    /// The reverse direction: a handler no menu item calls is a menu entry that was
+    /// removed or never wired, and it silently rots.
+    @Test func everyMenuHandlerIsReferencedByAnItem() throws {
+        let source = try statusBarSource()
+        let referenced = Set(referencedSelectors(in: source))
+        let implemented = implementedMethods(in: source)
+
+        let orphans = implemented.filter { !referenced.contains($0) }
+        #expect(orphans.isEmpty, "these @objc handlers are not wired to any menu item: \(orphans.sorted())")
+        #expect(implemented.count == referenced.count,
+                "handlers (\(implemented.count)) and menu selectors (\(referenced.count)) should match one-to-one")
+    }
+
     @Test func settingsOpenersMapToRealTabs() throws {
         let source = try statusBarSource()
         // Every `showSettings(tab: .x)` must name a case that exists.

@@ -1,6 +1,13 @@
 import Testing
 @testable import EchoTune
 
+/// These tests mutate `WhisperEngine.shared.currentTickTask` / `streamingTask`,
+/// which are plain stored properties on a process-wide singleton. Swift Testing
+/// runs the tests of a suite in parallel, so one test's trailing
+/// `currentTickTask = nil` could land between another test's assignment and its
+/// `cancelStreamingWorkForNewSession()`, leaving the task it just stored
+/// uncancelled. Serialising the suite removes that interleaving.
+@Suite(.serialized)
 struct StreamingTickTests {
     @Test func previewTiersRetainClassicRollbackAndExposeIntervals() {
         #expect(PreviewTier.classic.interval == 4.0)

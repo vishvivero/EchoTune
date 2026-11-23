@@ -254,13 +254,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     func showDashboard(item: NavigationItem = .home) {
-        NSApp.activate(ignoringOtherApps: true)
-        showPrimaryAppWindows {
-            NotificationCenter.default.post(
-                name: NSNotification.Name("NavigateDashboardToItem"),
-                object: nil,
-                userInfo: ["item": item.rawValue]
-            )
+        // The router stores the destination, so delivery does not depend on timing:
+        // a view that mounts after the request drains it in `onAppear`, one already
+        // on screen hears the notification, and a brand-new window is built on the
+        // item directly via `initialItem`.
+        showPrimaryAppWindows(initialItem: item) {
+            DashboardNavigationRouter.shared.request(item)
         }
     }
 
@@ -357,18 +356,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             || window === commitmentsWindowController?.window
     }
 
-    private func showPrimaryAppWindows(completion: (() -> Void)? = nil) {
+    private func showPrimaryAppWindows(initialItem: NavigationItem = .home, completion: (() -> Void)? = nil) {
         DispatchQueue.main.async {
             if let existing = NSApp.windows.first(where: { !self.isAuxiliaryWindow($0) }) {
                 self.applyDashboardWindowSize(to: existing)
-                existing.makeKeyAndOrderFront(nil)
-                existing.orderFrontRegardless()
+                self.focusForMenuBarPresentation(existing)
                 completion?()
                 return
             }
 
             if self.dashboardWindow == nil {
-                let root = MainDashboardView()
+                let root = MainDashboardView(initialItem: initialItem)
                     .environmentObject(AppCoordinator.shared)
                     .environmentObject(AppSettings.shared)
                 let hosting = NSHostingController(rootView: root)
@@ -382,8 +380,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 self.dashboardWindow = win
             }
 
-            self.dashboardWindow?.makeKeyAndOrderFront(nil)
-            self.dashboardWindow?.orderFrontRegardless()
+            self.focusForMenuBarPresentation(self.dashboardWindow)
             DispatchQueue.main.async {
                 completion?()
             }
