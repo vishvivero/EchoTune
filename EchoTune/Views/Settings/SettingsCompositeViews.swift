@@ -348,6 +348,26 @@ struct PrivacySettingsView: View {
                 .disabled(!settings.keepAudioHistory)
             }
 
+            Section("Move to Another Mac") {
+                HStack(spacing: 12) {
+                    Button("Export Setup…") {
+                        exportSettingsBackup()
+                    }
+                    .buttonStyle(.bordered)
+                    .help("Dictionary, power modes, trigger rules, filler words and preferences as JSON. API and licence keys are never included.")
+
+                    Button("Import Setup…") {
+                        importSettingsBackup()
+                    }
+                    .buttonStyle(.bordered)
+                    .help("Merge a setup file from another Mac. Existing entries are kept, so importing twice is safe.")
+                }
+                Text("Moves your configuration only — never your API keys, licence, or dictation history.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.bottom, 8)
+
             Section("Your Local Data") {
                 HStack(spacing: 12) {
                     Button("Export All Local Data…") {
@@ -422,6 +442,58 @@ struct PrivacySettingsView: View {
                 statusBanner = "Exported to \(url.lastPathComponent)."
             } catch {
                 statusBanner = "Export failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    // MARK: - Setup backup (ET-764)
+
+    private func exportSettingsBackup() {
+        do {
+            let data = try ConfigurationBackupManager.shared.makeBackup(
+                triggerRules: AIEnhancementEngine.shared.triggerWordRules,
+                fillerWords: FillerWordManager.shared.customFillers
+            )
+
+            let panel = NSSavePanel()
+            panel.allowedContentTypes = [.json]
+            panel.nameFieldStringValue = "EchoTune-Setup.json"
+            panel.begin { response in
+                guard response == .OK, let url = panel.url else { return }
+                do {
+                    try data.write(to: url, options: .atomic)
+                    try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+                    statusBanner = "Exported your setup to \(url.lastPathComponent)."
+                } catch {
+                    statusBanner = "Export failed: \(error.localizedDescription)"
+                }
+            }
+        } catch {
+            statusBanner = "Export failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func importSettingsBackup() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            do {
+                let data = try Data(contentsOf: url)
+                let result = try ConfigurationBackupManager.shared.importBackup(from: data)
+
+                // Trigger rules live on the engine; merge them here by phrase.
+                var existing = Set(AIEnhancementEngine.shared.triggerWordRules.map { $0.triggerPhrase.lowercased() })
+                for rule in result.triggerRules where !existing.contains(rule.triggerPhrase.lowercased()) {
+                    AIEnhancementEngine.shared.triggerWordRules.append(rule)
+                    existing.insert(rule.triggerPhrase.lowercased())
+                }
+
+                let s = result.summary
+                statusBanner = "Imported: \(s.powerModesAdded) power mode(s), \(s.triggerRulesAdded) trigger rule(s), \(s.fillerWordsAdded) filler word(s), \(s.dictionarySpellingsAdded) spelling(s), \(s.preferencesApplied) preference(s)."
+            } catch {
+                statusBanner = "Import failed: \(error.localizedDescription)"
             }
         }
     }

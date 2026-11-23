@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 import AppKit
 
 // MARK: - History View
@@ -16,6 +17,23 @@ struct HistoryView: View {
     @State private var searchText = ""
     @State private var retranscribingItemId: UUID?
     @State private var expandedItemId: UUID?
+
+    /// ET-764 · RFC 4180 transcript export.
+    private func exportHistoryCSV() {
+        let csv = ConfigurationBackupManager.shared.historyCSV(items: historyManager.transcriptions)
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.commaSeparatedText]
+        panel.nameFieldStringValue = "EchoTune-History.csv"
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            do {
+                try csv.write(to: url, atomically: true, encoding: .utf8)
+                try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+            } catch {
+                debugLog("❌ CSV export failed: \(error.localizedDescription)")
+            }
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -44,6 +62,13 @@ struct HistoryView: View {
                     Spacer()
 
                     if !historyManager.transcriptions.isEmpty {
+                        Button(action: exportHistoryCSV) {
+                            Label("Export CSV", systemImage: "square.and.arrow.up")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.bordered)
+                        .help("Export every transcript as RFC 4180 CSV.")
+
                         Button(role: .destructive, action: { clearAllHistory() }) {
                             Text("Clear All")
                                 .font(.caption)

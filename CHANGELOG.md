@@ -3,6 +3,23 @@
 All notable changes to EchoTune are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [7.7.8] — ET-764 · Multi-Mac setup backup & history CSV export
+
+### Added — Settings → General → Move to Another Mac
+- **Export Setup…** writes a JSON backup of the Custom Dictionary, Power Modes, Trigger Rules, Filler Words and preferences.
+- **Import Setup…** merges that file into this Mac. Existing entries win, so importing the same file twice adds nothing the second time.
+- Unsupported future schema versions are rejected with a clear message instead of being misread.
+
+### Security
+- API keys and the licence key live in the Keychain and are **never** written to a backup. The preference list is allow-listed, and forbidden keys are stripped defensively even if a caller passes them in.
+- Exported files are written with `0600` permissions.
+
+### Added — History → Export CSV
+- RFC 4180 compliant transcript export (comma, quote and newline escaping, CRLF line endings, ISO-8601 timestamps, word count derived from the inserted text).
+
+### Verified
+- 9 `ConfigurationBackupManagerTests` cases: round-trip, secret exclusion, double-import idempotency, schema rejection, and CSV escaping.
+
 ## [7.7.7] — ET-763 · Dashboard consistency heatmap & speaking rhythm
 
 ### Added — Dashboard

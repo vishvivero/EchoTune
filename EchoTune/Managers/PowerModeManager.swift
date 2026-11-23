@@ -279,6 +279,11 @@ class PowerModeManager: ObservableObject {
 
     // MARK: - Persistence
 
+    /// Persist the current mode list. Exposed for backup import (ET-764).
+    func persist() {
+        savePowerModes()
+    }
+
     private func savePowerModes() {
         if let encoded = try? JSONEncoder().encode(powerModes) {
             UserDefaults.standard.set(encoded, forKey: storageKey)

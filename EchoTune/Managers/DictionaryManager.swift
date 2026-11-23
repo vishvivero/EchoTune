@@ -247,6 +247,47 @@ class DictionaryManager: ObservableObject {
         return try encoder.encode(export)
     }
 
+    /// Current dictionary as an export payload, without writing to disk.
+    /// Used by the settings backup (ET-764).
+    func makeExport() throws -> DictionaryExport {
+        let export = DictionaryExport(
+            version: "1.0",
+            exportDate: Date(),
+            wordReplacements: wordReplacements,
+            correctSpellings: correctSpellings
+        )
+        // Round-trip through the encoder so callers cannot mutate live state.
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(export)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(DictionaryExport.self, from: data)
+    }
+
+    /// Merge an export payload into the live dictionary, by written/spoken form.
+    /// Idempotent: importing the same payload twice adds nothing the second time.
+    @discardableResult
+    func mergeExport(_ export: DictionaryExport) throws -> (replacements: Int, spellings: Int) {
+        var addedReplacements = 0
+        for replacement in export.wordReplacements
+        where !wordReplacements.contains(where: { $0.spokenForm.lowercased() == replacement.spokenForm.lowercased() }) {
+            wordReplacements.append(replacement)
+            addedReplacements += 1
+        }
+
+        var addedSpellings = 0
+        for spelling in export.correctSpellings
+        where !correctSpellings.contains(where: { $0.word.lowercased() == spelling.word.lowercased() }) {
+            correctSpellings.append(spelling)
+            addedSpellings += 1
+        }
+
+        if addedReplacements > 0 { saveReplacements() }
+        if addedSpellings > 0 { saveSpellings() }
+        return (addedReplacements, addedSpellings)
+    }
+
     /// Import dictionary from JSON file (merges with existing)
     func importDictionary(from data: Data) throws {
         let decoder = JSONDecoder()
