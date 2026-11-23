@@ -98,12 +98,61 @@ struct GeneralSettingsView: View {
 
 // MARK: - Speech Settings
 struct SpeechSettingsView: View {
+    @EnvironmentObject var settings: AppSettings
     @State private var selectedMethod = VADManager.shared.config.method
     @State private var sileroReady = FluidVADEngine.shared.isReady
     @State private var isPreparing = false
+    @State private var newFiller = ""
+    @State private var customFillers = FillerWordManager.shared.customFillers
+
+    private func addFiller() {
+        if FillerWordManager.shared.addFiller(newFiller) {
+            newFiller = ""
+            customFillers = FillerWordManager.shared.customFillers
+        }
+    }
 
     var body: some View {
         Form {
+            Section("Filler Words") {
+                Toggle("Remove spoken filler words", isOn: $settings.fillerRemovalEnabled)
+                    .help("Strip \"uh\", \"um\", \"erm\" and your own fillers, then repair the punctuation they leave behind.")
+                Text("\"I went, uh, to the store. Erm, yes!\" becomes \"I went to the store. Yes!\"")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                HStack {
+                    TextField("Add a filler word", text: $newFiller)
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit(addFiller)
+                    Button("Add", action: addFiller)
+                        .disabled(newFiller.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+
+                if !customFillers.isEmpty {
+                    ForEach(customFillers, id: \.self) { filler in
+                        HStack {
+                            Text(filler)
+                            Spacer()
+                            Button {
+                                if FillerWordManager.shared.removeFiller(filler) {
+                                    customFillers = FillerWordManager.shared.customFillers
+                                }
+                            } label: {
+                                Image(systemName: "minus.circle")
+                            }
+                            .buttonStyle(.borderless)
+                            .help("Stop treating \"\(filler)\" as a filler.")
+                        }
+                    }
+                }
+
+                Text("Built in: \(FillerWordManager.builtInFillers.joined(separator: ", "))")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.bottom, 8)
+
             Section("Speech Detection") {
                 Picker("Detection Method", selection: $selectedMethod) {
                     ForEach(VADManager.DetectionMethod.allCases) { method in

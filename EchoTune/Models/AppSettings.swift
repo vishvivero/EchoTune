@@ -98,6 +98,11 @@ class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(autoCorrection, forKey: "autoCorrection") }
     }
 
+    /// ET-758 · strip spoken fillers ("uh", "um", "erm") from finished transcripts.
+    @Published var fillerRemovalEnabled: Bool {
+        didSet { UserDefaults.standard.set(fillerRemovalEnabled, forKey: "fillerRemovalEnabled") }
+    }
+
     // Audio Feedback Settings
     @Published var playSoundOnStartStop: Bool {
         didSet { UserDefaults.standard.set(playSoundOnStartStop, forKey: "playSoundOnStartStop") }
@@ -291,6 +296,9 @@ class AppSettings: ObservableObject {
         } else {
             self.autoCorrection = true // default ON
         }
+
+        // Spoken filler removal — default ON, it is what users expect from dictation.
+        self.fillerRemovalEnabled = UserDefaults.standard.object(forKey: "fillerRemovalEnabled") as? Bool ?? true
 
         // Audio Feedback Settings
         if UserDefaults.standard.object(forKey: "playSoundOnStartStop") != nil {

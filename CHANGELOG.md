@@ -3,6 +3,21 @@
 All notable changes to EchoTune are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [7.7.2] — ET-758 · Spoken filler removal & punctuation repair
+
+### Added — cleaner transcripts
+- New `FillerWordManager`: strips **uh, um, erm, ah, hmm, er, mm** (and variants) from finished transcripts, plus anything you add in **Settings → Speech → Filler Words**.
+- Punctuation repair after removal: orphaned commas, doubled punctuation, double spaces, and a capital letter at the start of every sentence.
+  - `"I went, uh, to the store. Erm, yes!"` → `"I went to the store. Yes!"`
+- New **Settings → Speech → Filler Words** section with a master toggle, an add/remove list for your own fillers, and the built-in list shown for reference.
+- `AppSettings.fillerRemovalEnabled` (default on) drives the pipeline from `AppCoordinator.processTranscription`.
+
+### Safety
+- Word-boundary matching only: `umbrella`, `humming`, `furious` and similar are never touched.
+- A transcript that *is* just a filler (`"Uh."`) is preserved rather than emptied.
+- A comma is only dropped when filler removal is what left it dangling, so genuine lists (`"eggs, milk and bread"`) survive.
+- Covered by 11 `FillerWordManagerTests` cases.
+
 ## [7.7.1] — ET-757 · Offline phonetic vocabulary matcher
 
 ### Added — dictation accuracy

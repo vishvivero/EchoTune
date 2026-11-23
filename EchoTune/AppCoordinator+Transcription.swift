@@ -760,6 +760,12 @@ extension AppCoordinator {
             processed = DictionaryManager.shared.process(text: processed)
         }
 
+        // ET-758 · strip spoken fillers and repair the punctuation they leave
+        // behind (orphaned commas, double spaces, sentence-start capitals).
+        if settings.fillerRemovalEnabled {
+            processed = FillerWordManager.shared.clean(processed)
+        }
+
         // Apply settings (capitalization is handled in TranscriptionEngine.processText)
         if settings.insertSpaceAfterText {
             processed += " "
