@@ -10,6 +10,16 @@ import AppKit
 import UserNotifications
 
 class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+    /// The one live `AppDelegate` instance.
+    ///
+    /// Why this exists: under the SwiftUI `@main` lifecycle
+    /// (`@NSApplicationDelegateAdaptor`) macOS installs SwiftUI's own wrapper as
+    /// `NSApp.delegate`, so `NSApp.delegate as? AppDelegate` evaluates to `nil`.
+    /// That silently broke every menu bar window opener (Dashboard, Settings,
+    /// Echo Profile, Tasks) and status-bar icon updates. Always use
+    /// `AppDelegate.shared`; never cast `NSApp.delegate`.
+    static private(set) weak var shared: AppDelegate?
+
     var statusBarController: StatusBarController?
     var settingsWindow: NSWindow?
     var dashboardWindow: NSWindow?
@@ -19,6 +29,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private let onboardingState = OnboardingStateStore.shared
     private let dashboardSize = NSSize(width: 960, height: 720)
     private let dashboardMinimumSize = NSSize(width: 900, height: 600)
+
+    override init() {
+        super.init()
+        AppDelegate.shared = self
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         debugLog("🚀 EchoTune launching...")

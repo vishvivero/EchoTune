@@ -508,6 +508,11 @@ class LicenseManager {
 
     @discardableResult
     private func saveToKeychain(_ key: String, value: String) -> Bool {
+        if KeychainHelper.isTestHost {
+            KeychainHelper.save(value, forKey: "license.\(key)")
+            return true
+        }
+
         guard let data = value.data(using: .utf8) else { return false }
 
         let deleteQuery: [String: Any] = [
@@ -534,6 +539,11 @@ class LicenseManager {
     }
 
     private func getFromKeychain(_ key: String) -> String? {
+        if KeychainHelper.isTestHost {
+            let stored = KeychainHelper.load(forKey: "license.\(key)")
+            return stored.isEmpty ? nil : stored
+        }
+
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
@@ -554,6 +564,11 @@ class LicenseManager {
     }
 
     private func deleteFromKeychain(_ key: String) {
+        if KeychainHelper.isTestHost {
+            KeychainHelper.delete(forKey: "license.\(key)")
+            return
+        }
+
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,

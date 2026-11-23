@@ -3,6 +3,17 @@
 All notable changes to EchoTune are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [7.7.0] — ET-756 · Fix `NSApp.delegate as? AppDelegate` nil-cast
+
+### Fixed — menu bar window openers
+- Under SwiftUI's `@main` lifecycle macOS installs SwiftUI's own wrapper as `NSApp.delegate`, so every `NSApp.delegate as? AppDelegate` cast evaluated to `nil`. That silently broke **Open EchoTune Dashboard**, **Echo Profile**, **Tasks & Commitments**, **Settings…** and status-bar icon updates from the menu bar.
+- `AppDelegate` now publishes `static private(set) weak var shared: AppDelegate?`, assigned in `override init()`. All 36 casts across `StatusBarController`, `EchoTuneMenuCardView`, `AppCoordinator+Recording` and `AppCoordinator+Transcription` now use `AppDelegate.shared`.
+- Zero remaining occurrences of `NSApp.delegate as? AppDelegate` in app sources (enforced by a new regression test).
+
+### Changed — test reliability
+- `KeychainHelper` and `LicenseManager` now use an in-memory store when running in a test host (`XCTestConfigurationFilePath` / `XCTestSessionIdentifier`), so `xcodebuild test` no longer blocks on `securityd`.
+- Added `AppDelegateWiringTests` covering the nil-cast regression, the `shared` accessor, and the Keychain test-host bypass.
+
 ## [7.5.5] — 2026-11-20
 
 Complete menu bar redesign inspired by CodexBar.

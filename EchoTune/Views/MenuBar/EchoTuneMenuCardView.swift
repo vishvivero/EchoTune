@@ -307,7 +307,7 @@ struct EchoTuneMenuCardView: View {
 
                 Button {
                     presentation.onDismissMenu?()
-                    if let delegate = NSApp.delegate as? AppDelegate {
+                    if let delegate = AppDelegate.shared {
                         delegate.showSettings(tab: .license)
                     }
                 } label: {
@@ -406,7 +406,7 @@ struct EchoTuneMenuCardView: View {
                 Spacer(minLength: 4)
                 Button("Review") {
                     presentation.onDismissMenu?()
-                    (NSApp.delegate as? AppDelegate)?.showCommitments()
+                    (AppDelegate.shared)?.showCommitments()
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.mini)
@@ -716,7 +716,7 @@ struct EchoTuneMenuCardView: View {
                     Spacer()
                     Button("Open Full History →") {
                         presentation.onDismissMenu?()
-                        (NSApp.delegate as? AppDelegate)?.showDashboard(item: .history)
+                        (AppDelegate.shared)?.showDashboard(item: .history)
                     }
                     .buttonStyle(.plain)
                     .font(.footnote.weight(.semibold))
