@@ -3,6 +3,18 @@
 All notable changes to EchoTune are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [7.7.3] — ET-759 · Instant CoreAudio hardware mute
+
+### Changed — muting during dictation
+- `SystemAudioManager` no longer shells out to `NSAppleScript` (`set volume output volume 0`). Muting now writes `kAudioDevicePropertyMute` directly on each `AudioDeviceID`, and restoring clears it again — two `AudioObjectSetPropertyData` calls instead of a 50–300 ms AppleScript round trip.
+- The user's volume level is never modified, so nothing has to be "put back".
+- **Never unmutes a device the user muted themselves**: a device that is already muted when dictation starts is left alone and stays muted afterwards. Only devices EchoTune muted are restored.
+- Devices without a hardware mute property fall back to the CoreAudio volume scalar — still no AppleScript, still no TCC prompt.
+
+### Verified
+- Zero `NSAppleScript` / `set volume` occurrences in app sources (regression-tested).
+- Mute + restore completes well under 250 ms including device enumeration (asserted in `SystemAudioManagerTests`), typically sub-millisecond.
+
 ## [7.7.2] — ET-758 · Spoken filler removal & punctuation repair
 
 ### Added — cleaner transcripts
