@@ -3,6 +3,26 @@
 All notable changes to EchoTune are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [7.7.15] — Tab-aware menu bar & clipboard Recent tab
+
+### Changed — the native menu now follows the selected tab
+- **Overview** — unchanged: pipeline pickers, workspace windows and settings all appear below the card.
+- **Controls** — now ends at **Dictation Sound Cues**. The pipeline pickers, workspace windows and settings no longer repeat underneath, because you are only adjusting toggles.
+- **Recent** — shows the clipboard list and nothing else, plus a **Recent Dictations** submenu when you have transcripts.
+
+### Added — Recent is now clipboard-focused
+- New `ClipboardHistoryManager` builds a searchable timeline of what you copy, **plus** every dictation you copy from the menu, so one list covers both.
+- **Search bar** at the top of the Recent tab: case- and diacritic-insensitive, literal (regex metacharacters are matched as text), with a clear button and a "*n* of *m* clips" readout.
+- Each row is tagged **Copied** or **Dictation** with its relative time, and copies in one click.
+
+### Privacy
+- Clipboard history is **memory only** — never written to `UserDefaults` or disk (enforced by a test), because a clipboard list is the most sensitive thing an app could cache.
+- Nothing is recorded while a password manager is frontmost (`1Password`, `Bitwarden`, `Dashlane`, `Enpass`, `LastPass`, `Passwords`, `Keychain Access`).
+- Values over 20,000 characters are ignored, the list is capped at 30 entries, and repeats move to the top instead of duplicating.
+
+### Verified
+- 14 new tests: clipboard recording, de-duplication, capacity, case/diacritic search, literal matching, privacy exclusions, no-persistence guarantee, and that the Controls tab appends nothing while Overview still appends every section.
+
 ## [7.7.14] — Menu bar action fixes
 
 ### Fixed — “Manage AI Models & Keys…” did nothing

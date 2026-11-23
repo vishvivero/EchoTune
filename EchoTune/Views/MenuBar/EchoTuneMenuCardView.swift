@@ -32,13 +32,18 @@ final class EchoMenuPresentationState: ObservableObject {
     @Published var selectedTab: EchoMenuCardTab = .overview
     @Published var copiedID: String? = nil
     @Published var hoveredDayID: String? = nil
+    /// Search query for the Recent tab's clipboard list.
+    @Published var recentSearchText: String = ""
     var onLayoutInvalidated: (() -> Void)?
     var onDismissMenu: (() -> Void)?
+    /// Fired when the selected tab changes, so the native menu tail can rebuild.
+    var onTabChanged: (() -> Void)?
 
     func selectTab(_ tab: EchoMenuCardTab) {
         guard selectedTab != tab else { return }
         selectedTab = tab
         DispatchQueue.main.async { [weak self] in
+            self?.onTabChanged?()
             self?.onLayoutInvalidated?()
         }
     }
@@ -202,6 +207,7 @@ struct EchoTuneMenuCardView: View {
     @ObservedObject private var permissions = PermissionsManager.shared
     @ObservedObject private var learner = CorrectionLearner.shared
     @ObservedObject private var commitmentMemory = CommitmentMemoryManager.shared
+    @ObservedObject private var clipboard = ClipboardHistoryManager.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -685,36 +691,28 @@ struct EchoTuneMenuCardView: View {
         }
     }
 
-    // MARK: - Tab 3: Recent Dictations
+    // MARK: - Tab 3: Recent (clipboard-focused)
 
     private var recentContent: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if history.transcriptions.isEmpty {
-                VStack(spacing: 6) {
-                    Image(systemName: "waveform.badge.mic")
-                        .font(.system(size: 20))
-                        .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
-                    Text("No dictations yet")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                    Text("Hold \(shortcutDisplay) anywhere to dictate — your recent transcripts appear here for 1-click copy.")
-                        .font(.footnote)
-                        .foregroundStyle(Color(nsColor: .secondaryLabelColor))
-                        .multilineTextAlignment(.center)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 18)
+            recentSearchField
+
+            let results = clipboard.search(presentation.recentSearchText)
+
+            if results.isEmpty {
+                recentEmptyState(isSearching: !presentation.recentSearchText.trimmingCharacters(in: .whitespaces).isEmpty)
             } else {
-                ForEach(history.transcriptions.prefix(4)) { item in
-                    recentRow(item)
+                ForEach(results.prefix(5)) { entry in
+                    clipboardRow(entry)
                 }
 
                 HStack {
-                    Text("\(history.transcriptions.count) saved locally")
+                    Text(summaryLine(matchCount: results.count))
                         .font(.footnote)
                         .foregroundStyle(Color(nsColor: .secondaryLabelColor))
-                    Spacer()
-                    Button("Open Full History →") {
+                        .lineLimit(1)
+                    Spacer(minLength: 6)
+                    Button("Full History →") {
                         presentation.onDismissMenu?()
                         (AppDelegate.shared)?.showDashboard(item: .history)
                     }
@@ -725,29 +723,85 @@ struct EchoTuneMenuCardView: View {
                 .padding(.top, 2)
             }
         }
+        .onAppear { clipboard.startMonitoring() }
     }
 
-    private func recentRow(_ item: TranscriptionHistoryItem) -> some View {
-        let itemID = item.id.uuidString
-        let isCopied = presentation.copiedID == itemID
-        let words = item.text.split(whereSeparator: \.isWhitespace).count
+    private var recentSearchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
+            TextField("Search recent clips…", text: $presentation.recentSearchText)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12))
+            if !presentation.recentSearchText.isEmpty {
+                Button {
+                    presentation.recentSearchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
+                }
+                .buttonStyle(.plain)
+                .help("Clear search")
+            }
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 26)
+        .background(Color.secondary.opacity(0.09))
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+
+    private func recentEmptyState(isSearching: Bool) -> some View {
+        VStack(spacing: 6) {
+            Image(systemName: isSearching ? "magnifyingglass" : "doc.on.clipboard")
+                .font(.system(size: 20))
+                .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
+            Text(isSearching ? "No clips match" : "No recent clips yet")
+                .font(.subheadline)
+                .fontWeight(.medium)
+            Text(isSearching
+                 ? "Nothing in your recent clips contains that text."
+                 : "Copies and dictations you take appear here — hold \(shortcutDisplay) anywhere to dictate.")
+                .font(.footnote)
+                .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 18)
+    }
+
+    private func summaryLine(matchCount: Int) -> String {
+        let total = clipboard.entries.count
+        if presentation.recentSearchText.trimmingCharacters(in: .whitespaces).isEmpty {
+            return "\(total) recent clip\(total == 1 ? "" : "s")"
+        }
+        return "\(matchCount) of \(total) clips"
+    }
+
+    private func clipboardRow(_ entry: ClipboardHistoryManager.Entry) -> some View {
+        let isCopied = presentation.copiedID == entry.id.uuidString
 
         return HStack(alignment: .top, spacing: 8) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(item.text)
+                Text(entry.text)
                     .font(.system(size: 12))
                     .foregroundStyle(Color.primary)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
 
-                Text("\(relativeTime(item.date)) · \(words) word\(words == 1 ? "" : "s")")
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(Color(nsColor: .secondaryLabelColor))
-                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    Image(systemName: entry.source.symbol)
+                        .font(.system(size: 9, weight: .semibold))
+                    Text("\(entry.source.label) · \(relativeTime(entry.date))")
+                        .font(.system(size: 10.5))
+                }
+                .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+                .lineLimit(1)
             }
             Spacer(minLength: 4)
             Button {
-                copyToPasteboard(item.text, id: itemID)
+                copyToPasteboard(entry.text, id: entry.id.uuidString)
             } label: {
                 Image(systemName: isCopied ? "checkmark.circle.fill" : "doc.on.doc")
                     .font(.system(size: 12.5, weight: .semibold))
@@ -757,7 +811,7 @@ struct EchoTuneMenuCardView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             }
             .buttonStyle(.plain)
-            .help("Copy transcript")
+            .help("Copy to clipboard")
         }
         .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -909,6 +963,8 @@ struct EchoTuneMenuCardView: View {
         pb.clearContents()
         pb.setString(text, forType: .string)
         presentation.flashCopied(id)
+        // A copied dictation is a clip too — surface it at the top of Recent.
+        ClipboardHistoryManager.shared.recordDictationCopy(text)
     }
 
     private func formattedDuration(_ seconds: TimeInterval) -> String {

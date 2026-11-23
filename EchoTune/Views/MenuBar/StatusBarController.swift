@@ -73,6 +73,14 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         presentation.onLayoutInvalidated = { [weak self] in
             self?.syncCardHeight()
         }
+        // The native tail is tab-aware (Overview = everything, Controls = nothing
+        // extra, Recent = clipboard only), so rebuilding is required on every tab
+        // change, not just a re-measure.
+        presentation.onTabChanged = { [weak self] in
+            guard let self else { return }
+            self.rebuildDynamicMenuItems()
+            self.syncCardHeight()
+        }
         presentation.onDismissMenu = { [weak self] in
             self?.rootMenu.cancelTracking()
         }
@@ -242,6 +250,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         }
     }
 
+    /// The card's selected tab, mirrored so the native menu below it can adapt.
+    private var activeCardTab: EchoMenuCardTab {
+        presentation.selectedTab
+    }
+
     private func rebuildDynamicMenuItems() {
         // Keep cardMenuItem (index 0) and its separator (index 1) permanently
         // attached so NSHostingView never detaches during menuWillOpen on macOS 26.
@@ -249,15 +262,38 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             rootMenu.removeItem(at: 2)
         }
 
-        // Section 1: Live Pipeline Pickers (Submenus)
-        rootMenu.addItem(makeModelSubmenuItem())
-        rootMenu.addItem(makeMicrophoneSubmenuItem())
-        rootMenu.addItem(makeLanguageSubmenuItem())
-        rootMenu.addItem(makeEnhancementSubmenuItem())
-        rootMenu.addItem(makeRecentDictationsSubmenuItem())
+        // The native tail below the card is tab-aware.
+        //
+        // Overview  → everything (pipeline pickers, workspace windows, settings).
+        // Controls  → only what you toggle, ending at the sound cues. Showing the
+        //             full pipeline again defeats the point of a controls view.
+        // Recent    → only the clipboard list, so the tab stays about clips.
+        switch activeCardTab {
+        case .overview:
+            rootMenu.addItem(makeModelSubmenuItem())
+            rootMenu.addItem(makeMicrophoneSubmenuItem())
+            rootMenu.addItem(makeLanguageSubmenuItem())
+            rootMenu.addItem(makeEnhancementSubmenuItem())
+            rootMenu.addItem(makeRecentDictationsSubmenuItem())
 
-        rootMenu.addItem(.separator())
+            rootMenu.addItem(.separator())
+            addWorkspaceSection()
+            rootMenu.addItem(.separator())
+            addSettingsSection()
 
+        case .controls:
+            // Nothing extra: the card *is* the control surface, ending at the
+            // dictation sound cue toggles.
+            break
+
+        case .recent:
+            if !TranscriptionHistoryManager.shared.transcriptions.isEmpty {
+                rootMenu.addItem(makeRecentDictationsSubmenuItem())
+            }
+        }
+    }
+
+    private func addWorkspaceSection() {
         // Section 2: Workspace & Memory Windows
         rootMenu.addItem(makeActionItem(
             title: "Open EchoTune Dashboard",
@@ -294,8 +330,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             action: #selector(openShareCard)
         ))
 
-        rootMenu.addItem(.separator())
+    }
 
+    private func addSettingsSection() {
         // Section 3: Meta / App Lifecycle (CodexBar metaSection)
         rootMenu.addItem(makeActionItem(
             title: "Check for Updates…",

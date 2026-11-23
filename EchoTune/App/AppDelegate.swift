@@ -92,6 +92,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // backfill from transcriptions that already exist on disk.
         _ = EchoMemoryManager.shared
 
+        // Populate the Recent tab from the moment the app is running, so the
+        // clipboard list is already useful the first time it is opened.
+        ClipboardHistoryManager.shared.startMonitoring()
+
         UNUserNotificationCenter.current().delegate = self
         NotificationManager.shared.setupNotificationCategories()
 
