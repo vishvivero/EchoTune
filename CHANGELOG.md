@@ -3,6 +3,24 @@
 All notable changes to EchoTune are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [7.7.13] — ET-769 · Native macOS App Intents (Shortcuts & Siri)
+
+### Added
+- Four App Intents, all with `openAppWhenRun = false` so dictation never brings a window forward:
+  - **Toggle Dictation** — start if idle, finish if recording
+  - **Start Dictation** — begin listening
+  - **Stop Dictation** — finish and insert the transcription
+  - **Copy Last Transcript** — your most recent transcript to the clipboard
+- `EchoTuneShortcuts` registers Siri phrases for each, grouped under EchoTune in the Shortcuts app.
+- The actions are now visible in **macOS Shortcuts** and can be chained into any automation.
+
+### Behaviour
+- All intents operate on `AppCoordinator` from the main actor; no window is created or activated.
+- **Copy Last Transcript** reports a clear dialog when there is nothing to copy yet instead of failing silently.
+
+### Verified
+- 7 `EchoTuneAppIntentsTests` cases: the `openAppWhenRun = false` contract, non-empty titles, shortcut registration, newest-entry selection, whitespace handling, clipboard write, and coordinator wiring.
+
 ## [7.7.12] — ET-768 · Post-transcription shell command hook
 
 ### Added
