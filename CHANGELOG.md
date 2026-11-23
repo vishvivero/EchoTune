@@ -3,6 +3,19 @@
 All notable changes to EchoTune are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [7.7.1] — ET-757 · Offline phonetic vocabulary matcher
+
+### Added — dictation accuracy
+- New `PhoneticVocabularyMatcher`: consonant-skeleton encoding (`ech`→`ek`, `ph`→`f`, `ck`→`k`), character-trigram Jaccard similarity, normalized Levenshtein distance, and 1–3 word contiguous span matching — all offline, zero network calls.
+- Custom Dictionary entries are now matched phonetically after transcription, so ASR mishearings and split compounds are repaired: `"echo tune"` / `"ekotune"` → **EchoTune**, `"whisper kit"` → **WhisperKit**, `"kubernetis"` → **Kubernetes**.
+- English stopword guard: a span may never begin or end on a stopword and stopword-only spans are never rewritten, so ordinary prose is left untouched.
+- `DictionaryManager` gains `phoneticMatchingEnabled` (persisted, default on) and seeds **EchoTune**, **WhisperKit** and **Parakeet** on fresh install.
+- New **Settings → General → Vocabulary → Phonetic Proper-Noun Matching** toggle.
+
+### Notes
+- Dictionary processing order is unchanged in spirit: exact/variation spellings → phonetic spans → spoken-form abbreviations.
+- Covered by 12 new `PhoneticVocabularyMatcherTests` cases including idempotency, punctuation preservation and prose-safety.
+
 ## [7.7.0] — ET-756 · Fix `NSApp.delegate as? AppDelegate` nil-cast
 
 ### Fixed — menu bar window openers

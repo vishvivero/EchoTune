@@ -12,13 +12,65 @@ class DictionaryManager: ObservableObject {
     static let shared = DictionaryManager()
 
     @Published var wordReplacements: [WordReplacement] = []
-    @Published var correctSpellings: [CorrectSpelling] = []
+    @Published var correctSpellings: [CorrectSpelling] = [] {
+        didSet { rebuildPhoneticMatcher() }
+    }
+
+    /// ET-757 · post-transcription phonetic correction for misheard proper nouns.
+    @Published var phoneticMatchingEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(phoneticMatchingEnabled, forKey: Self.phoneticEnabledKey)
+            rebuildPhoneticMatcher()
+        }
+    }
+
+    /// Rebuilt whenever `correctSpellings` or the toggle changes.
+    private var phoneticMatcher: PhoneticVocabularyMatcher?
 
     private let replacementsKey = "wordReplacements"
     private let spellingsKey = "correctSpellings"
+    private static let phoneticEnabledKey = "phoneticMatchingEnabled"
+    private static let defaultSpellingsSeededKey = "defaultSpellingsSeeded.v1"
 
     private init() {
+        let defaults = UserDefaults.standard
+        phoneticMatchingEnabled = defaults.object(forKey: Self.phoneticEnabledKey) as? Bool ?? true
         loadDictionary()
+        rebuildPhoneticMatcher()
+    }
+
+    // MARK: - Phonetic matching (ET-757)
+
+    private func rebuildPhoneticMatcher() {
+        phoneticMatcher = PhoneticVocabularyMatcher(correctSpellings: correctSpellings)
+    }
+
+    /// Applies phonetic/fuzzy proper-noun correction to a transcript.
+    /// Safe to call when nothing is configured — returns the input unchanged.
+    func applyPhoneticMatching(to text: String) -> String {
+        guard phoneticMatchingEnabled, let matcher = phoneticMatcher, !matcher.isEmpty else {
+            return text
+        }
+        return matcher.apply(to: text)
+    }
+
+    /// Seeds the product names every EchoTune user types about, once per install.
+    private func seedDefaultSpellingsIfNeeded() {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: Self.defaultSpellingsSeededKey) else { return }
+
+        let seeds = [
+            CorrectSpelling(word: "EchoTune", variations: ["echo tune", "ekotune", "eco tune"]),
+            CorrectSpelling(word: "WhisperKit", variations: ["whisper kit"]),
+            CorrectSpelling(word: "Parakeet", variations: ["para keet", "parrakeet"])
+        ]
+        var changed = false
+        for seed in seeds where !correctSpellings.contains(where: { $0.word.lowercased() == seed.word.lowercased() }) {
+            correctSpellings.append(seed)
+            changed = true
+        }
+        if changed { saveSpellings() }
+        defaults.set(true, forKey: Self.defaultSpellingsSeededKey)
     }
 
     // MARK: - Word Replacements
@@ -118,9 +170,16 @@ class DictionaryManager: ObservableObject {
     }
 
     // Apply all dictionary transformations
+    //
+    // Order matters:
+    //   1. exact/variation spellings  (user-authored, highest confidence)
+    //   2. phonetic spans             (ET-757, catches ASR mishearings)
+    //   3. spoken-form abbreviations  (btw → by the way, last so it never
+    //                                  rewrites a real word first)
     func process(text: String) -> String {
         var result = text
         result = applySpellings(to: result)
+        result = applyPhoneticMatching(to: result)
         result = applyReplacements(to: result)
         return result
     }
@@ -159,6 +218,8 @@ class DictionaryManager: ObservableObject {
            let decoded = try? JSONDecoder().decode([CorrectSpelling].self, from: data) {
             correctSpellings = decoded
         }
+
+        seedDefaultSpellingsIfNeeded()
     }
 
     // MARK: - Import/Export (Phase 6C)

@@ -15,6 +15,7 @@ struct GeneralSettingsView: View {
     @EnvironmentObject var settings: AppSettings
     @EnvironmentObject var coordinator: AppCoordinator
     @StateObject private var launchAtLogin = LaunchAtLoginManager.shared
+    @ObservedObject private var dictionary = DictionaryManager.shared
 
     var body: some View {
         Form {
@@ -81,6 +82,12 @@ struct GeneralSettingsView: View {
                 Toggle("Apply my vocabulary to transcribed text", isOn: $settings.vocabularyBiasingEnabled)
                     .help("Replace dictionary entries and learned corrections in the finished transcript.")
                 Text("Corrections are applied after transcription. Decoder-side biasing was removed because passing vocabulary to the local Whisper decoder made it return empty results.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Toggle("Phonetic Proper-Noun Matching", isOn: $dictionary.phoneticMatchingEnabled)
+                    .help("Catch misheard product names, people and jargon (\"ekotune\", \"echo tune\", \"kubernetis\") using offline sound-alike matching against your Custom Dictionary. Runs entirely on-device.")
+                Text("Fuzzy sound-alike matching for names the model mishears. Ordinary words are left alone.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }

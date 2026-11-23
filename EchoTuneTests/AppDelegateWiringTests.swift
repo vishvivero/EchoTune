@@ -52,7 +52,7 @@ struct AppDelegateWiringTests {
             let offendersInFile = text
                 .split(separator: "\n", omittingEmptySubsequences: false)
                 .map { $0.trimmingCharacters(in: .whitespaces) }
-                .filter { !$0.hasPrefix("//") && !$0.hasPrefix("///") && !$0.hasPrefix("*") && !$0.hasPrefix("/*") }
+                .filter { !$0.hasPrefix("//") && !$0.hasPrefix("*") && !$0.hasPrefix("/*") && !$0.hasPrefix("*/") }
                 .filter { $0.contains(banned) }
             if !offendersInFile.isEmpty {
                 offenders.append(url.lastPathComponent)
