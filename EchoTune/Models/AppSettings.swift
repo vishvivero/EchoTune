@@ -213,6 +213,8 @@ class AppSettings: ObservableObject {
             return openaiAPIKey
         case .localCLI:
             return ""
+        case .onDevice:
+            return "" // Apple FoundationModels runs in-process; no key.
         }
     }
 
@@ -453,6 +455,11 @@ class AppSettings: ObservableObject {
         return canonicalTranscriptionModelID(storedValue)
     }
 
+    /// Test hook for the enhancement-model migration (ET-762).
+    static func migratedEnhancementModelSelectionForTesting(_ storedValue: String?) -> String {
+        migratedEnhancementModelSelection(storedValue)
+    }
+
     private static func migratedEnhancementModelSelection(_ storedValue: String?) -> String {
         guard let storedValue, !storedValue.isEmpty else {
             return defaultEnhancementModel
@@ -473,7 +480,17 @@ class AppSettings: ObservableObject {
             return defaultEnhancementModel
         }
 
-        return AIEnhancementEngine.EnhancementModel(rawValue: storedValue)?.rawValue ?? defaultEnhancementModel
+        guard let model = AIEnhancementEngine.EnhancementModel(rawValue: storedValue) else {
+            return defaultEnhancementModel
+        }
+
+        // ET-762: Apple Intelligence can be switched off or unavailable after the
+        // user picked it. Fall back rather than erroring on every dictation.
+        if model == .appleOnDevice, !OnDeviceRefinementProvider.isAvailable {
+            return defaultEnhancementModel
+        }
+
+        return model.rawValue
     }
 
     

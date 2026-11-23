@@ -3,6 +3,19 @@
 All notable changes to EchoTune are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [7.7.6] — ET-762 · Apple on-device intelligence cleanup (macOS 26+)
+
+### Added — an enhancement provider that never leaves the Mac
+- New `OnDeviceRefinementProvider` wraps Apple's `FoundationModels` (`SystemLanguageModel` / `LanguageModelSession`) behind `#if canImport(FoundationModels)` + `@available(macOS 26.0, *)`.
+- New enhancement model **“On-device · Apple Intelligence (no network, macOS 26+)”** in **Settings → Automation → Enhancement Model**, routed through `ProviderKind.onDevice`.
+- Zero network calls, nothing to download, no API key — the polish happens in-process.
+
+### Guardrails
+- The option only appears when the model is actually usable, so the picker never lists a provider that would immediately error.
+- When unavailable, the settings row states the exact reason (“This Mac is not eligible”, “Turn on Apple Intelligence”, “still preparing”, or “needs macOS 26”).
+- A previously-selected `apple-on-device` migrates back to the default provider if Apple Intelligence is later switched off, so dictation cannot start failing silently.
+- All other providers are untouched and keep their existing behaviour.
+
 ## [7.7.5] — ET-761 · Closed-lid microphone auto-fallback
 
 ### Fixed — dictation with the lid shut

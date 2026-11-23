@@ -73,6 +73,17 @@ struct AIAutomationSettingsView: View {
                                                 .foregroundColor(.orange)
                                         }
                                     }
+                                case .onDevice:
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Label("Runs on this Mac with Apple Intelligence — no network, nothing to download, no key.", systemImage: "lock.shield")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                        if let reason = OnDeviceRefinementProvider.unavailableReason {
+                                            Label(reason, systemImage: "exclamationmark.triangle")
+                                                .font(.caption)
+                                                .foregroundColor(.orange)
+                                        }
+                                    }
                                 case .localCLI:
                                     VStack(alignment: .leading, spacing: 6) {
                                         Label(enhancementEngine.localProvider.isAvailable ? "Local Ollama detected — no network used." : "Ollama not found — install Ollama to enable local enhancement.", systemImage: enhancementEngine.localProvider.isAvailable ? "checkmark.circle" : "arrow.down.circle")

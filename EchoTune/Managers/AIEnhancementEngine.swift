@@ -23,8 +23,17 @@ class AIEnhancementEngine: ObservableObject {
         case gemini25Flash = "gemini-2.5-flash"
         case gemini25FlashLite = "gemini-2.5-flash-lite"
         case localOllama = "ollama-local"
+        /// ET-762 · Apple's on-device Foundation Models. macOS 26+ only.
+        case appleOnDevice = "apple-on-device"
 
         var id: String { rawValue }
+
+        /// Every case this build can offer. `appleOnDevice` only appears when the
+        /// on-device model is actually usable, so the picker never lists a
+        /// provider that would immediately error.
+        static var offered: [EnhancementModel] {
+            allCases.filter { $0 != .appleOnDevice || OnDeviceRefinementProvider.isAvailable }
+        }
 
         var displayName: String {
             switch self {
@@ -33,6 +42,7 @@ class AIEnhancementEngine: ObservableObject {
             case .gemini25Flash: return "Balanced · Free (your key) — Gemini 2.5"
             case .gemini25FlashLite: return "Light · Free (your key) — Gemini 2.5 Lite"
             case .localOllama: return "Local · Ollama (no network)"
+            case .appleOnDevice: return "On-device · Apple Intelligence (no network, macOS 26+)"
             }
         }
 
@@ -43,6 +53,7 @@ class AIEnhancementEngine: ObservableObject {
             case .gemini25Flash: return "Gemini 2.5"
             case .gemini25FlashLite: return "Gemini 2.5 Lite"
             case .localOllama: return "Ollama Local"
+            case .appleOnDevice: return "Apple On-Device"
             }
         }
 
@@ -56,6 +67,8 @@ class AIEnhancementEngine: ObservableObject {
                 return .google
             case .localOllama:
                 return .localCLI
+            case .appleOnDevice:
+                return .onDevice
             }
         }
     }
@@ -66,6 +79,8 @@ class AIEnhancementEngine: ObservableObject {
         case google
         case openai
         case localCLI
+        /// Apple FoundationModels, in-process, no network. ET-762.
+        case onDevice
 
         var displayName: String {
             switch self {
@@ -74,6 +89,7 @@ class AIEnhancementEngine: ObservableObject {
             case .google: return "Gemini"
             case .openai: return "OpenAI"
             case .localCLI: return "Ollama (local)"
+            case .onDevice: return "Apple On-Device"
             }
         }
     }
@@ -250,7 +266,7 @@ class AIEnhancementEngine: ObservableObject {
         }
 
         // BYO-key models require a key. Hosted and local paths do not.
-        if model.provider != .hosted && model.provider != .localCLI && apiKey.isEmpty {
+        if model.provider != .hosted && model.provider != .localCLI && model.provider != .onDevice && apiKey.isEmpty {
             throw EnhancementError.noAPIKey
         }
 
@@ -285,6 +301,12 @@ class AIEnhancementEngine: ObservableObject {
             case .localCLI:
                 let prompt = buildEnhancementPrompt(customPrompt: customPrompt, dictionaryContext: dictionaryContext, screenContext: screenContext)
                 rawEnhanced = try await localProvider.polish(transcript, prompt: prompt)
+            case .onDevice:
+                // ET-762 · 100% offline, nothing to download, no API key.
+                rawEnhanced = try await OnDeviceRefinementProvider.polish(
+                    transcript,
+                    prompt: OnDeviceRefinementProvider.defaultPrompt(customPrompt: customPrompt)
+                )
             }
 
             // One choke point for every provider response. The local CLI path
