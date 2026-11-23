@@ -27,7 +27,23 @@ final class ScreenSleepPreventer {
     static let assertionName = "EchoTune is dictating"
 
     private var assertionID: IOPMAssertionID = 0
-    private(set) var isHolding = false
+    /// Reference count: nested `begin()` calls are paired by `end()` calls, so
+    /// the recording lifecycle and any other caller cannot steal the assertion
+    /// from each other.
+    private var holdCount = 0
+    private let lock = NSLock()
+
+    /// Test hook: the current reference count.
+    var holdCountForTesting: Int {
+        lock.lock(); defer { lock.unlock() }
+        return holdCount
+    }
+
+    /// True while at least one caller is holding the assertion.
+    var isHolding: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return holdCount > 0
+    }
 
     private init() {}
 
@@ -35,7 +51,11 @@ final class ScreenSleepPreventer {
     /// already holding is a no-op, so a double-start cannot leak an assertion.
     @discardableResult
     func begin() -> Bool {
-        guard !isHolding else { return true }
+        lock.lock(); defer { lock.unlock() }
+        if holdCount > 0 {
+            holdCount += 1
+            return true
+        }
 
         var id: IOPMAssertionID = 0
         let status = IOPMAssertionCreateWithName(
@@ -51,7 +71,7 @@ final class ScreenSleepPreventer {
         }
 
         assertionID = id
-        isHolding = true
+        holdCount = 1
         debugLog("🖥️ Display-sleep assertion held while dictating")
         return true
     }
@@ -59,20 +79,24 @@ final class ScreenSleepPreventer {
     /// Releases the assertion. Safe to call when not holding, and safe to call
     /// from teardown paths that may run twice.
     func end() {
-        guard isHolding, assertionID != 0 else {
-            isHolding = false
+        lock.lock(); defer { lock.unlock() }
+        guard holdCount > 0 else {
             assertionID = 0
             return
         }
 
-        IOPMAssertionRelease(assertionID)
-        assertionID = 0
-        isHolding = false
+        holdCount -= 1
+        guard holdCount == 0 else { return }
+
+        if assertionID != 0 {
+            IOPMAssertionRelease(assertionID)
+            assertionID = 0
+        }
         debugLog("🖥️ Display-sleep assertion released")
     }
 
     deinit {
-        if isHolding, assertionID != 0 {
+        if assertionID != 0 {
             IOPMAssertionRelease(assertionID)
         }
     }

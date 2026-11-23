@@ -3,6 +3,17 @@
 All notable changes to EchoTune are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [7.7.7] — ET-763 · Dashboard consistency heatmap & speaking rhythm
+
+### Added — Dashboard
+- **Consistency card**: a 26-week × 7-day GitHub-style heatmap of daily word counts, Sunday-first columns, five intensity bands scaled to your busiest day, plus a hover readout showing the date, word count and session count for that day.
+- **When you dictate card**: a 24-hour bar chart of your speaking rhythm derived from history timestamps, with the busiest hours highlighted and the top three peak hours listed as chips.
+- Both cards sit below the usage graph and stack vertically when the Dashboard window is narrower than ~820 pt, so the 960×720 default renders cleanly.
+- Everything is derived from data already on disk (`AnalyticsManager.dailyStats` and history timestamps) — no new persistence.
+
+### Verified
+- 13 `DashboardInsightsTests` cases cover grid shape (26×7), Sunday-first columns, today's position, future-day suppression, word/session mapping, intensity buckets, hour bucketing with and without word counts, peak-hour ordering, and hour label wrapping.
+
 ## [7.7.6] — ET-762 · Apple on-device intelligence cleanup (macOS 26+)
 
 ### Added — an enhancement provider that never leaves the Mac

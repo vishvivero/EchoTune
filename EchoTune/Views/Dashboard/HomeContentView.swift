@@ -200,6 +200,12 @@ struct HomeContentView: View {
                 // Usage Graph
                 UsageGraphView(stats: stats)
 
+                // ET-763 · consistency heatmap + speaking rhythm
+                DashboardInsightsSection(
+                    dailyStats: stats.dailyStats,
+                    historyDates: historyManager.transcriptions.map(\.date)
+                )
+
                 // Recent Transcriptions Section
                 if !historyManager.transcriptions.isEmpty {
                     VStack(alignment: .leading, spacing: 16) {
