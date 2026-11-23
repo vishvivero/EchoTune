@@ -70,7 +70,13 @@ struct SettingsView: View {
     @EnvironmentObject var coordinator: AppCoordinator
     @EnvironmentObject var settings: AppSettings
 
-    @State private var selectedTab: SettingsTab = .general
+    @State private var selectedTab: SettingsTab
+
+    /// `initialTab` lets the menu bar open Settings *directly* on a tab instead of
+    /// relying on a notification posted into a possibly-unmounted view.
+    init(initialTab: SettingsTab = .general) {
+        _selectedTab = State(initialValue: initialTab)
+    }
 
     // Logical grouping for the sidebar (all tabs always visible, no hide-behind-a-mode).
     private static let groups: [(header: String, tabs: [SettingsTab])] = [

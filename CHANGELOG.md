@@ -3,6 +3,20 @@
 All notable changes to EchoTune are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [7.7.14] — Menu bar action fixes
+
+### Fixed — “Manage AI Models & Keys…” did nothing
+- Clicking **Transcription Model → Manage AI Models & Keys…** raised the Settings window but did not reliably land on **AI & Models**, and from an `.accessory` app the window often stayed behind the previously frontmost app, so the click looked like a no-op.
+- Three causes, all fixed:
+  1. The navigation notification was posted *before* the window was raised, and into a view that may not have mounted yet.
+  2. An existing window ignored the tab: the notification fired, but the raise immediately after cleared focus.
+  3. `.accessory` apps are not activated by `makeKeyAndOrderFront` alone.
+- `AppDelegate.focusForMenuBarPresentation(_:)` now activates the app then raises the window, and is shared by **Settings**, **Echo Profile** and **Tasks & Commitments**.
+- `SettingsView(initialTab:)` builds a fresh Settings window already on the requested tab, so the tab no longer depends on a notification arriving at the right moment.
+
+### Added — wiring coverage
+- `MenuBarWiringTests` asserts that every `#selector` in the menu has a matching `@objc` implementation, that every `showSettings(tab:)` names a real case, and that the raise-then-navigate order is preserved.
+
 ## [7.7.13] — ET-769 · Native macOS App Intents (Shortcuts & Siri)
 
 ### Added

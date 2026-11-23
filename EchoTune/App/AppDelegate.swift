@@ -191,7 +191,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     func showSettings(tab: SettingsTab?) {
         if settingsWindow == nil {
-            let settingsView = SettingsView()
+            let settingsView = SettingsView(initialTab: tab ?? .general)
                 .environmentObject(AppCoordinator.shared)
                 .environmentObject(AppSettings.shared)
             let hostingController = NSHostingController(rootView: settingsView)
@@ -209,23 +209,44 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             settingsWindow?.delegate = self
         }
 
-        if let tab {
-            NotificationCenter.default.post(
-                name: NSNotification.Name("NavigateSettingsToTab"),
-                object: nil,
-                userInfo: ["tab": tab.rawValue]
-            )
-        }
-
         settingsWindow?.setContentSize(NSSize(width: 720, height: 480))
         settingsWindow?.minSize = NSSize(width: 680, height: 420)
         settingsWindow?.maxSize = NSSize(width: 1100, height: 800)
         settingsWindow?.center()
 
+        // Bring the window up BEFORE switching tabs. The old order posted the
+        // navigation notification into a window that was still hidden, so a
+        // menu-bar "Manage AI Models & Keys…" click often produced no visible
+        // change at all. Raising first also guarantees the tab it lands on is
+        // the one that was asked for.
+        focusForMenuBarPresentation(settingsWindow)
+
+        if let tab {
+            // Post on the next runloop tick so SettingsView has definitely
+            // mounted (fresh window) before we ask it to select a tab.
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("NavigateSettingsToTab"),
+                    object: nil,
+                    userInfo: ["tab": tab.rawValue]
+                )
+            }
+        }
+
+        debugLog("⚙️ Settings window shown\(tab.map { " on \($0.rawValue)" } ?? "")")
+    }
+
+    /// Brings a window to the front from a menu-bar (accessory) app.
+    ///
+    /// An `.accessory` app is not activated by `makeKeyAndOrderFront` alone: the
+    /// window appears but stays behind the previously frontmost app, which reads
+    /// as "the click did nothing". Activating the app first, then raising the
+    /// window, is what makes a menu-bar action feel like an app action.
+    func focusForMenuBarPresentation(_ window: NSWindow?) {
+        guard let window else { return }
         NSApp.activate(ignoringOtherApps: true)
-        settingsWindow?.makeKeyAndOrderFront(nil)
-        settingsWindow?.orderFrontRegardless()
-        debugLog("⚙️ Settings window shown")
+        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
     }
 
     func showDashboard(item: NavigationItem = .home) {
@@ -245,8 +266,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             echoProfileWindowController?.window?.delegate = self
         }
         echoProfileWindowController?.window?.center()
-        echoProfileWindowController?.window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        focusForMenuBarPresentation(echoProfileWindowController?.window)
         debugLog("🧠 Echo Profile window shown")
     }
 
@@ -256,8 +276,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             commitmentsWindowController?.window?.delegate = self
         }
         commitmentsWindowController?.window?.center()
-        commitmentsWindowController?.window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        focusForMenuBarPresentation(commitmentsWindowController?.window)
         debugLog("✅ Tasks window shown")
     }
 
